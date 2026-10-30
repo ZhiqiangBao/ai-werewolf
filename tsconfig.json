@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noFallthroughCasesInSwitch": true,
+    "types": ["node"],
+    "paths": {
+      "@werewolf/protocol": ["./packages/protocol/src/index.ts"],
+      "@werewolf/engine": ["./packages/engine/src/index.ts"],
+      "@werewolf/llm": ["./packages/llm/src/index.ts"],
+      "@werewolf/session": ["./packages/session/src/index.ts"]
+    }
+  },
+  "include": ["packages/*/src/**/*", "packages/*/test/**/*", "packages/*/scripts/**/*", "apps/*/src/**/*"]
+}

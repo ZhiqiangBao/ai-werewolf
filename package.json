@@ -1,0 +1,19 @@
+{
+  "name": "ai-werewolf",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx apps/server/src/main.ts --dev",
+    "build": "pnpm --filter @werewolf/web exec vite build",
+    "start": "tsx apps/server/src/main.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "simulate": "tsx packages/engine/scripts/simulate.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}

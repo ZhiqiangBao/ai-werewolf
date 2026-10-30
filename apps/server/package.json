@@ -1,0 +1,11 @@
+{
+  "name": "@werewolf/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@werewolf/protocol": "workspace:*",
+    "@werewolf/session": "workspace:*",
+    "vite": "^8.3.5"
+  }
+}

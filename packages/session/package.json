@@ -1,0 +1,14 @@
+{
+  "name": "@werewolf/session",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@werewolf/engine": "workspace:*",
+    "@werewolf/llm": "workspace:*",
+    "@werewolf/protocol": "workspace:*"
+  }
+}
