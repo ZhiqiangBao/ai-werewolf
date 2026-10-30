@@ -25,6 +25,7 @@ import {
   allOptions,
   buildRuleCard,
   buildRules,
+  abandonGame,
   createGame,
   engineCatalog,
   getPreset,
@@ -77,9 +78,13 @@ interface Live {
   running: Promise<void> | null;
   again: boolean;
   stepBudget: number;
+  /** 终结时加一。还在飞的请求和推进循环看到代数变了就立刻退出，不能再提交。 */
+  gen: number;
   inflight: Map<string, AbortController>;
   subscribers: Set<Subscriber>;
   saveTimer: ReturnType<typeof setTimeout> | null;
+  thoughtTimer: ReturnType<typeof setTimeout> | null;
+  thoughtNotifiedAt: number;
   auditId: number;
 }
 
@@ -191,6 +196,7 @@ export class RoomManager {
     if (this.timer) clearInterval(this.timer);
     for (const live of this.rooms.values()) {
       for (const c of live.inflight.values()) c.abort();
+      if (live.thoughtTimer) clearTimeout(live.thoughtTimer);
       this.flush(live);
     }
   }
@@ -245,6 +251,7 @@ export class RoomManager {
       events: [],
       actions: [],
       deadlines: {},
+      thoughts: [],
     };
     const live = this.live(rec);
     this.rooms.set(rec.id, live);
@@ -437,9 +444,11 @@ export class RoomManager {
     } else if (action === 'step') {
       if (!rec.paused) throw new ApiFailure(409, 'NOT_PAUSED', '单步只在暂停时可用');
       live.stepBudget += 1;
+    } else if (action === 'end') {
+      this.stopMatch(live);
     } else throw new ApiFailure(400, 'BAD_REQUEST', `未知操作：${String(action)}`);
     this.changed(live);
-    void this.pump(live);
+    if (action !== 'end') void this.pump(live);
     return this.brief(rec, { role: 'host' });
   }
 
@@ -510,7 +519,36 @@ export class RoomManager {
   // -------------------------------------------------------------------------
 
   private live(rec: RoomRecord): Live {
-    return { rec, running: null, again: false, stepBudget: 0, inflight: new Map(), subscribers: new Set(), saveTimer: null, auditId: 0 };
+    return {
+      rec,
+      running: null,
+      again: false,
+      stepBudget: 0,
+      gen: 0,
+      inflight: new Map(),
+      subscribers: new Set(),
+      saveTimer: null,
+      thoughtTimer: null,
+      thoughtNotifiedAt: 0,
+      auditId: 0,
+    };
+  }
+
+  /** 掐掉这一局：取消所有在飞请求，推进循环作废，记为流局，不结算、不公开身份。 */
+  private stopMatch(live: Live): void {
+    const rec = live.rec;
+    if (!rec.state) throw new ApiFailure(409, 'NOT_RUNNING', '对局不在进行中');
+    live.gen += 1;
+    live.again = false;
+    live.stepBudget = 0;
+    for (const ctrl of live.inflight.values()) ctrl.abort();
+    for (const thought of rec.thoughts ?? []) thought.live = false;
+    const res = abandonGame(rec.state);
+    rec.state = res.state;
+    if (res.events.length) rec.events.push(...res.events);
+    rec.paused = false;
+    rec.deadlines = {};
+    rec.status = 'ended';
   }
 
   private resolve(roomId: string, tok: string): { live: Live; viewer: Viewer } {
@@ -543,13 +581,23 @@ export class RoomManager {
     };
   }
 
+  private visibleThoughts(rec: RoomRecord, viewer: Viewer) {
+    const all = rec.thoughts ?? [];
+    if (viewer.role === 'host') return all;
+    if (viewer.role === 'seat') return all.filter((t) => t.seat === viewer.seat);
+    return [];
+  }
+
   private project(rec: RoomRecord, viewer: Viewer): Projection | GodProjection {
     const state = rec.state!;
-    if (viewer.role === 'host') return projectGod(state, rec.events);
     if (viewer.role === 'spectator') return projectSpectator(state, rec.events);
-    const p = projectSeat(state, rec.events, viewer.seat);
-    const deadline = p.task && !p.task.submitted ? rec.deadlines[`${p.task.decisionId}:${viewer.seat}`] : undefined;
-    if (p.task && deadline) p.task.deadline = deadline;
+    const p = viewer.role === 'host' ? projectGod(state, rec.events) : projectSeat(state, rec.events, viewer.seat);
+    if (viewer.role === 'seat') {
+      const deadline = p.task && !p.task.submitted ? rec.deadlines[`${p.task.decisionId}:${viewer.seat}`] : undefined;
+      if (p.task && deadline) p.task.deadline = deadline;
+    }
+    const thoughts = this.visibleThoughts(rec, viewer);
+    if (thoughts.length) p.thoughts = thoughts;
     return p;
   }
 
@@ -566,11 +614,15 @@ export class RoomManager {
       p.task?.deadline ?? null,
       p.interrupts.map((t) => t.name),
       viewer.role === 'host' ? (p as GodProjection).god.pending : null,
+      this.visibleThoughts(rec, viewer).map((t) => [t.decisionId, t.seat, t.thinking.length, t.reply.length, t.live]),
     ]);
   }
 
   private apply(live: Live, input: SubmitInput): EngineResult {
     const rec = live.rec;
+    if (rec.status !== 'running' || rec.state?.result) {
+      return { state: rec.state!, events: [], error: { code: 'GAME_ENDED', reason: '对局已经结束' } };
+    }
     const res = submit(rec.state!, input);
     rec.state = res.state;
     rec.events.push(...res.events);
@@ -590,6 +642,11 @@ export class RoomManager {
       }
     }
     this.scheduleSave(live);
+    this.notify(live);
+  }
+
+  /** 只通知视角有变化的订阅者。思考的流式更新走这里，不重新武装截止时间，也不取消请求。 */
+  private notify(live: Live): void {
     for (const sub of live.subscribers) {
       const sig = this.signature(live.rec, sub.viewer);
       if (sig === sub.sig) continue;
@@ -602,6 +659,57 @@ export class RoomManager {
     }
   }
 
+  private publishThoughts(live: Live, immediate: boolean): void {
+    const send = () => {
+      if (live.thoughtTimer) clearTimeout(live.thoughtTimer);
+      live.thoughtTimer = null;
+      live.thoughtNotifiedAt = this.now();
+      this.scheduleSave(live);
+      this.notify(live);
+    };
+    if (immediate) {
+      send();
+      return;
+    }
+    const elapsed = this.now() - live.thoughtNotifiedAt;
+    if (elapsed >= 80) {
+      send();
+      return;
+    }
+    if (live.thoughtTimer) return;
+    live.thoughtTimer = setTimeout(send, 80 - elapsed);
+  }
+
+  private pushThought(live: Live, seat: Seat, decision: string, delta: { thinking?: string; reply?: string }): void {
+    const rec = live.rec;
+    rec.thoughts ??= [];
+    let thought = rec.thoughts.find((t) => t.seat === seat && t.decisionId === decision);
+    if (!thought) {
+      thought = { seat, decisionId: decision, at: this.now(), thinking: '', reply: '', live: true };
+      rec.thoughts.push(thought);
+    }
+    if (delta.thinking) thought.thinking += delta.thinking;
+    if (delta.reply) thought.reply += delta.reply;
+    thought.live = true;
+    this.publishThoughts(live, false);
+  }
+
+  private finishThought(live: Live, seat: Seat, decision: string, result?: { thinking?: string; reply?: string }): void {
+    const rec = live.rec;
+    rec.thoughts ??= [];
+    let thought = rec.thoughts.find((t) => t.seat === seat && t.decisionId === decision);
+    if (!thought && !result?.thinking && !result?.reply) return;
+    if (!thought) {
+      thought = { seat, decisionId: decision, at: this.now(), thinking: '', reply: '', live: false };
+      rec.thoughts.push(thought);
+    }
+    if (result?.thinking && result.thinking.length >= thought.thinking.length) thought.thinking = result.thinking;
+    if (result?.reply && result.reply.length >= thought.reply.length) thought.reply = result.reply;
+    thought.live = false;
+    if (!thought.thinking && !thought.reply) rec.thoughts = rec.thoughts.filter((t) => t !== thought);
+    this.publishThoughts(live, true);
+  }
+
   private scheduleSave(live: Live): void {
     if (live.saveTimer) return;
     live.saveTimer = setTimeout(() => this.flush(live), 300);
@@ -610,7 +718,11 @@ export class RoomManager {
   private flush(live: Live): void {
     if (live.saveTimer) clearTimeout(live.saveTimer);
     live.saveTimer = null;
-    this.store.save(live.rec);
+    try {
+      this.store.save(live.rec);
+    } catch (e) {
+      console.error(`房间 ${live.rec.id} 保存失败：`, (e as Error).message);
+    }
   }
 
   private isHuman(rec: RoomRecord, seat: Seat): boolean {
@@ -668,17 +780,21 @@ export class RoomManager {
 
   /** 自动推进：轮到模型就请求并提交，轮到真人就等待。同时行动的模型座位并行请求。 */
   private pump(live: Live): Promise<void> {
+    if (live.rec.status === 'ended') return Promise.resolve();
     if (live.running) {
       live.again = true;
       return live.running;
     }
+    const gen = live.gen;
     live.running = (async () => {
       try {
         do {
           live.again = false;
+          if (live.gen !== gen || live.rec.status === 'ended') return;
           await this.pumpOnce(live);
-        } while (live.again);
+        } while (live.again && live.gen === gen && live.rec.status === 'running');
       } catch (e) {
+        if (live.gen !== gen || live.rec.status === 'ended') return;
         console.error(`房间 ${live.rec.id} 推进出错，已暂停：`, e);
         live.rec.paused = true;
         this.changed(live);
@@ -697,19 +813,22 @@ export class RoomManager {
 
   private async pumpOnce(live: Live): Promise<void> {
     const rec = live.rec;
+    const gen = live.gen;
     for (;;) {
       const state = rec.state;
-      if (rec.status !== 'running' || !state?.pending) return;
+      if (live.gen !== gen || rec.status !== 'running' || !state?.pending) return;
       if (!waitingSeats(state).some((s) => !this.isHuman(rec, s))) return;
       if (rec.paused && live.stepBudget <= 0) return;
       const decision = state.pending.id;
       const stepping = rec.paused;
       if (!stepping && rec.aiPacingMs > 0) await this.sleep(rec.aiPacingMs);
+      if (live.gen !== gen || rec.status !== 'running') return;
       if (rec.state?.pending?.id !== decision || (rec.paused && !stepping)) continue;
       if (stepping) live.stepBudget -= 1;
       const seats = waitingSeats(rec.state).filter((s) => !this.isHuman(rec, s) && !live.inflight.has(`${decision}:${s}`));
       if (!seats.length) return;
       await Promise.all(seats.map((seat) => this.runAi(live, seat, decision)));
+      if (live.gen !== gen || rec.status !== 'running') return;
       const stuck = rec.state?.pending?.id === decision && seats.every((s) => waitingSeats(rec.state!).includes(s));
       if (stuck) throw new Error(`决策 ${decision} 没有推进`);
     }
@@ -725,8 +844,11 @@ export class RoomManager {
     const key = `${decision}:${seat}`;
     const ctrl = new AbortController();
     live.inflight.set(key, ctrl);
+    const gen = live.gen;
     const model = cfg.adapter === 'mock' ? 'mock' : cfg.model;
-    const stillWaiting = () => rec.state?.pending?.id === decision && waitingSeats(rec.state).includes(seat);
+    const stillWaiting = () =>
+      live.gen === gen && rec.status === 'running' && rec.state?.pending?.id === decision && waitingSeats(rec.state).includes(seat);
+    let last: { thinking?: string; reply?: string } | undefined;
     try {
       const limit = actionLimitSec(rec.state?.pending?.step.type ?? '', cfg.timeoutSec);
       let messages: ChatMessage[] = buildMessages(projection, styleText(cfg.style, cfg.persona), limit);
@@ -738,8 +860,29 @@ export class RoomManager {
         if (stillWaiting()) this.apply(live, { seat, call: AUTO, auto: true, decisionId: decision });
         return;
       }
+      const onDelta = (delta: { thinking?: string; reply?: string }) => {
+        if (live.gen !== gen || rec.status !== 'running') return;
+        this.pushThought(live, seat, decision, delta);
+      };
+      if (cfg.adapter !== 'mock') this.pushThought(live, seat, decision, {});
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-        const result = await adapter.decide({ seat, projection, messages, tools, config, signal: ctrl.signal });
+        let result;
+        try {
+          result = await adapter.decide({
+            seat,
+            projection,
+            messages,
+            tools,
+            config,
+            signal: ctrl.signal,
+            stream: cfg.adapter !== 'mock',
+            onDelta,
+          });
+          last = result;
+        } catch (e) {
+          if (live.gen !== gen || ctrl.signal.aborted || rec.status !== 'running') return;
+          throw e;
+        }
         if (!stillWaiting()) {
           this.writeAudit(live, { seat, model, decisionId: decision, projectionVersion: projection.version, ok: false, messages, error: '决策已经结束，这次结果作废', latencyMs: result.latencyMs });
           return;
@@ -766,6 +909,7 @@ export class RoomManager {
       }
       if (stillWaiting()) this.apply(live, { seat, call: AUTO, auto: true, decisionId: decision });
     } finally {
+      this.finishThought(live, seat, decision, last);
       live.inflight.delete(key);
     }
   }

@@ -1,9 +1,10 @@
 import { toolToJsonSchema, type ToolCall, type ToolSpec } from '@werewolf/protocol';
 import type { Adapter, AdapterConfig, ChatMessage, DecideRequest, DecideResult, ToolCallMessage } from './types';
 
-/** 记住不支持 tool_choice=required 或 response_format 的服务，之后直接降级。 */
+/** 记住不支持 tool_choice=required、response_format 或流式输出的服务，之后直接降级。 */
 const noRequired = new Set<string>();
 const noJsonFormat = new Set<string>();
+const noStream = new Set<string>();
 
 class HttpError extends Error {
   constructor(
@@ -14,6 +15,7 @@ class HttpError extends Error {
   }
 }
 class TimeoutError extends Error {}
+class StreamUnsupported extends Error {}
 
 export function chatUrl(baseUrl: string): string {
   const b = baseUrl.trim().replace(/\/+$/, '');
@@ -27,12 +29,28 @@ export function redact(text: string, key: string | null): string {
   return t.replace(/\b(sk-|Bearer\s+)[A-Za-z0-9._-]{8,}/g, '$1***');
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** 等待可以被取消。取消后清掉定时器，不再进入下一次请求。 */
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(new TimeoutError('请求已取消'));
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(finish, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new TimeoutError('请求已取消'));
+    };
+    function finish() {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
 
 async function post(url: string, body: unknown, config: AdapterConfig, signal?: AbortSignal): Promise<unknown> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
   for (let attempt = 0; ; attempt++) {
+    if (signal?.aborted) throw new TimeoutError('请求已取消');
     const timeout = AbortSignal.timeout(Math.max(1, config.timeoutSec) * 1000);
     try {
       const res = await fetch(url, {
@@ -50,20 +68,162 @@ async function post(url: string, body: unknown, config: AdapterConfig, signal?: 
         }
       }
       if ((res.status === 429 || res.status >= 500) && attempt < 2) {
-        await sleep(800 * (attempt + 1));
+        await sleep(800 * (attempt + 1), signal);
         continue;
       }
       throw new HttpError(res.status, text);
     } catch (e) {
       if (e instanceof HttpError) throw e;
+      if (e instanceof TimeoutError) throw e;
       if (timeout.aborted || signal?.aborted) throw new TimeoutError(signal?.aborted ? '请求已取消' : `超过 ${config.timeoutSec} 秒没有返回`);
       if (attempt < 2) {
-        await sleep(800 * (attempt + 1));
+        await sleep(800 * (attempt + 1), signal);
         continue;
       }
       throw e;
     }
   }
+}
+
+function textOf(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function withNotes(result: DecideResult, msg: Record<string, unknown>): DecideResult {
+  const thinking = textOf(msg.reasoning_content) || textOf(msg.reasoning) || textOf(msg.thinking);
+  const reply = textOf(msg.content);
+  if (thinking) result.thinking = thinking;
+  if (reply) result.reply = reply;
+  return result;
+}
+
+interface PartialCall {
+  id: string;
+  name: string;
+  arguments: string;
+}
+
+/** 读流式响应，把思考和正文逐段交出去，并拼回一条完整的 message。 */
+async function postStream(
+  url: string,
+  body: Record<string, unknown>,
+  config: AdapterConfig,
+  signal: AbortSignal | undefined,
+  onDelta: DecideRequest['onDelta'],
+): Promise<unknown> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
+  const timeout = AbortSignal.timeout(Math.max(1, config.timeoutSec) * 1000);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ ...body, stream: true }),
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+    });
+  } catch (e) {
+    if (timeout.aborted || signal?.aborted) throw new TimeoutError(signal?.aborted ? '请求已取消' : `超过 ${config.timeoutSec} 秒没有返回`);
+    throw e;
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    if (res.status === 400 && /stream/i.test(text)) throw new StreamUnsupported();
+    throw new HttpError(res.status, text);
+  }
+  const ctype = res.headers.get('content-type') ?? '';
+  if (!ctype.includes('text/event-stream')) {
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new HttpError(res.status, `返回的不是 JSON：${text.slice(0, 200)}`);
+    }
+  }
+
+  const acc = { content: '', reasoning: '', calls: new Map<number, PartialCall>() };
+  const reader = res.body?.getReader();
+  if (!reader) throw new HttpError(res.status, '流式响应没有正文');
+  const decoder = new TextDecoder();
+  let buf = '';
+  const take = (line: string) => {
+    const trimmed = line.replace(/\r$/, '');
+    if (!trimmed.startsWith('data:')) return false;
+    const data = trimmed.slice(5).trim();
+    if (!data || data === '[DONE]') return data === '[DONE]';
+    let obj: any;
+    try {
+      obj = JSON.parse(data);
+    } catch {
+      return false;
+    }
+    const delta = obj?.choices?.[0]?.delta ?? obj?.choices?.[0]?.message;
+    if (!delta || typeof delta !== 'object') return false;
+    const reasoning = textOf(delta.reasoning_content) || textOf(delta.reasoning) || textOf(delta.thinking);
+    if (reasoning) {
+      acc.reasoning += reasoning;
+      onDelta?.({ thinking: reasoning });
+    }
+    const reply = textOf(delta.content);
+    if (reply) {
+      acc.content += reply;
+      onDelta?.({ reply });
+    }
+    if (Array.isArray(delta.tool_calls)) {
+      for (const call of delta.tool_calls) {
+        const index = typeof call?.index === 'number' ? call.index : 0;
+        const cur = acc.calls.get(index) ?? { id: '', name: '', arguments: '' };
+        if (typeof call?.id === 'string' && call.id) cur.id = call.id;
+        if (typeof call?.function?.name === 'string') cur.name += call.function.name;
+        if (typeof call?.function?.arguments === 'string') cur.arguments += call.function.arguments;
+        acc.calls.set(index, cur);
+      }
+    }
+    return false;
+  };
+  try {
+    let finished = false;
+    while (!finished) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl = buf.indexOf('\n');
+      while (nl >= 0) {
+        const line = buf.slice(0, nl);
+        buf = buf.slice(nl + 1);
+        if (take(line)) {
+          finished = true;
+          await reader.cancel();
+          break;
+        }
+        nl = buf.indexOf('\n');
+      }
+    }
+    if (!finished && buf.trim()) take(buf);
+  } catch (e) {
+    if (timeout.aborted || signal?.aborted) throw new TimeoutError(signal?.aborted ? '请求已取消' : `超过 ${config.timeoutSec} 秒没有返回`);
+    throw e;
+  }
+
+  const calls = [...acc.calls.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, call]) => ({
+      id: call.id || 'call_0',
+      type: 'function',
+      function: { name: call.name, arguments: call.arguments },
+    }));
+  return {
+    choices: [
+      {
+        message: {
+          role: 'assistant',
+          content: acc.content || null,
+          ...(acc.reasoning ? { reasoning_content: acc.reasoning } : {}),
+          ...(calls.length ? { tool_calls: calls } : {}),
+        },
+      },
+    ],
+  };
 }
 
 function openaiTools(tools: ToolSpec[]) {
@@ -102,8 +262,7 @@ function parseToolReply(started: number, msg: Record<string, unknown>, tools: To
     type: 'function',
     function: { name: String(c.function?.name ?? ''), arguments: String(c.function?.arguments ?? '{}') },
   }));
-  const content = typeof msg.content === 'string' ? msg.content : null;
-  const assistant: ChatMessage = { role: 'assistant', content, ...(calls.length ? { tool_calls: calls } : {}) };
+  const assistant: ChatMessage = { role: 'assistant', content: null, ...(calls.length ? { tool_calls: calls } : {}) };
   const base = { assistant, toolCallIds: calls.map((c) => c.id), raw };
   if (!calls.length) return fail(started, '没有调用工具，必须调用且只调用一个工具', base);
   if (calls.length > 1) return fail(started, `一次调用了 ${calls.length} 个工具，每次只能调用一个`, base);
@@ -160,16 +319,32 @@ export const openaiAdapter: Adapter = {
       return b;
     };
 
+    const load = async (allowStream: boolean) => {
+      const payload = body();
+      if (allowStream && req.stream && !noStream.has(memo)) {
+        try {
+          return await postStream(url, payload, config, req.signal, req.onDelta);
+        } catch (e) {
+          if (e instanceof StreamUnsupported) {
+            noStream.add(memo);
+            return post(url, payload, config, req.signal);
+          }
+          throw e;
+        }
+      }
+      return post(url, payload, config, req.signal);
+    };
+
     let data: any;
     try {
       try {
-        data = await post(url, body(), config, req.signal);
+        data = await load(true);
       } catch (e) {
         if (!(e instanceof HttpError) || e.status !== 400) throw e;
         if (!json && /tool_choice/i.test(e.body) && !noRequired.has(memo)) noRequired.add(memo);
         else if (json && /response_format|json_object/i.test(e.body) && !noJsonFormat.has(memo)) noJsonFormat.add(memo);
         else throw e;
-        data = await post(url, body(), config, req.signal);
+        data = await load(false);
       }
     } catch (e) {
       if (e instanceof TimeoutError) return fail(started, e.message, { fatal: true });
@@ -179,7 +354,8 @@ export const openaiAdapter: Adapter = {
 
     const msg = data?.choices?.[0]?.message;
     if (!msg || typeof msg !== 'object') return fail(started, '返回里没有 choices[0].message', { raw: data });
-    return json ? parseJsonReply(started, msg, tools, data) : parseToolReply(started, msg, tools, data);
+    const parsed = json ? parseJsonReply(started, msg, tools, data) : parseToolReply(started, msg, tools, data);
+    return withNotes(parsed, msg);
   },
 };
 

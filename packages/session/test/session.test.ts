@@ -65,7 +65,13 @@ describe('凭证与信息屏障', () => {
     const capture: Adapter = {
       async decide(req: DecideRequest) {
         const page = m.view(ids.roomId, ids.seatToken(req.seat)).projection as Projection;
-        if (JSON.stringify(page) !== JSON.stringify(req.projection)) mismatches.push(`${req.seat}号 ${req.projection?.task?.title}`);
+        const strip = (p: Projection | undefined) => {
+          if (!p) return '';
+          const { thoughts: _thoughts, ...rest } = p;
+          return JSON.stringify(rest);
+        };
+        if (strip(page) !== strip(req.projection)) mismatches.push(`${req.seat}号 ${req.projection?.task?.title}`);
+        if (req.projection && 'thoughts' in req.projection) mismatches.push(`${req.seat}号的模型投影带了思考`);
         return mockAdapter.decide(req);
       },
     };
@@ -315,6 +321,79 @@ describe('模型调度', () => {
     await m.whenIdle(roomId);
     expect(counts.host).toBeGreaterThan(counts.seat);
     expect(counts.seat).toBeGreaterThan(0);
+  });
+
+  it('思考和正文只出现在对应视角，不进入任何座位的提示词', async () => {
+    const capture: Adapter = {
+      async decide(req) {
+        req.onDelta?.({ thinking: `思维痕迹ZZZ9-${req.seat}` });
+        req.onDelta?.({ reply: `正文痕迹QQQ9-${req.seat}` });
+        return mockAdapter.decide(req);
+      },
+    };
+    const { m, roomId, hostToken, seatToken } = setup({ adapters: { mock: capture } });
+    m.updateSetup(roomId, hostToken, { presetId: 'classic9', aiPacingMs: 0 });
+    m.start(roomId, hostToken);
+    await m.whenIdle(roomId);
+    const g = god(m, roomId, hostToken);
+    expect(g.thoughts?.some((t) => t.thinking.includes('思维痕迹ZZZ9-1') && t.reply.includes('正文痕迹QQQ9-1'))).toBe(true);
+    expect(g.thoughts?.some((t) => t.seat !== 1)).toBe(true);
+    expect(JSON.stringify(g.events)).not.toContain('思维痕迹');
+    expect(JSON.stringify(g.events)).not.toContain('正文痕迹');
+    const prompts = JSON.stringify(m.audit(roomId, hostToken).map((a) => a.messages));
+    expect(prompts).not.toContain('思维痕迹');
+    expect(prompts).not.toContain('正文痕迹');
+    const mine = m.view(roomId, seatToken(1)).projection as Projection;
+    expect(mine.thoughts?.every((t) => t.seat === 1)).toBe(true);
+    expect(JSON.stringify(mine.thoughts)).toContain('思维痕迹ZZZ9-1');
+    expect(JSON.stringify(mine)).not.toContain('思维痕迹ZZZ9-2');
+    const spectator = m.view(roomId, m.getSetup(roomId, hostToken).tokens.spectator).projection as Projection;
+    expect(spectator.thoughts).toBeUndefined();
+    expect(JSON.stringify(spectator)).not.toContain('思维痕迹');
+  });
+
+  it('房主终结会取消正在进行的模型请求，并记为流局且不公开身份', async () => {
+    let release!: (signal: AbortSignal) => void;
+    const entered = new Promise<AbortSignal>((resolve) => {
+      release = resolve;
+    });
+    let settled = 'pending';
+    const hanging: Adapter = {
+      async decide(req) {
+        release(req.signal!);
+        await new Promise<void>((_, reject) => {
+          const abort = () => {
+            settled = 'aborted';
+            reject(new Error('aborted'));
+          };
+          if (req.signal?.aborted) {
+            abort();
+            return;
+          }
+          req.signal?.addEventListener('abort', abort, { once: true });
+        });
+        settled = 'returned';
+        return { ok: false, error: '不应返回', toolCallIds: [], latencyMs: 1 };
+      },
+    };
+    const { m, roomId, hostToken, seatToken } = setup({ adapters: { mock: hanging } });
+    m.updateSetup(roomId, hostToken, { presetId: 'classic9', aiPacingMs: 0 });
+    m.start(roomId, hostToken);
+    const signal = await entered;
+    m.control(roomId, hostToken, 'end');
+    expect(signal.aborted).toBe(true);
+    await m.whenIdle(roomId);
+    expect(settled).toBe('aborted');
+    const g = god(m, roomId, hostToken);
+    expect(g.status).toBe('ended');
+    expect(g.result).toMatchObject({ winner: 'draw', reveal: false });
+    expect(g.result?.reason).toContain('无胜负');
+    expect(g.events.some((e) => e.type === 'review')).toBe(false);
+    expect(g.events.some((e) => e.type === 'game.end' && e.text.includes('无胜负'))).toBe(true);
+    const seat = m.view(roomId, seatToken(1)).projection as Projection;
+    expect(seat.seats.every((s) => !s.revealedRole)).toBe(true);
+    expect(seat.events.some((e) => e.type === 'review')).toBe(false);
+    expect(() => m.control(roomId, hostToken, 'resume')).toThrow(/不在进行中/);
   });
 
   it('复制房间保留配置、换掉全部凭证', () => {

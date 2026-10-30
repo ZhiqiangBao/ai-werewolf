@@ -221,9 +221,22 @@ export interface GameResult {
   winner: string;
   winnerName: string;
   reason: string;
+  /** 为 false 时终局不公开身份。正常结束缺省公开。 */
+  reveal?: boolean;
 }
 
 export type Viewer = { kind: 'seat'; seat: Seat } | { kind: 'spectator' } | { kind: 'god' };
+
+/** 模型这一步的思考和工具外正文。只给界面对应视角看，不进入任何座位的提示词。 */
+export interface Thought {
+  seat: Seat;
+  decisionId: string;
+  at: number;
+  thinking: string;
+  reply: string;
+  /** 模型还在往下写。 */
+  live: boolean;
+}
 
 export interface Projection {
   viewer: Viewer;
@@ -242,6 +255,8 @@ export interface Projection {
   /** 不阻塞流程、随时可用的工具（例如发言阶段的自爆）。 */
   interrupts: ToolSpec[];
   result?: GameResult;
+  /** 上帝看全部，座位只看自己。旁观没有这个字段。 */
+  thoughts?: Thought[];
 }
 
 export interface GodSeatInfo {
@@ -384,7 +399,7 @@ export interface SeatTestResult {
   latencyMs: number;
 }
 
-export type ControlAction = 'pause' | 'resume' | 'step';
+export type ControlAction = 'pause' | 'resume' | 'step' | 'end';
 
 export interface ActResult {
   ok: boolean;

@@ -29,6 +29,9 @@ export interface DecideRequest {
   tools: ToolSpec[];
   config: AdapterConfig;
   signal?: AbortSignal;
+  /** 优先走流式接口，边生成边把思考和正文交出来。 */
+  stream?: boolean;
+  onDelta?: (delta: { thinking?: string; reply?: string }) => void;
 }
 
 export interface DecideResult {
@@ -42,6 +45,10 @@ export interface DecideResult {
   toolCallIds: string[];
   raw?: unknown;
   latencyMs: number;
+  /** 模型的思考过程。只供显示，调用方不得写进提示词。 */
+  thinking?: string;
+  /** 工具调用之外的正文。只供显示，调用方不得写进提示词。 */
+  reply?: string;
 }
 
 export interface Adapter {

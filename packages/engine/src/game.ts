@@ -211,6 +211,21 @@ export function replay(o: CreateGameOptions, actions: ActionRecord[]): { state: 
   return { state, events };
 }
 
+/** 房主终结。记为流局，不跑剩余结算，不公开身份和夜间行动。 */
+export function abandonGame(prev: GameState): EngineResult {
+  const ctx = new Ctx(structuredClone(prev));
+  if (ctx.state.result) return { state: ctx.state, events: [] };
+  const s = ctx.state;
+  s.phase = 'end';
+  s.stage = '游戏结束';
+  s.ending = false;
+  s.agenda = [];
+  s.pending = null;
+  s.result = { winner: 'draw', winnerName: '无人', reason: '房主终结了对局，本局流局，无胜负。', reveal: false };
+  ctx.pub('game.end', '游戏结束：流局，无胜负。', { result: s.result });
+  return { state: s, events: ctx.events };
+}
+
 /** 当前决策里还没有提交的座位。 */
 export function waitingSeats(state: GameState): Seat[] {
   const d = state.pending;

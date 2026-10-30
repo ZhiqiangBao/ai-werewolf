@@ -85,7 +85,7 @@ describe('模拟玩家', () => {
 });
 
 describe('OpenAI 兼容适配器', () => {
-  type Handler = (body: Record<string, any>, req: IncomingMessage) => { status?: number; json?: unknown; delayMs?: number };
+  type Handler = (body: Record<string, any>, req: IncomingMessage) => { status?: number; json?: unknown; sse?: string[]; delayMs?: number };
   let handler: Handler = () => ({ json: {} });
   const bodies: Record<string, any>[] = [];
   const auths: (string | undefined)[] = [];
@@ -102,6 +102,12 @@ describe('OpenAI 兼容适配器', () => {
         auths.push(req.headers.authorization);
         const out = handler(body, req);
         setTimeout(() => {
+          if (out.sse) {
+            res.writeHead(out.status ?? 200, { 'Content-Type': 'text/event-stream; charset=utf-8' });
+            for (const chunk of out.sse) res.write(`data: ${chunk}\n\n`);
+            res.end('data: [DONE]\n\n');
+            return;
+          }
           res.writeHead(out.status ?? 200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(out.json ?? {}));
         }, out.delayMs ?? 0);
@@ -186,6 +192,60 @@ describe('OpenAI 兼容适配器', () => {
     expect(r.ok).toBe(false);
     expect(r.fatal).toBe(true);
     expect(bodies.length - before).toBe(1);
+  });
+
+  it('非流式回复里的思考和正文被拆出来，思考不进重试用的助手消息', async () => {
+    handler = () => ({
+      json: {
+        choices: [
+          {
+            message: {
+              role: 'assistant',
+              content: '正文一句',
+              reasoning_content: '思考一句',
+              tool_calls: [{ id: 'call_0', type: 'function', function: { name: 'speak', arguments: '{"content":"我是好人"}' } }],
+            },
+          },
+        ],
+      },
+    });
+    const r = await decide();
+    expect(r.ok).toBe(true);
+    expect(r.thinking).toBe('思考一句');
+    expect(r.reply).toBe('正文一句');
+    expect(JSON.stringify(r.assistant)).not.toContain('思考一句');
+    expect(bodies.at(-1)!.stream).toBeUndefined();
+  });
+
+  it('流式返回时边收边交出思考和正文', async () => {
+    const deltas: string[] = [];
+    handler = (body) => {
+      expect(body.stream).toBe(true);
+      return {
+        sse: [
+          JSON.stringify({ choices: [{ delta: { reasoning_content: '先看' } }] }),
+          JSON.stringify({ choices: [{ delta: { reasoning_content: '身份' } }] }),
+          JSON.stringify({ choices: [{ delta: { content: '我是' } }] }),
+          JSON.stringify({ choices: [{ delta: { content: '好人' } }] }),
+          JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_0', type: 'function', function: { name: 'speak', arguments: '' } }] } }] }),
+          JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"content":"公开发言"}' } }] } }] }),
+        ],
+      };
+    };
+    const r = await openaiAdapter.decide({
+      seat: 1,
+      messages: [{ role: 'user', content: 'hi' }],
+      tools: [SPEAK],
+      config: config(),
+      stream: true,
+      onDelta: (d) => deltas.push(d.thinking ?? d.reply ?? ''),
+    });
+    expect(r.ok).toBe(true);
+    expect(r.call).toEqual({ tool: 'speak', args: { content: '公开发言' } });
+    expect(r.thinking).toBe('先看身份');
+    expect(r.reply).toBe('我是好人');
+    expect(deltas).toEqual(['先看', '身份', '我是', '好人']);
+    expect(JSON.stringify(r.assistant)).not.toContain('先看身份');
   });
 
   it('连通性测试不携带对局信息', async () => {

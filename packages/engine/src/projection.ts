@@ -12,10 +12,10 @@ const visibleTo = (seat: Seat) => (e: GameEvent) =>
 const renumber = (events: GameEvent[]) => events.map((e, i) => ({ ...e, seq: i + 1 }));
 
 function seatsInfo(state: GameState): SeatInfo[] {
-  const ended = !!state.result;
+  const showRoles = !!state.result && state.result.reveal !== false;
   return state.players.map((p) => {
     const info: SeatInfo = { seat: p.seat, name: p.name, alive: p.alive, sheriff: state.sheriff === p.seat };
-    if (p.revealed || ended) {
+    if (p.revealed || showRoles) {
       info.revealedRole = p.role;
       info.revealedRoleName = getRole(p.role).name;
     }

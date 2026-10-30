@@ -1,6 +1,6 @@
-import type { AuditEntry, GameEvent, RuleSet, RuleValue, SeatConfigView } from '@werewolf/protocol';
+import type { AuditEntry, GameEvent, RuleSet, RuleValue, SeatConfigView, Thought } from '@werewolf/protocol';
 import type { ActionRecord, GameState } from '@werewolf/engine';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export interface SeatRecord extends Omit<SeatConfigView, 'apiKeyMasked'> {
@@ -30,6 +30,8 @@ export interface RoomRecord {
   actions: ActionRecord[];
   /** `${decisionId}:${seat}` → 真人行动截止时间（毫秒）。 */
   deadlines: Record<string, number>;
+  /** 模型思考和工具外正文。只供显示，不进入对局事件。旧房间可能没有。 */
+  thoughts?: Thought[];
 }
 
 /** 会话层的存储端口。引擎不接触存储。 */
@@ -88,8 +90,20 @@ export class FileStore implements RoomStore {
   save(room: RoomRecord): void {
     const file = join(this.dir, `${room.id}.json`);
     const tmp = `${file}.tmp`;
-    writeFileSync(tmp, JSON.stringify(room));
-    renameSync(tmp, file);
+    const text = JSON.stringify(room);
+    writeFileSync(tmp, text);
+    try {
+      renameSync(tmp, file);
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY') throw e;
+      writeFileSync(file, text);
+      try {
+        unlinkSync(tmp);
+      } catch {
+        // 临时文件被占用时留下，下次保存会覆盖。
+      }
+    }
   }
 
   appendAudit(roomId: string, entry: AuditEntry): void {

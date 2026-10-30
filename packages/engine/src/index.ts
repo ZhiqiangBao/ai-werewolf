@@ -6,7 +6,7 @@ import { categoryName, factionName } from './text';
 registerBuiltins();
 
 export { Ctx } from './context';
-export { createGame, submit, replay, waitingSeats, RulesError } from './game';
+export { createGame, submit, replay, waitingSeats, abandonGame, RulesError } from './game';
 export type { CreateGameOptions, SubmitInput, EngineResult, ActionRecord } from './game';
 export { projectSeat, projectSpectator, projectGod, buildAppendix } from './projection';
 export { buildRuleCard } from './rulecard';

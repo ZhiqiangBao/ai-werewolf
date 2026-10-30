@@ -9,6 +9,7 @@ import { GodPanel } from '../components/GodPanel';
 import { Logo, PhaseIcon } from '../components/Icons';
 import { SeatRing } from '../components/SeatRing';
 import { TaskPanel } from '../components/TaskPanel';
+import { ThoughtFeed } from '../components/ThoughtFeed';
 import { phaseLabel, seatName } from '../util';
 import { LinksPanel, Setup } from './Setup';
 
@@ -92,7 +93,7 @@ function HostGame({ roomId, token, room, projection: p, refresh }: { roomId: str
     api.getSetup(roomId, token).then(setSetup, () => {});
   }, [roomId, token]);
 
-  const control = async (action: 'pause' | 'resume' | 'step') => {
+  const control = async (action: 'pause' | 'resume' | 'step' | 'end') => {
     setBusy(true);
     setError(null);
     try {
@@ -103,6 +104,11 @@ function HostGame({ roomId, token, room, projection: p, refresh }: { roomId: str
     } finally {
       setBusy(false);
     }
+  };
+
+  const endMatch = () => {
+    if (!window.confirm('终结这一局？正在进行的模型请求会被取消。本局记为流局，无胜负，不公开身份。')) return;
+    void control('end');
   };
 
   const again = async () => {
@@ -132,6 +138,11 @@ function HostGame({ roomId, token, room, projection: p, refresh }: { roomId: str
               继续
             </button>
           </>
+        )}
+        {running && (
+          <button className="btn sm danger" disabled={busy} onClick={endMatch}>
+            终结
+          </button>
         )}
         {!running && (
           <button className="btn sm primary" onClick={() => void again()}>
@@ -185,6 +196,7 @@ function HostGame({ roomId, token, room, projection: p, refresh }: { roomId: str
             </div>
           </div>
           <div className="game-right">
+            <ThoughtFeed thoughts={p.thoughts} seats={p.seats} />
             <EventLog events={p.events} seats={p.seats} mode="god" />
           </div>
         </div>
@@ -248,6 +260,7 @@ export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
             <RuleCard text={p.ruleCard} />
           </div>
           <div className="game-right">
+            <ThoughtFeed thoughts={p.thoughts} seats={p.seats} />
             <EventLog events={p.events} seats={p.seats} mode="seat" mySeat={room.seat} />
           </div>
         </div>
