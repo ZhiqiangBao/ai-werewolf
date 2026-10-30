@@ -40,8 +40,12 @@ describe('提示词', () => {
     expect(sys.indexOf('【本局规则')).toBeLessThan(sys.indexOf('【你的身份】'));
     expect(sys.indexOf('【你的身份】')).toBeLessThan(sys.indexOf('【扮演风格】'));
     expect(sys.indexOf('【扮演风格】')).toBeLessThan(sys.indexOf('【输出要求】'));
-    expect(sys).toContain('这一步限时 60 秒');
-    expect(buildMessages(projectSeat(state, events, 4), '说话冷静。', 180)[0].content as string).toContain('这一步限时 180 秒');
+    expect(sys).toContain('发言限时 180 秒');
+    expect(sys).toContain('技能限时 60 秒');
+    expect(sys).toContain('后面按座位写明的发言');
+    expect(sys).not.toContain('日志');
+    expect(sys).not.toContain('这段对话');
+    expect(buildMessages(projectSeat(state, events, 4), '说话冷静。', { skillSec: 45 })[0].content as string).toContain('技能限时 45 秒');
     const user = seer[1].content as string;
     expect(user.indexOf('【公共日志】')).toBeLessThan(user.indexOf('【私密记录】'));
     expect(user.indexOf('【私密记录】')).toBeLessThan(user.indexOf('【当前任务】'));

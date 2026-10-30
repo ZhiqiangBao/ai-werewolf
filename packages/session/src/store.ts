@@ -1,4 +1,5 @@
 import type { AuditEntry, GameEvent, RuleSet, RuleValue, SeatConfigView, Thought } from '@werewolf/protocol';
+import type { ChatMessage } from '@werewolf/llm';
 import type { ActionRecord, GameState } from '@werewolf/engine';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -32,6 +33,10 @@ export interface RoomRecord {
   deadlines: Record<string, number>;
   /** 模型思考和工具外正文。只供显示，不进入对局事件。旧房间可能没有。 */
   thoughts?: Thought[];
+  /** 每个座位自己的对话。旁听回应只写在这里。旧房间可能没有。 */
+  threads?: { seat: number; seen: number; messages: ChatMessage[] }[];
+  /** 已经向其他座位广播过的最后一条发言序号。 */
+  heardSeq?: number;
 }
 
 /** 会话层的存储端口。引擎不接触存储。 */
@@ -65,7 +70,24 @@ export class MemoryStore implements RoomStore {
   }
 }
 
-/** 本地文件存储：data/rooms/<id>.json 保存房间，<id>.audit.jsonl 追加审计。一条命令启动，不需要单独安装数据库。 */
+function writeAtomic(file: string, text: string): void {
+  const tmp = `${file}.tmp`;
+  writeFileSync(tmp, text);
+  try {
+    renameSync(tmp, file);
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY') throw e;
+    writeFileSync(file, text);
+    try {
+      unlinkSync(tmp);
+    } catch {
+      // 临时文件被占用时留下，下次保存会覆盖。
+    }
+  }
+}
+
+/** 本地文件存储：data/rooms/<id>.json 保存房间，<id>/s<座位>.json 保存该座位的消息，<id>.audit.jsonl 追加审计。 */
 export class FileStore implements RoomStore {
   private readonly dir: string;
 
@@ -79,7 +101,10 @@ export class FileStore implements RoomStore {
     for (const f of readdirSync(this.dir)) {
       if (!f.endsWith('.json')) continue;
       try {
-        out.push(JSON.parse(readFileSync(join(this.dir, f), 'utf8')) as RoomRecord);
+        const rec = JSON.parse(readFileSync(join(this.dir, f), 'utf8')) as RoomRecord;
+        const fromFiles = this.readSeatFiles(rec.id);
+        if (fromFiles) rec.threads = fromFiles;
+        out.push(rec);
       } catch (e) {
         console.warn(`跳过无法读取的房间文件 ${f}：${(e as Error).message}`);
       }
@@ -88,20 +113,46 @@ export class FileStore implements RoomStore {
   }
 
   save(room: RoomRecord): void {
-    const file = join(this.dir, `${room.id}.json`);
-    const tmp = `${file}.tmp`;
-    const text = JSON.stringify(room);
-    writeFileSync(tmp, text);
-    try {
-      renameSync(tmp, file);
-    } catch (e) {
-      const code = (e as NodeJS.ErrnoException).code;
-      if (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY') throw e;
-      writeFileSync(file, text);
+    if (!/^[A-Za-z0-9_-]+$/.test(room.id)) throw new Error('非法房间号');
+    const { threads, ...rest } = room;
+    writeAtomic(join(this.dir, `${room.id}.json`), JSON.stringify(rest));
+    if (threads) this.writeSeatFiles(room.id, threads);
+  }
+
+  private readSeatFiles(roomId: string): RoomRecord['threads'] | undefined {
+    const dir = join(this.dir, roomId);
+    if (!existsSync(dir)) return undefined;
+    const threads: NonNullable<RoomRecord['threads']> = [];
+    for (const f of readdirSync(dir)) {
+      if (!/^s\d+\.json$/.test(f)) continue;
       try {
-        unlinkSync(tmp);
-      } catch {
-        // 临时文件被占用时留下，下次保存会覆盖。
+        threads.push(JSON.parse(readFileSync(join(dir, f), 'utf8')));
+      } catch (e) {
+        console.warn(`跳过无法读取的座位文件 ${roomId}/${f}：${(e as Error).message}`);
+      }
+    }
+    if (!threads.length) return undefined;
+    threads.sort((a, b) => a.seat - b.seat);
+    return threads;
+  }
+
+  private writeSeatFiles(roomId: string, threads: NonNullable<RoomRecord['threads']>): void {
+    const dir = join(this.dir, roomId);
+    mkdirSync(dir, { recursive: true });
+    const keep = new Set<string>();
+    for (const t of threads) {
+      if (!Number.isInteger(t.seat) || t.seat < 1 || t.seat > 99) continue;
+      const name = `s${t.seat}.json`;
+      keep.add(name);
+      writeAtomic(join(dir, name), JSON.stringify({ seat: t.seat, seen: t.seen, messages: t.messages }, null, 2));
+    }
+    for (const f of readdirSync(dir)) {
+      if (/^s\d+\.json$/.test(f) && !keep.has(f)) {
+        try {
+          unlinkSync(join(dir, f));
+        } catch {
+          // 下次保存再删。
+        }
       }
     }
   }

@@ -32,6 +32,7 @@ import {
   projectGod,
   projectSeat,
   projectSpectator,
+  seatTools,
   submit,
   validateRules,
   waitingSeats,
@@ -50,6 +51,14 @@ import {
   type AdapterConfig,
   type ChatMessage,
 } from '@werewolf/llm';
+import {
+  NOT_TOOL_TURN,
+  notToolTurnMessages,
+  ownLine,
+  syncThread,
+  taskMessage,
+  type SeatThread,
+} from './agent';
 import { ModelLibrary } from './model-library';
 import { maskKey, type SecretBox } from './secret';
 import type { RoomRecord, RoomStore, SeatRecord } from './store';
@@ -101,7 +110,7 @@ export interface ManagerOptions {
   modelsPath?: string;
 }
 
-const MAX_ATTEMPTS = 2;
+const MAX_ATTEMPTS = 5;
 const SPEECH_LIMIT_SEC = 180;
 const VOTE_LIMIT_SEC = 90;
 
@@ -176,7 +185,11 @@ export class RoomManager {
     this.now = o.now ?? Date.now;
     this.sleep = o.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.adapters = o.adapters ?? {};
-    for (const rec of this.store.loadAll()) this.rooms.set(rec.id, this.live(rec));
+    for (const rec of this.store.loadAll()) {
+      if (rec.heardSeq === undefined) rec.heardSeq = rec.events.reduce((m, e) => Math.max(m, e.seq), 0);
+      rec.threads ??= [];
+      this.rooms.set(rec.id, this.live(rec));
+    }
     const tick = o.tickMs ?? 1000;
     this.timer = tick > 0 ? setInterval(() => this.tick(), tick) : null;
     this.timer?.unref?.();
@@ -424,7 +437,18 @@ export class RoomManager {
     const rules = buildRules(rec.presetId, rec.ruleValues);
     const seed = randomBytes(8).toString('hex');
     const r = createGame({ id: rec.id, rules, seed, names: rec.seats.map((s) => s.name) });
-    Object.assign(rec, { rules, seed, state: r.state, events: [...r.events], actions: [], status: 'running', paused: false, deadlines: {} });
+    Object.assign(rec, {
+      rules,
+      seed,
+      state: r.state,
+      events: [...r.events],
+      actions: [],
+      status: 'running',
+      paused: false,
+      deadlines: {},
+      threads: [],
+      heardSeq: 0,
+    });
     this.changed(live);
     void this.pump(live);
     return this.setupView(rec);
@@ -817,14 +841,17 @@ export class RoomManager {
     for (;;) {
       const state = rec.state;
       if (live.gen !== gen || rec.status !== 'running' || !state?.pending) return;
-      if (!waitingSeats(state).some((s) => !this.isHuman(rec, s))) return;
-      if (rec.paused && live.stepBudget <= 0) return;
-      const decision = state.pending.id;
-      const stepping = rec.paused;
+      const stepping = rec.paused && live.stepBudget > 0;
+      if (rec.paused && !stepping) return;
+      if (stepping) live.stepBudget -= 1;
+      await this.reactToSpeeches(live);
+      if (live.gen !== gen || rec.status !== 'running' || !rec.state?.pending) return;
+      if (!stepping && rec.paused) return;
+      if (!waitingSeats(rec.state).some((s) => !this.isHuman(rec, s))) return;
+      const decision = rec.state.pending.id;
       if (!stepping && rec.aiPacingMs > 0) await this.sleep(rec.aiPacingMs);
       if (live.gen !== gen || rec.status !== 'running') return;
-      if (rec.state?.pending?.id !== decision || (rec.paused && !stepping)) continue;
-      if (stepping) live.stepBudget -= 1;
+      if (rec.state?.pending?.id !== decision || (!stepping && rec.paused)) continue;
       const seats = waitingSeats(rec.state).filter((s) => !this.isHuman(rec, s) && !live.inflight.has(`${decision}:${s}`));
       if (!seats.length) return;
       await Promise.all(seats.map((seat) => this.runAi(live, seat, decision)));
@@ -834,13 +861,150 @@ export class RoomManager {
     }
   }
 
+  private syncThread(live: Live, seat: Seat): SeatThread {
+    const rec = live.rec;
+    rec.threads ??= [];
+    let thread = rec.threads.find((t) => t.seat === seat);
+    if (!thread) {
+      thread = { seat, seen: 0, messages: [] };
+      rec.threads.push(thread);
+    }
+    const projection = projectSeat(rec.state!, rec.events, seat);
+    const cfg = rec.seats[seat - 1];
+    const system = buildMessages(projection, styleText(cfg.style, cfg.persona), {
+      speechSec: SPEECH_LIMIT_SEC,
+      skillSec: cfg.timeoutSec,
+    })[0];
+    syncThread(thread, rec.events, system);
+    return thread;
+  }
+
+  /** 一段发言落地后，广播给其他座位。工具列表不变。调用了工具就退回，不执行。 */
+  private async reactToSpeeches(live: Live): Promise<void> {
+    const rec = live.rec;
+    const gen = live.gen;
+    rec.heardSeq ??= 0;
+    const fresh = rec.events.filter((e) => (e.type === 'speech' || e.type === 'wolf.chat') && e.seq > rec.heardSeq!);
+    if (!fresh.length) return;
+    try {
+      for (const e of fresh) {
+        if (live.gen !== gen || rec.status !== 'running') return;
+        for (const s of rec.seats) if (!this.isHuman(rec, s.seat)) this.syncThread(live, s.seat);
+        const speaker = e.payload.seat;
+        const listeners = rec.seats
+          .map((s) => s.seat)
+          .filter((seat) => {
+            if (this.isHuman(rec, seat) || seat === speaker) return false;
+            return e.audience === 'public' || (Array.isArray(e.audience) && e.audience.includes(seat));
+          });
+        await Promise.all(listeners.map((seat) => this.reactOnce(live, seat, e.seq)));
+        if (live.gen !== gen || rec.status !== 'running') return;
+        rec.heardSeq = e.seq;
+      }
+    } finally {
+      this.scheduleSave(live);
+    }
+  }
+
+  private async reactOnce(live: Live, seat: Seat, speechSeq: number): Promise<void> {
+    const rec = live.rec;
+    const cfg = rec.seats[seat - 1];
+    const adapter = this.adapters[cfg.adapter] ?? getAdapter(cfg.adapter);
+    const projection = projectSeat(rec.state!, rec.events, seat);
+    const tools = seatTools(rec.state!, seat);
+    const decision = rec.state?.pending?.id ?? `hear:${speechSeq}`;
+    const key = `${decision}:hear:${seat}`;
+    const ctrl = new AbortController();
+    live.inflight.set(key, ctrl);
+    const gen = live.gen;
+    const model = cfg.adapter === 'mock' ? 'mock' : cfg.model;
+    const thread = this.syncThread(live, seat);
+    let messages: ChatMessage[] = [
+      ...thread.messages,
+      { role: 'user', name: 'judge', content: '现在没有轮到你发言。这不是工具调用轮次，请勿调用。' },
+    ];
+    try {
+      let config: AdapterConfig;
+      try {
+        config = { ...this.adapterConfig(cfg), timeoutSec: cfg.timeoutSec };
+      } catch {
+        this.writeAudit(live, { seat, model, decisionId: decision, projectionVersion: projection.version, ok: false, error: '密钥无法解密（主密钥可能已更换）' });
+        return;
+      }
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        if (live.gen !== gen || ctrl.signal.aborted || rec.status !== 'running') return;
+        let result;
+        try {
+          result = await adapter.decide({
+            seat,
+            projection,
+            messages,
+            tools,
+            config,
+            signal: ctrl.signal,
+            stream: false,
+            toolChoice: 'auto',
+          });
+        } catch (e) {
+          if (live.gen !== gen || ctrl.signal.aborted || rec.status !== 'running') return;
+          throw e;
+        }
+        if (live.gen !== gen || rec.status !== 'running') return;
+        if (result.call) {
+          const error = NOT_TOOL_TURN;
+          this.writeAudit(live, {
+            seat,
+            model,
+            decisionId: decision,
+            projectionVersion: projection.version,
+            ok: false,
+            messages,
+            response: result.raw ?? result.call,
+            toolCall: result.call,
+            error,
+            latencyMs: result.latencyMs,
+          });
+          if (result.fatal) return;
+          messages = [...messages, ...notToolTurnMessages(result)];
+          continue;
+        }
+        const text = (result.reply || (typeof result.assistant?.content === 'string' ? result.assistant.content : '')).trim();
+        if (result.ok && text) {
+          thread.messages.push(
+            { role: 'user', name: 'judge', content: '现在没有轮到你发言。这不是工具调用轮次，请勿调用。' },
+            { role: 'assistant', content: text },
+          );
+        }
+        if (!result.ok && !result.fatal && attempt < MAX_ATTEMPTS) {
+          messages = [...messages, ...feedbackMessages(result, result.error ?? '')];
+          continue;
+        }
+        this.writeAudit(live, {
+          seat,
+          model,
+          decisionId: decision,
+          projectionVersion: projection.version,
+          ok: result.ok,
+          messages,
+          ...(result.raw ? { response: result.raw } : {}),
+          ...(result.ok ? {} : { error: result.error }),
+          latencyMs: result.latencyMs,
+        });
+        return;
+      }
+    } finally {
+      live.inflight.delete(key);
+    }
+  }
+
   private async runAi(live: Live, seat: Seat, decision: string): Promise<void> {
     const rec = live.rec;
     const cfg = rec.seats[seat - 1];
     const adapter = this.adapters[cfg.adapter] ?? getAdapter(cfg.adapter);
     const projection = projectSeat(rec.state!, rec.events, seat);
-    const tools = projection.task?.tools ?? [];
-    if (!tools.length) return;
+    const legal = projection.task?.tools ?? [];
+    if (!legal.length) return;
+    const tools = seatTools(rec.state!, seat);
     const key = `${decision}:${seat}`;
     const ctrl = new AbortController();
     live.inflight.set(key, ctrl);
@@ -851,7 +1015,9 @@ export class RoomManager {
     let last: { thinking?: string; reply?: string } | undefined;
     try {
       const limit = actionLimitSec(rec.state?.pending?.step.type ?? '', cfg.timeoutSec);
-      let messages: ChatMessage[] = buildMessages(projection, styleText(cfg.style, cfg.persona), limit);
+      const thread = this.syncThread(live, seat);
+      const task = taskMessage(projection);
+      let messages: ChatMessage[] = [...thread.messages, task];
       let config: AdapterConfig;
       try {
         config = { ...this.adapterConfig(cfg), timeoutSec: limit };
@@ -891,6 +1057,9 @@ export class RoomManager {
         if (result.ok && result.call) {
           const res = this.apply(live, { seat, call: clampTexts(result.call, tools), decisionId: decision });
           if (res.error) error = res.error.reason;
+          else {
+            thread.messages.push(task, { role: 'assistant', content: ownLine(result.call.tool, result.call.args) });
+          }
         }
         this.writeAudit(live, {
           seat,

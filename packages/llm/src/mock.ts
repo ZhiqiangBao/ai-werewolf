@@ -258,8 +258,12 @@ export function mockDecision(p: Projection, tools: ToolSpec[]): ToolCall {
 
 export const mockAdapter: Adapter = {
   async decide(req: DecideRequest): Promise<DecideResult> {
+    if (req.toolChoice === 'auto') {
+      return { ok: true, assistant: { role: 'assistant', content: '' }, toolCallIds: [], latencyMs: 0 };
+    }
     if (!req.projection) return { ok: false, error: '模拟玩家需要座位投影', toolCallIds: [], latencyMs: 0, fatal: true };
-    const call = mockDecision(req.projection, req.tools);
+    const legal = req.projection.task && !req.projection.task.submitted ? req.projection.task.tools : req.tools;
+    const call = mockDecision(req.projection, legal);
     return {
       ok: true,
       call,

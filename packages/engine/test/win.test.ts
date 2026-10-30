@@ -23,16 +23,13 @@ describe('胜负判定', () => {
     expect(g.state.result?.winner).toBe('wolf');
   });
 
-  it('平民全部出局：屠边狼人胜利；首夜出局者先发表遗言再公布结果（RES-07）', () => {
+  it('平民全部出局：屠边狼人胜利，胜负已分后不再发表遗言', () => {
     const g = new TestGame({ deal: DEAL9, values: noSheriff });
     g.removeSeats(7, 8);
     g.night({ kill: 9 });
-    expect(g.state.result).toBeNull();
-    expect(g.pending?.step.kind).toBe('lastwords');
-    expect(g.pending?.actors).toEqual([9]);
-    expect(g.publicTexts()).toContain('胜负已分。有遗言的玩家发表遗言后公布结果。');
-    g.auto(9);
     expect(g.state.result?.winner).toBe('wolf');
+    expect(g.publicTexts()).toContain('胜负已分。');
+    expect(g.events.some((e) => e.type === 'speech' && e.payload.kind === 'lastwords')).toBe(false);
   });
 
   it('屠城规则下平民全灭游戏继续', () => {

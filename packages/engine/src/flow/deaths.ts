@@ -9,6 +9,7 @@ import { evaluateWin } from './win';
 /**
  * 一批死亡的统一处理：先执行各身份的出局职责（例如猎人开枪，可能追加新的死亡），
  * 再按顺序走 胜负检查 → 警徽 → 遗言。自爆批次的顺序是 警徽 → 遗言 → 胜负检查。
+ * 胜负已经成立时不再发表遗言，直接公布结果。
  */
 export const deathSteps: Record<string, StepHandler> = {
   'deaths.batch': {
@@ -46,12 +47,8 @@ export const deathSteps: Record<string, StepHandler> = {
       if (!result) return;
       const s = ctx.state;
       s.ending = true;
-      s.agenda = s.agenda
-        .filter((x) => x.type === 'lastwords' && x.batch === step.batch)
-        .map((x) => ({ ...x, allowExplode: false }));
-      s.agenda.push({ type: 'game.end', winner: result.winner, reason: result.reason });
-      const pendingWords = ctx.state.deaths.some((d) => d.batch === step.batch && d.lastWords) && s.agenda.length > 1;
-      ctx.pub('game.decided', pendingWords ? '胜负已分。有遗言的玩家发表遗言后公布结果。' : '胜负已分。', {});
+      s.agenda = [{ type: 'game.end', winner: result.winner, reason: result.reason }];
+      ctx.pub('game.decided', '胜负已分。', {});
     },
   },
 
@@ -98,6 +95,7 @@ export const deathSteps: Record<string, StepHandler> = {
 
   lastwords: {
     run(ctx, step) {
+      if (ctx.state.ending || evaluateWin(ctx)) return;
       const batch = step.batch as number;
       const seats = ctx.state.deaths
         .filter((d) => d.batch === batch && d.lastWords)

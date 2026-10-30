@@ -38,9 +38,12 @@ function ThoughtBody({ thought }: { thought: Thought }) {
   );
 }
 
-/** 思考用虚线浅底，正文用实线正文块。发言气泡仍在对局记录里，样式不混用。 */
+const SHOW_KEY = 'werewolf-show-thoughts';
+
+/** 思考用虚线浅底，正文用实线正文块。发言气泡仍在对局记录里，样式不混用。默认收起。 */
 export function ThoughtFeed({ thoughts, seats }: { thoughts?: Thought[]; seats: SeatInfo[] }) {
   const list = (thoughts ?? []).filter((t) => t.live || t.thinking || t.reply);
+  const [open, setOpen] = useState(() => localStorage.getItem(SHOW_KEY) === '1');
   if (!list.length) return null;
   const nameOf = (seat: number) => {
     const s = seats.find((x) => x.seat === seat);
@@ -48,15 +51,23 @@ export function ThoughtFeed({ thoughts, seats }: { thoughts?: Thought[]; seats: 
   };
   const done = list.filter((t) => !t.live);
   const live = list.filter((t) => t.live);
+  const toggle = (on: boolean) => {
+    setOpen(on);
+    localStorage.setItem(SHOW_KEY, on ? '1' : '0');
+  };
 
   return (
     <div className="panel thought-panel">
       <h3>
         模型输出
         <span className="spacer" />
-        <span className="muted tiny">只在页面上显示</span>
+        <label className="row small muted" style={{ gap: 6, fontWeight: 400 }}>
+          <input type="checkbox" checked={open} onChange={(e) => toggle(e.target.checked)} />
+          显示
+        </label>
       </h3>
-      {done.length > 0 && (
+      {!open && live.length > 0 && <div className="muted small">{live.map((t) => nameOf(t.seat)).join('、')}正在写</div>}
+      {open && done.length > 0 && (
         <div className="thought-history">
           {done.map((t) => (
             <details key={`${t.decisionId}:${t.seat}`}>
@@ -70,7 +81,7 @@ export function ThoughtFeed({ thoughts, seats }: { thoughts?: Thought[]; seats: 
           ))}
         </div>
       )}
-      {live.map((t) => (
+      {open && live.map((t) => (
         <article key={`${t.decisionId}:${t.seat}`} className="thought-live" style={seatStyle(t.seat)}>
           <div className="thought-who">{nameOf(t.seat)} · 正在写</div>
           <ThoughtBody thought={t} />

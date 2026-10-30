@@ -9,6 +9,7 @@ export { Ctx } from './context';
 export { createGame, submit, replay, waitingSeats, abandonGame, RulesError } from './game';
 export type { CreateGameOptions, SubmitInput, EngineResult, ActionRecord } from './game';
 export { projectSeat, projectSpectator, projectGod, buildAppendix } from './projection';
+export { seatTools } from './catalog';
 export { buildRuleCard } from './rulecard';
 export { buildRules, validateRules, defaultValues, deriveNightOrder } from './rules';
 export {

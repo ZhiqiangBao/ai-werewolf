@@ -7,7 +7,8 @@ export interface ToolCallMessage {
 }
 
 export type ChatMessage =
-  | { role: 'system' | 'user'; content: string }
+  | { role: 'system'; content: string }
+  | { role: 'user'; content: string; name?: string }
   | { role: 'assistant'; content: string | null; tool_calls?: ToolCallMessage[] }
   | { role: 'tool'; tool_call_id: string; content: string };
 
@@ -28,6 +29,11 @@ export interface DecideRequest {
   messages: ChatMessage[];
   tools: ToolSpec[];
   config: AdapterConfig;
+  /**
+   * 缺省 required，和行动轮次一样。
+   * auto 只用于「发言已经广播、但还没轮到你」：工具列表仍是原来的那一份，模型可以只回正文。
+   */
+  toolChoice?: 'required' | 'auto';
   signal?: AbortSignal;
   /** 优先走流式接口，边生成边把思考和正文交出来。 */
   stream?: boolean;

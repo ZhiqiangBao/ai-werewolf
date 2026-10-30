@@ -225,17 +225,16 @@ describe('模型调度', () => {
     const recording: Adapter = {
       async decide(req) {
         const names = req.tools.map((t) => t.name);
+        expect(names).toContain('speak');
+        expect(names).toContain('vote');
+        if (req.toolChoice === 'auto') return mockAdapter.decide(req);
         const text = req.messages.map((m) => ('content' in m && m.content ? m.content : '')).join('\n');
-        if (names.includes('speak') || names.includes('wolf_discuss')) {
-          got.speech = req.config.timeoutSec;
-          expect(text).toContain('这一步限时 180 秒');
-        } else if (names.includes('vote') || names.includes('sheriff_vote')) {
-          got.vote = req.config.timeoutSec;
-          expect(text).toContain('这一步限时 90 秒');
-        } else if (!got.other) {
-          got.other = req.config.timeoutSec;
-          expect(text).toContain('这一步限时 60 秒');
-        }
+        const taskNames = req.projection?.task?.tools.map((t) => t.name) ?? [];
+        if (taskNames.includes('speak') || taskNames.includes('wolf_discuss')) got.speech = req.config.timeoutSec;
+        else if (taskNames.includes('vote') || taskNames.includes('sheriff_vote')) got.vote = req.config.timeoutSec;
+        else if (!got.other) got.other = req.config.timeoutSec;
+        expect(text).toContain('发言限时 180 秒');
+        expect(text).toContain('技能限时 60 秒');
         return mockAdapter.decide(req);
       },
     };
@@ -246,7 +245,7 @@ describe('模型调度', () => {
     expect(got).toEqual({ speech: 180, vote: 90, other: 60 });
   });
 
-  it('两次非法输出后托管，审计记录每次失败并把错误发回模型', async () => {
+  it('五次非法输出后托管，审计记录每次失败并把错误发回模型', async () => {
     const seen: number[] = [];
     const bad: Adapter = {
       async decide(req) {
@@ -261,7 +260,7 @@ describe('模型调度', () => {
     const audit = m.audit(roomId, hostToken);
     expect(audit.length).toBeGreaterThan(0);
     expect(audit.every((a) => !a.ok)).toBe(true);
-    expect(seen.slice(0, 2)).toEqual([2, 4]);
+    expect(seen.slice(0, 5)).toEqual([0, 1, 2, 3, 4].map((i) => seen[0] + i * 2));
     expect(god(m, roomId, hostToken).status).toBe('ended');
   });
 
@@ -269,7 +268,7 @@ describe('模型调度', () => {
     let first = true;
     const picky: Adapter = {
       async decide(req) {
-        if (first && req.tools.some((t) => t.name === 'speak')) {
+        if (first && req.projection?.task?.tools.some((t) => t.name === 'speak')) {
           first = false;
           return { ok: true, call: { tool: 'vote', args: { target: 1 } }, assistant: { role: 'assistant', content: null }, toolCallIds: ['c1'], latencyMs: 1 };
         }
@@ -287,7 +286,7 @@ describe('模型调度', () => {
     expect(retry.ok).toBe(true);
     const last = (retry.messages as { role: string; content: string }[]).at(-1)!;
     expect(last.role).toBe('tool');
-    expect(last.content).toContain('没有被法官接受');
+    expect(last.content).toContain('工具调用错误，请调用正确工具。');
   });
 
   it('暂停后不再请求模型，单步只推进一次模型决策', async () => {
@@ -350,6 +349,52 @@ describe('模型调度', () => {
     const spectator = m.view(roomId, m.getSetup(roomId, hostToken).tokens.spectator).projection as Projection;
     expect(spectator.thoughts).toBeUndefined();
     expect(JSON.stringify(spectator)).not.toContain('思维痕迹');
+  });
+
+  it('旁听回应只留在自己的上下文里，这时调用工具会退回且不执行', async () => {
+    const mine = '只有3号自己看得到的旁听QQQ';
+    let poked = false;
+    const adapter: Adapter = {
+      async decide(req) {
+        if (req.toolChoice === 'auto') {
+          const names = req.tools.map((t) => t.name);
+          expect(names).toContain('speak');
+          expect(names).toContain('vote');
+          if (req.seat === 4 && !poked) {
+            poked = true;
+            return {
+              ok: true,
+              call: { tool: 'speak', args: { content: '插话不该公开XXXX' } },
+              assistant: {
+                role: 'assistant',
+                content: null,
+                tool_calls: [{ id: 'c-hear', type: 'function', function: { name: 'speak', arguments: '{}' } }],
+              },
+              toolCallIds: ['c-hear'],
+              latencyMs: 0,
+            };
+          }
+          if (req.seat === 3) return { ok: true, assistant: { role: 'assistant', content: mine }, toolCallIds: [], latencyMs: 0 };
+          return { ok: true, assistant: { role: 'assistant', content: '' }, toolCallIds: [], latencyMs: 0 };
+        }
+        return mockAdapter.decide(req);
+      },
+    };
+    const { m, roomId, hostToken } = setup({ adapters: { mock: adapter } });
+    m.updateSetup(roomId, hostToken, { presetId: 'classic9', aiPacingMs: 0 });
+    m.start(roomId, hostToken);
+    await m.whenIdle(roomId);
+    const audit = m.audit(roomId, hostToken);
+    const blob = (seat: number) => audit.filter((a) => a.seat === seat).map((a) => JSON.stringify(a.messages)).join('\n');
+    expect(blob(3)).toContain(mine);
+    expect(blob(5)).not.toContain(mine);
+    expect(blob(3)).toMatch(/"name":"[0-9]+"/);
+    expect(blob(3)).toMatch(/第\d+[天夜]\d+号/);
+    expect(blob(4)).toContain('不是工具调用轮次，请勿调用。');
+    const events = JSON.stringify(god(m, roomId, hostToken).events);
+    expect(events).not.toContain(mine);
+    expect(events).not.toContain('插话不该公开XXXX');
+    expect(poked).toBe(true);
   });
 
   it('房主终结会取消正在进行的模型请求，并记为流局且不公开身份', async () => {

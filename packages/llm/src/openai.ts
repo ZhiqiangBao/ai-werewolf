@@ -255,16 +255,29 @@ function checkCall(name: unknown, args: unknown, tools: ToolSpec[]): string | nu
   return null;
 }
 
-function parseToolReply(started: number, msg: Record<string, unknown>, tools: ToolSpec[], raw: unknown): DecideResult {
+function parseToolReply(
+  started: number,
+  msg: Record<string, unknown>,
+  tools: ToolSpec[],
+  raw: unknown,
+  allowText: boolean,
+): DecideResult {
   const list = Array.isArray(msg.tool_calls) ? (msg.tool_calls as Record<string, any>[]) : [];
   const calls: ToolCallMessage[] = list.map((c, i) => ({
     id: typeof c.id === 'string' && c.id ? c.id : `call_${i}`,
     type: 'function',
     function: { name: String(c.function?.name ?? ''), arguments: String(c.function?.arguments ?? '{}') },
   }));
-  const assistant: ChatMessage = { role: 'assistant', content: null, ...(calls.length ? { tool_calls: calls } : {}) };
+  const assistant: ChatMessage = {
+    role: 'assistant',
+    content: allowText ? textOf(msg.content) || null : null,
+    ...(calls.length ? { tool_calls: calls } : {}),
+  };
   const base = { assistant, toolCallIds: calls.map((c) => c.id), raw };
-  if (!calls.length) return fail(started, '没有调用工具，必须调用且只调用一个工具', base);
+  if (!calls.length) {
+    if (allowText) return { ok: true, ...base, latencyMs: Date.now() - started };
+    return fail(started, '没有调用工具，必须调用且只调用一个工具', base);
+  }
   if (calls.length > 1) return fail(started, `一次调用了 ${calls.length} 个工具，每次只能调用一个`, base);
   let args: unknown;
   try {
@@ -306,15 +319,16 @@ export const openaiAdapter: Adapter = {
     const memo = `${url}|${config.model}`;
     const json = config.toolMode === 'json';
 
+    const listen = req.toolChoice === 'auto';
     const body = (): Record<string, unknown> => {
       const b: Record<string, unknown> = { model: config.model, temperature: config.temperature };
-      if (json) {
+      if (json && !listen) {
         b.messages = [...req.messages, jsonInstruction(tools)];
         if (!noJsonFormat.has(memo)) b.response_format = { type: 'json_object' };
       } else {
         b.messages = req.messages;
         b.tools = openaiTools(tools);
-        b.tool_choice = noRequired.has(memo) ? 'auto' : 'required';
+        b.tool_choice = listen ? 'auto' : noRequired.has(memo) ? 'auto' : 'required';
       }
       return b;
     };
@@ -354,7 +368,8 @@ export const openaiAdapter: Adapter = {
 
     const msg = data?.choices?.[0]?.message;
     if (!msg || typeof msg !== 'object') return fail(started, '返回里没有 choices[0].message', { raw: data });
-    const parsed = json ? parseJsonReply(started, msg, tools, data) : parseToolReply(started, msg, tools, data);
+    const parsed =
+      json && !listen ? parseJsonReply(started, msg, tools, data) : parseToolReply(started, msg, tools, data, listen);
     return withNotes(parsed, msg);
   },
 };

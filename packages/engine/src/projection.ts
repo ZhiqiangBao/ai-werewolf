@@ -55,10 +55,6 @@ export function buildAppendix(state: GameState, seat: Seat): string {
   ];
   if (state.sheriff === seat) lines.push('你是警长：放逐投票记 1.5 票，白天由你选择发言方向并最后发言。');
   if (!p.alive) lines.push('你已出局。除了法官单独询问的出局职责（遗言、开枪、警徽），你只接收公开信息。');
-  const d = state.pending;
-  if (d && d.actors.includes(seat) && !d.submissions[seat]) {
-    lines.push(`当前可用工具：${d.tools[seat].map((t) => t.name).join('、')}。`);
-  }
   return lines.join('\n');
 }
 

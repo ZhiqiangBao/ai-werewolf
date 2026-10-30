@@ -105,7 +105,7 @@ export function buildRuleCard(rules: RuleSet): string {
       `被猎人带走的人：猎人第 1 夜出局时${has('shotAfterFirstNight')}遗言，猎人第 2 夜起在夜里出局时${has('shotAfterLaterNight')}遗言，猎人被放逐时${has('shotAfterVote')}遗言`,
     );
   }
-  L.push(`· 遗言：${words.join('；')}。多人遗言按座位号从小到大。`);
+  L.push(`· 遗言：${words.join('；')}。多人遗言按座位号从小到大。胜负已分后不再发表遗言。`);
 
   L.push(dayRoles.length ? '五、其他' : '四、其他');
   L.push('· 发言里声称的身份，法官不证实也不否认。');

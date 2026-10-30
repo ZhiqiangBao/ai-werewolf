@@ -139,7 +139,7 @@ export interface GameState {
   seq: number;
   counters: { decision: number; batch: number };
   history: History;
-  /** 胜负已分，正在走完遗言。 */
+  /** 胜负已分，正在公布结果。 */
   ending: boolean;
   result: GameResult | null;
 }
