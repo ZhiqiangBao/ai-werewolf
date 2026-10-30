@@ -153,18 +153,23 @@ export function eventToMessage(
   return { role: 'user', name: 'judge', content: `法官：${e.text}\n不要调用工具。` };
 }
 
-/** 把该座位还没见过的事件接在对话后面。系统消息只在第一句写入，之后不改。 */
-export function syncThread(thread: SeatThread, events: GameEvent[], system: ChatMessage, hint: TurnHint = { nextSeat: null, nextStep: null }): void {
+/** 把该座位还没见过、且不超过 maxSeq 的事件接在对话后面。系统消息只在第一句写入，之后不改。 */
+export function syncThread(
+  thread: SeatThread,
+  events: GameEvent[],
+  system: ChatMessage,
+  hint: TurnHint = { nextSeat: null, nextStep: null },
+  maxSeq = Number.POSITIVE_INFINITY,
+): void {
   if (!thread.messages.length) thread.messages.push(system);
+  const pending = events.filter((e) => e.seq > thread.seen && e.seq <= maxSeq);
   let lastTalk = -1;
   let lastNew = -1;
-  for (const e of events) {
-    if (e.seq <= thread.seen) continue;
+  for (const e of pending) {
     lastNew = e.seq;
     if ((e.type === 'speech' || e.type === 'wolf.chat') && visible(e, thread.seat)) lastTalk = e.seq;
   }
-  for (const e of events) {
-    if (e.seq <= thread.seen) continue;
+  for (const e of pending) {
     if (visible(e, thread.seat)) {
       const talk = e.seq === lastTalk;
       const invite = INVITE[e.type] ? e.seq === lastNew && lastTalk < 0 : false;
@@ -175,6 +180,19 @@ export function syncThread(thread: SeatThread, events: GameEvent[], system: Chat
   }
 }
 
+/** 这条法官提示的结尾。行动者能用工具，其他人停。 */
+export function cueTail(cue: ActionCue, seat: number): string {
+  const actor = cue.actors.includes(seat);
+  const wolf = cue.step === 'wolf.discuss';
+  if (cue.step === 'speech' || wolf) return turnSuffix(wolf ? 'wolf' : (cue.kind ?? 'discussion'), actor, wolf);
+  return actor ? (TOOL_TAIL[cue.tool] ?? '你现在可以使用工具。') : '不要调用工具。';
+}
+
+/** 最后一条已经允许这个座位使用工具。这次调用就是他的行动。 */
+export function readyToAct(messages: ChatMessage[], cue: ActionCue | null, seat: number): boolean {
+  return !!cue && cue.actors.includes(seat) && lastUser(messages).endsWith(cueTail(cue, seat));
+}
+
 /**
  * 上一条的结尾已经说明能不能动，就不再加消息。
  * 否则补一句法官提示，工具说明写在这句的结尾。
@@ -183,11 +201,7 @@ export function ensureCue(thread: SeatThread, cue: ActionCue | null): void {
   if (!cue || thread.cueFor === cue.id) return;
   const actor = cue.actors.includes(thread.seat);
   const spoken = cue.step === 'speech' || cue.step === 'wolf.discuss';
-  const tail = spoken
-    ? turnSuffix(cue.step === 'wolf.discuss' ? 'wolf' : (cue.kind ?? 'discussion'), actor, cue.step === 'wolf.discuss')
-    : actor
-      ? (TOOL_TAIL[cue.tool] ?? '你现在可以使用工具。')
-      : '不要调用工具。';
+  const tail = cueTail(cue, thread.seat);
   const prev = lastUser(thread.messages);
   const body = (actor ? cue.prompts[thread.seat] : Object.values(cue.prompts).find(Boolean)) || '';
   if (actor && prev.endsWith(tail)) {

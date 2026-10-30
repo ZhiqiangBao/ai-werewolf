@@ -54,6 +54,7 @@ import {
 import {
   ensureCue,
   ownLine,
+  readyToAct,
   syncThread,
   type ActionCue,
   type TurnHint,
@@ -113,12 +114,18 @@ export interface ManagerOptions {
 const MAX_ATTEMPTS = 5;
 const SPEECH_LIMIT_SEC = 180;
 const VOTE_LIMIT_SEC = 90;
+const MIN_EVENT_SEC = 90;
 
 /** 发言（含遗言、狼队密谈）3 分钟，放逐和警长投票 90 秒，其余用座位或真人时限。 */
 export function actionLimitSec(stepType: string, fallback: number): number {
   if (stepType === 'speech' || stepType === 'wolf.discuss') return SPEECH_LIMIT_SEC;
   if (stepType === 'exile.vote' || stepType === 'sheriff.vote') return VOTE_LIMIT_SEC;
   return fallback;
+}
+
+/** 模型请求时限。发言 180，投票 90，其余至少 90 秒。 */
+function aiTimeoutSec(stepType: string, configured: number): number {
+  return Math.max(MIN_EVENT_SEC, actionLimitSec(stepType, configured));
 }
 const AUTO: ToolCall = { tool: '', args: {} };
 
@@ -149,7 +156,7 @@ function defaultSeat(seat: Seat): SeatRecord {
     style: STYLES[(seat - 1) % STYLES.length].id,
     persona: '',
     toolMode: 'tools',
-    timeoutSec: 60,
+    timeoutSec: 90,
   };
 }
 
@@ -350,7 +357,7 @@ export class RoomManager {
     if (s.baseUrl !== undefined) seat.baseUrl = text(s.baseUrl, 300);
     if (s.model !== undefined) seat.model = text(s.model, 120);
     if (s.temperature !== undefined) seat.temperature = clamp(s.temperature, 0, 2, 0.7);
-    if (s.timeoutSec !== undefined) seat.timeoutSec = Math.round(clamp(s.timeoutSec, 5, 300, 60));
+    if (s.timeoutSec !== undefined) seat.timeoutSec = Math.round(clamp(s.timeoutSec, 90, 300, 90));
     if (s.style !== undefined) seat.style = STYLES.some((x) => x.id === s.style) ? s.style : STYLES[0].id;
     if (s.persona !== undefined) seat.persona = text(s.persona, 300);
     if (s.apiKey === null || s.apiKey === '') {
@@ -839,29 +846,32 @@ export class RoomManager {
     const rec = live.rec;
     const gen = live.gen;
     for (;;) {
-      const state = rec.state;
-      if (live.gen !== gen || rec.status !== 'running' || !state?.pending) return;
+      if (live.gen !== gen) return;
+      if (rec.status !== 'running' && rec.status !== 'ended') return;
       const stepping = rec.paused && live.stepBudget > 0;
       if (rec.paused && !stepping) return;
+      const wave = this.prepareWave(live);
+      if (!wave) {
+        if (rec.status !== 'running' || !rec.state?.pending) return;
+        if (!waitingSeats(rec.state).some((s) => !this.isHuman(rec, s))) return;
+        throw new Error(`决策 ${rec.state.pending.id} 没有推进`);
+      }
+      if (!wave.length) continue;
       if (stepping) live.stepBudget -= 1;
-      this.recordContexts(live);
-      if (live.gen !== gen || rec.status !== 'running' || !rec.state?.pending) return;
-      if (!stepping && rec.paused) return;
-      if (!waitingSeats(rec.state).some((s) => !this.isHuman(rec, s))) return;
-      const decision = rec.state.pending.id;
+      const decision = rec.state?.pending?.id ?? 'end';
       if (!stepping && rec.aiPacingMs > 0) await this.sleep(rec.aiPacingMs);
-      if (live.gen !== gen || rec.status !== 'running') return;
-      if (rec.state?.pending?.id !== decision || (!stepping && rec.paused)) continue;
-      const seats = waitingSeats(rec.state).filter((s) => !this.isHuman(rec, s) && !live.inflight.has(`${decision}:${s}`));
-      if (!seats.length) return;
-      await Promise.all(seats.map((seat) => this.runAi(live, seat, decision)));
-      if (live.gen !== gen || rec.status !== 'running') return;
-      const stuck = rec.state?.pending?.id === decision && seats.every((s) => waitingSeats(rec.state!).includes(s));
+      if (live.gen !== gen || (rec.status !== 'running' && rec.status !== 'ended')) return;
+      const actions = wave.filter((w) => w.action).map((w) => w.seat);
+      await Promise.all(wave.map((w) => (w.action ? this.runAi(live, w.seat, decision) : this.receive(live, w.seat, decision))));
+      this.scheduleSave(live);
+      if (rec.status !== 'running') continue;
+      const stuck = actions.length > 0 && rec.state?.pending?.id === decision && actions.every((s) => waitingSeats(rec.state!).includes(s));
       if (stuck) throw new Error(`决策 ${decision} 没有推进`);
     }
   }
 
-  private syncThread(live: Live, seat: Seat): SeatThread {
+  /** 打开座位上下文，不写入事件。 */
+  private threadFor(live: Live, seat: Seat): SeatThread {
     const rec = live.rec;
     rec.threads ??= [];
     let thread = rec.threads.find((t) => t.seat === seat);
@@ -869,14 +879,62 @@ export class RoomManager {
       thread = { seat, seen: 0, messages: [] };
       rec.threads.push(thread);
     }
+    return thread;
+  }
+
+  private syncThread(live: Live, seat: Seat, maxSeq = Number.POSITIVE_INFINITY): SeatThread {
+    const thread = this.threadFor(live, seat);
+    const rec = live.rec;
     const projection = projectSeat(rec.state!, rec.events, seat);
     const cfg = rec.seats[seat - 1];
     const system = buildMessages(projection, styleText(cfg.style, cfg.persona), {
       speechSec: SPEECH_LIMIT_SEC,
-      skillSec: cfg.timeoutSec,
+      skillSec: Math.max(MIN_EVENT_SEC, cfg.timeoutSec),
     })[0];
-    syncThread(thread, rec.events, system, this.turnHint(rec));
+    syncThread(thread, rec.events, system, this.turnHint(rec), maxSeq);
     return thread;
+  }
+
+  /**
+   * 一次只送出一条可见消息。看得到的每个模型座位都调用一次。
+   * 结尾允许用工具的，这次就是行动。其余只收听；收听时如果调用了工具，交给引擎判定。
+   */
+  /** 有新消息返回调用列表（可能为空，表示这条没有座位看得见）。没有新消息返回 null。 */
+  private prepareWave(live: Live): { seat: Seat; action: boolean }[] | null {
+    const rec = live.rec;
+    const ai = rec.seats.filter((s) => !this.isHuman(rec, s.seat));
+    let next = Number.POSITIVE_INFINITY;
+    for (const s of ai) {
+      const unseen = rec.events.find((e) => e.seq > this.threadFor(live, s.seat).seen);
+      if (unseen) next = Math.min(next, unseen.seq);
+    }
+    if (next !== Number.POSITIVE_INFINITY) {
+      const cue = rec.status === 'running' ? this.actionCue(rec) : null;
+      const wave: { seat: Seat; action: boolean }[] = [];
+      for (const s of ai) {
+        const thread = this.threadFor(live, s.seat);
+        if (thread.seen >= next) continue;
+        const before = thread.messages.length;
+        this.syncThread(live, s.seat, next);
+        if (thread.messages.slice(before).some((m) => m.role !== 'system')) {
+          wave.push({ seat: s.seat, action: readyToAct(thread.messages, cue, s.seat) });
+        }
+      }
+      rec.heardSeq = next;
+      this.scheduleSave(live);
+      return wave;
+    }
+    if (rec.status !== 'running' || !rec.state?.pending) return null;
+    const cue = this.actionCue(rec);
+    const wave: { seat: Seat; action: boolean }[] = [];
+    for (const s of ai) {
+      const thread = this.syncThread(live, s.seat);
+      const before = thread.messages.length;
+      ensureCue(thread, cue);
+      if (thread.messages.length > before) wave.push({ seat: s.seat, action: readyToAct(thread.messages, cue, s.seat) });
+    }
+    if (wave.length) this.scheduleSave(live);
+    return wave.length ? wave : null;
   }
 
   private turnHint(rec: RoomRecord): TurnHint {
@@ -904,17 +962,114 @@ export class RoomManager {
     };
   }
 
-  /** 把新事件追加进每个模型座位自己的上下文。不改已经写过的消息，也不为此另发请求。 */
-  private recordContexts(live: Live): void {
-    const rec = live.rec;
-    const cue = this.actionCue(rec);
-    for (const s of rec.seats) {
-      if (this.isHuman(rec, s.seat)) continue;
-      ensureCue(this.syncThread(live, s.seat), cue);
+  /** 这个座位末尾连续被拒绝的次数。中间出现别的事件就重新计。 */
+  private rejectionStreak(rec: RoomRecord, seat: Seat): number {
+    let n = 0;
+    for (let i = rec.events.length - 1; i >= 0; i--) {
+      const e = rec.events[i];
+      if (e.type !== 'action.rejected') break;
+      if (Array.isArray(e.audience) && e.audience.length === 1 && e.audience[0] === seat) n += 1;
     }
-    const last = rec.events.at(-1);
-    if (last) rec.heardSeq = last.seq;
-    this.scheduleSave(live);
+    return n;
+  }
+
+  /** 收听刚写入的消息。调用了工具就提交给引擎：接受就执行，拒绝就留下仅该座位可见的记录。 */
+  private async receive(live: Live, seat: Seat, decision: string): Promise<void> {
+    const rec = live.rec;
+    const cfg = rec.seats[seat - 1];
+    const adapter = this.adapters[cfg.adapter] ?? getAdapter(cfg.adapter);
+    const projection = projectSeat(rec.state!, rec.events, seat);
+    const tools = seatTools(rec.state!, seat);
+    const thread = this.threadFor(live, seat);
+    const key = `${decision}:hear:${seat}:${thread.seen}`;
+    const ctrl = new AbortController();
+    live.inflight.set(key, ctrl);
+    const gen = live.gen;
+    const model = cfg.adapter === 'mock' ? 'mock' : cfg.model;
+    const base = thread.messages.length;
+    let messages: ChatMessage[] = [...thread.messages];
+    try {
+      let config: AdapterConfig;
+      try {
+        config = { ...this.adapterConfig(cfg), timeoutSec: aiTimeoutSec('', cfg.timeoutSec) };
+      } catch {
+        this.writeAudit(live, { seat, model, decisionId: decision, projectionVersion: projection.version, ok: false, error: '密钥无法解密（主密钥可能已更换）' });
+        return;
+      }
+      if (live.gen !== gen || ctrl.signal.aborted) return;
+      let result;
+      try {
+        result = await adapter.decide({
+          seat,
+          projection,
+          messages,
+          tools,
+          config,
+          signal: ctrl.signal,
+          stream: false,
+          toolChoice: 'auto',
+        });
+      } catch (e) {
+        if (live.gen !== gen || ctrl.signal.aborted) return;
+        throw e;
+      }
+      if (live.gen !== gen) return;
+      if (result.call) {
+          const call = clampTexts(result.call, tools);
+          if (this.rejectionStreak(rec, seat) >= MAX_ATTEMPTS) {
+            this.writeAudit(live, {
+              seat,
+              model,
+              decisionId: decision,
+              projectionVersion: projection.version,
+              ok: false,
+              messages,
+              response: result.raw ?? call,
+              toolCall: call,
+              error: '连续拒绝已达上限',
+              latencyMs: result.latencyMs,
+            });
+            return;
+          }
+          const res = this.apply(live, { seat, call, ...(decision === 'end' ? {} : { decisionId: decision }) });
+          if (!res.error) {
+            const reply: ChatMessage = result.assistant ?? { role: 'assistant', content: ownLine(call.tool, call.args) };
+            thread.messages.push(...messages.slice(base), reply);
+            if (reply.role === 'assistant' && reply.tool_calls?.length) {
+              const note = ownLine(call.tool, call.args);
+              for (const item of reply.tool_calls) thread.messages.push({ role: 'tool', tool_call_id: item.id, content: note });
+            }
+          }
+          this.writeAudit(live, {
+            seat,
+            model,
+            decisionId: decision,
+            projectionVersion: projection.version,
+            ok: !res.error,
+            messages,
+            response: result.raw ?? call,
+            toolCall: call,
+            ...(res.error ? { error: res.error.reason } : {}),
+            latencyMs: result.latencyMs,
+          });
+          return;
+        }
+        const text = (result.reply || (typeof result.assistant?.content === 'string' ? result.assistant.content : '')).trim();
+        if (text) thread.messages.push(...messages.slice(base), { role: 'assistant', content: text });
+        this.writeAudit(live, {
+          seat,
+          model,
+          decisionId: decision,
+          projectionVersion: projection.version,
+          ok: !result.fatal,
+          messages,
+          ...(result.raw ? { response: result.raw } : {}),
+          ...(result.fatal ? { error: result.error } : {}),
+          latencyMs: result.latencyMs,
+        });
+    } finally {
+      live.inflight.delete(key);
+    }
   }
 
   private async runAi(live: Live, seat: Seat, decision: string): Promise<void> {
@@ -934,9 +1089,8 @@ export class RoomManager {
       live.gen === gen && rec.status === 'running' && rec.state?.pending?.id === decision && waitingSeats(rec.state).includes(seat);
     let last: { thinking?: string; reply?: string } | undefined;
     try {
-      const limit = actionLimitSec(rec.state?.pending?.step.type ?? '', cfg.timeoutSec);
-      const thread = this.syncThread(live, seat);
-      ensureCue(thread, this.actionCue(rec));
+      const limit = aiTimeoutSec(rec.state?.pending?.step.type ?? '', cfg.timeoutSec);
+      const thread = this.threadFor(live, seat);
       const base = thread.messages.length;
       let messages: ChatMessage[] = [...thread.messages];
       let config: AdapterConfig;

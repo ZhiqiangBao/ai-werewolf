@@ -39,8 +39,10 @@ export function buildMessages(
 ): ChatMessage[] {
   if (!p.me) throw new Error('只有座位投影可以生成提示词');
   const speechSec = Math.max(1, Math.round(limits.speechSec ?? 180));
-  const skillSec = Math.max(1, Math.round(limits.skillSec ?? 60));
+  const skillSec = Math.max(1, Math.round(limits.skillSec ?? 90));
   const system = [
+    `遵守时限。发言限时 ${speechSec} 秒，超时后公开发言记为「我这轮过。」技能限时 ${skillSec} 秒，超时就无法发动技能。不要长时间思考，马上调用工具，要说的话写进工具参数。`,
+    '',
     '你正在参加一局狼人杀，扮演其中一名玩家。法官主持流程、裁定所有行动。信息只来自下面的规则卡、你的身份说明，以及后面按座位写明的发言、法官通知和当前任务。',
     '',
     p.ruleCard,

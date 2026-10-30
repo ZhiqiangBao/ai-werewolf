@@ -113,9 +113,6 @@ export function createGame(o: CreateGameOptions): EngineResult {
     presetId: rules.presetId,
     playerCount: rules.playerCount,
   });
-  for (const p of state.players) {
-    ctx.priv([p.seat], 'role.assigned', `你的身份：${getRole(p.role).name}。`, { role: p.role });
-  }
   for (const mod of ctx.modulesInGame()) mod.setup?.(ctx, ctx.seatsOf(mod.id, false));
   ctx.pushFront({ type: 'night.start' });
   runAgenda(ctx);

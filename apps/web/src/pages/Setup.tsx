@@ -622,7 +622,7 @@ function SeatRow({
               </label>
               <label className="field">
                 单次超时（秒）
-                <input type="number" min={5} max={300} value={s.timeoutSec} onChange={(e) => patchSeat(s.seat, { timeoutSec: Number(e.target.value) })} />
+                <input type="number" min={90} max={300} value={s.timeoutSec} onChange={(e) => patchSeat(s.seat, { timeoutSec: Number(e.target.value) })} />
               </label>
             </>
           )}

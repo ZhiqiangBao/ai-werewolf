@@ -234,7 +234,7 @@ describe('模型调度', () => {
         else if (taskNames.includes('vote') || taskNames.includes('sheriff_vote')) got.vote = req.config.timeoutSec;
         else if (!got.other) got.other = req.config.timeoutSec;
         expect(text).toContain('发言限时 180 秒');
-        expect(text).toContain('技能限时 60 秒');
+        expect(text).toContain('技能限时 90 秒');
         return mockAdapter.decide(req);
       },
     };
@@ -242,13 +242,14 @@ describe('模型调度', () => {
     m.updateSetup(roomId, hostToken, { presetId: 'classic9', aiPacingMs: 0 });
     m.start(roomId, hostToken);
     await m.whenIdle(roomId);
-    expect(got).toEqual({ speech: 180, vote: 90, other: 60 });
+    expect(got).toEqual({ speech: 180, vote: 90, other: 90 });
   });
 
   it('五次非法输出后托管，审计记录每次失败并把错误发回模型', async () => {
     const seen: number[] = [];
     const bad: Adapter = {
       async decide(req) {
+        if (req.toolChoice === 'auto') return { ok: true, assistant: { role: 'assistant', content: '' }, toolCallIds: [], latencyMs: 1 };
         seen.push(req.messages.length);
         return { ok: false, error: '没有调用工具', assistant: { role: 'assistant', content: '我想刀 3 号' }, toolCallIds: [], latencyMs: 1 };
       },
@@ -259,7 +260,7 @@ describe('模型调度', () => {
     await m.whenIdle(roomId);
     const audit = m.audit(roomId, hostToken);
     expect(audit.length).toBeGreaterThan(0);
-    expect(audit.every((a) => !a.ok)).toBe(true);
+    expect(seen.length).toBeGreaterThanOrEqual(5);
     expect(seen.slice(0, 5)).toEqual([0, 1, 2, 3, 4].map((i) => seen[0] + i * 2));
     expect(god(m, roomId, hostToken).status).toBe('ended');
   });
@@ -268,7 +269,7 @@ describe('模型调度', () => {
     let first = true;
     const picky: Adapter = {
       async decide(req) {
-        if (first && req.projection?.task?.tools.some((t) => t.name === 'speak')) {
+        if (first && req.toolChoice !== 'auto' && req.projection?.task?.tools.some((t) => t.name === 'speak')) {
           first = false;
           return { ok: true, call: { tool: 'vote', args: { target: 1 } }, assistant: { role: 'assistant', content: null }, toolCallIds: ['c1'], latencyMs: 1 };
         }
@@ -282,7 +283,7 @@ describe('模型调度', () => {
     const audit = m.audit(roomId, hostToken);
     const failed = audit.find((a) => !a.ok)!;
     expect(failed.error).toContain('当前不能使用「vote」');
-    const retry = audit[audit.indexOf(failed) + 1];
+    const retry = audit.filter((a) => a.seat === failed.seat)[audit.filter((a) => a.seat === failed.seat).indexOf(failed) + 1];
     expect(retry.ok).toBe(true);
     const last = (retry.messages as { role: string; content: string }[]).at(-1)!;
     expect(last.role).toBe('tool');
@@ -395,6 +396,13 @@ describe('模型调度', () => {
     const seerText = blob(seer);
     expect(seerText.indexOf('天黑请闭眼')).toBeGreaterThan(-1);
     expect(seerText.indexOf('你现在可以使用查验工具。')).toBeGreaterThan(seerText.indexOf('天黑请闭眼'));
+    const lastOf = (row: (typeof audit)[number]) => {
+      const messages = (row.messages ?? []) as { content?: string }[];
+      return messages.filter((m) => m.content).at(-1)?.content ?? '';
+    };
+    for (const seat of new Set(audit.map((row) => row.seat))) {
+      expect(audit.some((row) => row.seat === seat && lastOf(row).includes('天黑请闭眼') && lastOf(row).includes('不要调用工具'))).toBe(true);
+    }
   });
 
   it('房主终结会取消正在进行的模型请求，并记为流局且不公开身份', async () => {
@@ -439,6 +447,89 @@ describe('模型调度', () => {
     expect(seat.seats.every((s) => !s.revealedRole)).toBe(true);
     expect(seat.events.some((e) => e.type === 'review')).toBe(false);
     expect(() => m.control(roomId, hostToken, 'resume')).toThrow(/不在进行中/);
+  });
+
+  it('收听时调用工具交给引擎，拒绝只记在该座位', async () => {
+    let trapped = false;
+    const adapter: Adapter = {
+      async decide(req) {
+        if (!trapped && req.toolChoice === 'auto') {
+          trapped = true;
+          return { ok: true, call: { tool: 'vote', args: { target: 1 } }, assistant: { role: 'assistant', content: null }, toolCallIds: ['c1'], latencyMs: 1 };
+        }
+        return mockAdapter.decide(req);
+      },
+    };
+    const { m, roomId, hostToken, seatToken } = setup({ adapters: { mock: adapter } });
+    m.updateSetup(roomId, hostToken, { presetId: 'classic9', aiPacingMs: 0 });
+    m.start(roomId, hostToken);
+    await m.whenIdle(roomId);
+    const g = god(m, roomId, hostToken);
+    const rejected = g.events.filter((e) => e.type === 'action.rejected');
+    expect(rejected.length).toBeGreaterThan(0);
+    expect(rejected.every((e) => Array.isArray(e.audience) && e.audience.length === 1)).toBe(true);
+    const seat = (rejected[0].audience as number[])[0];
+    const spectator = m.view(roomId, m.getSetup(roomId, hostToken).tokens.spectator).projection as Projection;
+    expect(spectator.events.some((e) => e.type === 'action.rejected')).toBe(false);
+    const other = [1, 2, 3, 4, 5, 6, 7, 8, 9].find((n) => n !== seat)!;
+    expect((m.view(roomId, seatToken(other)).projection as Projection).events.some((e) => e.type === 'action.rejected')).toBe(false);
+    const mine = m.view(roomId, seatToken(seat)).projection as Projection;
+    expect(mine.events.some((e) => e.type === 'action.rejected' && e.text.includes('行动被拒绝'))).toBe(true);
+    const heard = m.audit(roomId, hostToken).some((row) => row.seat === seat && JSON.stringify(row.messages).includes('行动被拒绝'));
+    expect(heard).toBe(true);
+    expect(g.status).toBe('ended');
+  });
+
+  it('白天不是发言轮次时，狼人自爆由引擎执行', async () => {
+    let done = false;
+    const adapter: Adapter = {
+      async decide(req) {
+        const can = req.projection?.interrupts.some((t) => t.name === 'wolf_explode');
+        if (!done && req.toolChoice === 'auto' && can) {
+          done = true;
+          return { ok: true, call: { tool: 'wolf_explode', args: {} }, assistant: { role: 'assistant', content: null }, toolCallIds: ['ex'], latencyMs: 1 };
+        }
+        return mockAdapter.decide(req);
+      },
+    };
+    const { m, roomId, hostToken } = setup({ adapters: { mock: adapter } });
+    m.updateSetup(roomId, hostToken, { presetId: 'classic9', aiPacingMs: 0 });
+    m.start(roomId, hostToken);
+    await m.whenIdle(roomId);
+    const g = god(m, roomId, hostToken);
+    const exploded = g.events.find((e) => e.type === 'explode');
+    expect(exploded?.audience).toBe('public');
+    const seat = exploded?.payload.seat as number;
+    expect(g.god.roles.find((r) => r.seat === seat)?.alive).toBe(false);
+    expect(g.status).toBe('ended');
+  });
+
+  it('连续非法调用只保留五次拒绝，对局仍能结束', async () => {
+    const adapter: Adapter = {
+      async decide(req) {
+        if (req.toolChoice === 'auto' && req.seat === 1) {
+          return { ok: true, call: { tool: 'vote', args: { target: 2 } }, assistant: { role: 'assistant', content: null }, toolCallIds: ['c'], latencyMs: 1 };
+        }
+        return mockAdapter.decide(req);
+      },
+    };
+    const { m, roomId, hostToken } = setup({ adapters: { mock: adapter } });
+    m.updateSetup(roomId, hostToken, { presetId: 'classic9', aiPacingMs: 0 });
+    m.start(roomId, hostToken);
+    await m.whenIdle(roomId);
+    const g = god(m, roomId, hostToken);
+    expect(g.status).toBe('ended');
+    let streak = 0;
+    let max = 0;
+    for (const e of g.events) {
+      if (e.type === 'action.rejected' && Array.isArray(e.audience) && e.audience[0] === 1) {
+        streak += 1;
+        max = Math.max(max, streak);
+      } else if (e.type !== 'action.rejected') streak = 0;
+    }
+    expect(max).toBeLessThanOrEqual(5);
+    expect(g.events.some((e) => e.type === 'action.rejected' && Array.isArray(e.audience) && e.audience[0] === 1)).toBe(true);
+    expect(g.events.filter((e) => e.audience === 'public').every((e) => e.type !== 'action.rejected')).toBe(true);
   });
 
   it('复制房间保留配置、换掉全部凭证', () => {
