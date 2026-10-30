@@ -52,11 +52,11 @@ import {
   type ChatMessage,
 } from '@werewolf/llm';
 import {
-  NOT_TOOL_TURN,
-  notToolTurnMessages,
+  ensureCue,
   ownLine,
   syncThread,
-  taskMessage,
+  type ActionCue,
+  type TurnHint,
   type SeatThread,
 } from './agent';
 import { ModelLibrary } from './model-library';
@@ -844,7 +844,7 @@ export class RoomManager {
       const stepping = rec.paused && live.stepBudget > 0;
       if (rec.paused && !stepping) return;
       if (stepping) live.stepBudget -= 1;
-      await this.reactToSpeeches(live);
+      this.recordContexts(live);
       if (live.gen !== gen || rec.status !== 'running' || !rec.state?.pending) return;
       if (!stepping && rec.paused) return;
       if (!waitingSeats(rec.state).some((s) => !this.isHuman(rec, s))) return;
@@ -875,126 +875,46 @@ export class RoomManager {
       speechSec: SPEECH_LIMIT_SEC,
       skillSec: cfg.timeoutSec,
     })[0];
-    syncThread(thread, rec.events, system);
+    syncThread(thread, rec.events, system, this.turnHint(rec));
     return thread;
   }
 
-  /** 一段发言落地后，广播给其他座位。工具列表不变。调用了工具就退回，不执行。 */
-  private async reactToSpeeches(live: Live): Promise<void> {
-    const rec = live.rec;
-    const gen = live.gen;
-    rec.heardSeq ??= 0;
-    const fresh = rec.events.filter((e) => (e.type === 'speech' || e.type === 'wolf.chat') && e.seq > rec.heardSeq!);
-    if (!fresh.length) return;
-    try {
-      for (const e of fresh) {
-        if (live.gen !== gen || rec.status !== 'running') return;
-        for (const s of rec.seats) if (!this.isHuman(rec, s.seat)) this.syncThread(live, s.seat);
-        const speaker = e.payload.seat;
-        const listeners = rec.seats
-          .map((s) => s.seat)
-          .filter((seat) => {
-            if (this.isHuman(rec, seat) || seat === speaker) return false;
-            return e.audience === 'public' || (Array.isArray(e.audience) && e.audience.includes(seat));
-          });
-        await Promise.all(listeners.map((seat) => this.reactOnce(live, seat, e.seq)));
-        if (live.gen !== gen || rec.status !== 'running') return;
-        rec.heardSeq = e.seq;
-      }
-    } finally {
-      this.scheduleSave(live);
+  private turnHint(rec: RoomRecord): TurnHint {
+    const step = rec.state?.pending?.step;
+    if (!step) return { nextSeat: null, nextStep: null };
+    if (step.type === 'speech' || step.type === 'wolf.discuss') {
+      return { nextSeat: rec.state!.pending!.actors[0] ?? null, nextStep: step.type };
     }
+    return { nextSeat: null, nextStep: step.type };
   }
 
-  private async reactOnce(live: Live, seat: Seat, speechSeq: number): Promise<void> {
+  private actionCue(rec: RoomRecord): ActionCue | null {
+    const d = rec.state?.pending;
+    if (!d) return null;
+    const actors = d.actors.filter((seat) => d.tools[seat]?.length);
+    const tool = actors.map((seat) => d.tools[seat]?.[0]?.name).find(Boolean) ?? '';
+    return {
+      id: d.id,
+      step: d.step.type,
+      kind: typeof d.step.kind === 'string' ? d.step.kind : null,
+      actors,
+      prompts: d.prompts,
+      tool,
+      broadcast: d.step.type === 'sheriff.signup' || d.step.type === 'exile.vote' || d.step.type === 'sheriff.vote',
+    };
+  }
+
+  /** 把新事件追加进每个模型座位自己的上下文。不改已经写过的消息，也不为此另发请求。 */
+  private recordContexts(live: Live): void {
     const rec = live.rec;
-    const cfg = rec.seats[seat - 1];
-    const adapter = this.adapters[cfg.adapter] ?? getAdapter(cfg.adapter);
-    const projection = projectSeat(rec.state!, rec.events, seat);
-    const tools = seatTools(rec.state!, seat);
-    const decision = rec.state?.pending?.id ?? `hear:${speechSeq}`;
-    const key = `${decision}:hear:${seat}`;
-    const ctrl = new AbortController();
-    live.inflight.set(key, ctrl);
-    const gen = live.gen;
-    const model = cfg.adapter === 'mock' ? 'mock' : cfg.model;
-    const thread = this.syncThread(live, seat);
-    let messages: ChatMessage[] = [
-      ...thread.messages,
-      { role: 'user', name: 'judge', content: '现在没有轮到你发言。这不是工具调用轮次，请勿调用。' },
-    ];
-    try {
-      let config: AdapterConfig;
-      try {
-        config = { ...this.adapterConfig(cfg), timeoutSec: cfg.timeoutSec };
-      } catch {
-        this.writeAudit(live, { seat, model, decisionId: decision, projectionVersion: projection.version, ok: false, error: '密钥无法解密（主密钥可能已更换）' });
-        return;
-      }
-      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-        if (live.gen !== gen || ctrl.signal.aborted || rec.status !== 'running') return;
-        let result;
-        try {
-          result = await adapter.decide({
-            seat,
-            projection,
-            messages,
-            tools,
-            config,
-            signal: ctrl.signal,
-            stream: false,
-            toolChoice: 'auto',
-          });
-        } catch (e) {
-          if (live.gen !== gen || ctrl.signal.aborted || rec.status !== 'running') return;
-          throw e;
-        }
-        if (live.gen !== gen || rec.status !== 'running') return;
-        if (result.call) {
-          const error = NOT_TOOL_TURN;
-          this.writeAudit(live, {
-            seat,
-            model,
-            decisionId: decision,
-            projectionVersion: projection.version,
-            ok: false,
-            messages,
-            response: result.raw ?? result.call,
-            toolCall: result.call,
-            error,
-            latencyMs: result.latencyMs,
-          });
-          if (result.fatal) return;
-          messages = [...messages, ...notToolTurnMessages(result)];
-          continue;
-        }
-        const text = (result.reply || (typeof result.assistant?.content === 'string' ? result.assistant.content : '')).trim();
-        if (result.ok && text) {
-          thread.messages.push(
-            { role: 'user', name: 'judge', content: '现在没有轮到你发言。这不是工具调用轮次，请勿调用。' },
-            { role: 'assistant', content: text },
-          );
-        }
-        if (!result.ok && !result.fatal && attempt < MAX_ATTEMPTS) {
-          messages = [...messages, ...feedbackMessages(result, result.error ?? '')];
-          continue;
-        }
-        this.writeAudit(live, {
-          seat,
-          model,
-          decisionId: decision,
-          projectionVersion: projection.version,
-          ok: result.ok,
-          messages,
-          ...(result.raw ? { response: result.raw } : {}),
-          ...(result.ok ? {} : { error: result.error }),
-          latencyMs: result.latencyMs,
-        });
-        return;
-      }
-    } finally {
-      live.inflight.delete(key);
+    const cue = this.actionCue(rec);
+    for (const s of rec.seats) {
+      if (this.isHuman(rec, s.seat)) continue;
+      ensureCue(this.syncThread(live, s.seat), cue);
     }
+    const last = rec.events.at(-1);
+    if (last) rec.heardSeq = last.seq;
+    this.scheduleSave(live);
   }
 
   private async runAi(live: Live, seat: Seat, decision: string): Promise<void> {
@@ -1016,8 +936,9 @@ export class RoomManager {
     try {
       const limit = actionLimitSec(rec.state?.pending?.step.type ?? '', cfg.timeoutSec);
       const thread = this.syncThread(live, seat);
-      const task = taskMessage(projection);
-      let messages: ChatMessage[] = [...thread.messages, task];
+      ensureCue(thread, this.actionCue(rec));
+      const base = thread.messages.length;
+      let messages: ChatMessage[] = [...thread.messages];
       let config: AdapterConfig;
       try {
         config = { ...this.adapterConfig(cfg), timeoutSec: limit };
@@ -1058,7 +979,12 @@ export class RoomManager {
           const res = this.apply(live, { seat, call: clampTexts(result.call, tools), decisionId: decision });
           if (res.error) error = res.error.reason;
           else {
-            thread.messages.push(task, { role: 'assistant', content: ownLine(result.call.tool, result.call.args) });
+            const reply: ChatMessage = result.assistant ?? { role: 'assistant', content: ownLine(result.call.tool, result.call.args) };
+            thread.messages.push(...messages.slice(base), reply);
+            if (reply.role === 'assistant' && reply.tool_calls?.length) {
+              const note = ownLine(result.call.tool, result.call.args);
+              for (const call of reply.tool_calls) thread.messages.push({ role: 'tool', tool_call_id: call.id, content: note });
+            }
           }
         }
         this.writeAudit(live, {

@@ -351,50 +351,50 @@ describe('模型调度', () => {
     expect(JSON.stringify(spectator)).not.toContain('思维痕迹');
   });
 
-  it('旁听回应只留在自己的上下文里，这时调用工具会退回且不执行', async () => {
-    const mine = '只有3号自己看得到的旁听QQQ';
-    let poked = false;
-    const adapter: Adapter = {
-      async decide(req) {
-        if (req.toolChoice === 'auto') {
-          const names = req.tools.map((t) => t.name);
-          expect(names).toContain('speak');
-          expect(names).toContain('vote');
-          if (req.seat === 4 && !poked) {
-            poked = true;
-            return {
-              ok: true,
-              call: { tool: 'speak', args: { content: '插话不该公开XXXX' } },
-              assistant: {
-                role: 'assistant',
-                content: null,
-                tool_calls: [{ id: 'c-hear', type: 'function', function: { name: 'speak', arguments: '{}' } }],
-              },
-              toolCallIds: ['c-hear'],
-              latencyMs: 0,
-            };
-          }
-          if (req.seat === 3) return { ok: true, assistant: { role: 'assistant', content: mine }, toolCallIds: [], latencyMs: 0 };
-          return { ok: true, assistant: { role: 'assistant', content: '' }, toolCallIds: [], latencyMs: 0 };
-        }
-        return mockAdapter.decide(req);
-      },
-    };
-    const { m, roomId, hostToken } = setup({ adapters: { mock: adapter } });
+  it('同一座位下一轮只在上一轮消息后面追加', async () => {
+    const { m, roomId, hostToken } = setup();
     m.updateSetup(roomId, hostToken, { presetId: 'classic9', aiPacingMs: 0 });
     m.start(roomId, hostToken);
     await m.whenIdle(roomId);
     const audit = m.audit(roomId, hostToken);
-    const blob = (seat: number) => audit.filter((a) => a.seat === seat).map((a) => JSON.stringify(a.messages)).join('\n');
-    expect(blob(3)).toContain(mine);
-    expect(blob(5)).not.toContain(mine);
-    expect(blob(3)).toMatch(/"name":"[0-9]+"/);
-    expect(blob(3)).toMatch(/第\d+[天夜]\d+号/);
-    expect(blob(4)).toContain('不是工具调用轮次，请勿调用。');
-    const events = JSON.stringify(god(m, roomId, hostToken).events);
-    expect(events).not.toContain(mine);
-    expect(events).not.toContain('插话不该公开XXXX');
-    expect(poked).toBe(true);
+    const bySeat = new Map<number, unknown[][]>();
+    for (const row of audit) {
+      if (!row.messages) continue;
+      const list = bySeat.get(row.seat) ?? [];
+      list.push(row.messages as unknown[]);
+      bySeat.set(row.seat, list);
+    }
+    expect(bySeat.size).toBeGreaterThan(0);
+    for (const rows of bySeat.values()) {
+      for (const messages of rows) expect(JSON.stringify(messages)).not.toContain('存活（');
+      for (let i = 1; i < rows.length; i++) {
+        const prev = rows[i - 1];
+        const next = rows[i];
+        expect(next.length).toBeGreaterThan(prev.length);
+        expect(prev.every((message, k) => JSON.stringify(message) === JSON.stringify(next[k]))).toBe(true);
+      }
+    }
+    const events = god(m, roomId, hostToken).events;
+    const chat = events.find((e) => e.type === 'wolf.chat' && Array.isArray(e.audience));
+    expect(chat).toBeTruthy();
+    const wolves = chat!.audience as number[];
+    const outsider = [1, 2, 3, 4, 5, 6, 7, 8, 9].find((seat) => !wolves.includes(seat))!;
+    const blob = (seat: number) => (bySeat.get(seat) ?? []).map((messages) => JSON.stringify(messages)).join('\n');
+    expect(blob(wolves[0])).toContain('狼队密谈');
+    expect(blob(outsider)).not.toContain('狼队密谈');
+    const speech = events.find((e) => e.type === 'speech' && e.payload.kind === 'discussion');
+    expect(speech).toBeTruthy();
+    const speaker = speech!.payload.seat as number;
+    const text = speech!.payload.content as string;
+    const said = JSON.stringify(bySeat.get(speaker)!.at(-1));
+    expect(said).toContain(text);
+    expect(said).not.toContain(`${speaker}号发言：${text}`);
+    expect(blob(outsider)).toContain(`${speaker}号发言：${text}`);
+    const roles = god(m, roomId, hostToken).god.roles;
+    const seer = roles.find((r) => r.role === 'seer')!.seat;
+    const seerText = blob(seer);
+    expect(seerText.indexOf('天黑请闭眼')).toBeGreaterThan(-1);
+    expect(seerText.indexOf('你现在可以使用查验工具。')).toBeGreaterThan(seerText.indexOf('天黑请闭眼'));
   });
 
   it('房主终结会取消正在进行的模型请求，并记为流局且不公开身份', async () => {
