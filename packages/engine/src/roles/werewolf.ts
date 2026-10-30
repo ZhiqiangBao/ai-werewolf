@@ -36,12 +36,12 @@ export const werewolf: RoleModule = {
       label: '落刀未过半时',
       type: 'choice',
       choices: [
-        { value: 2, label: '公开各狼选择后重投一次，仍未过半则空刀' },
-        { value: 1, label: '直接空刀' },
+        { value: 2, label: '公开各狼选择后重投一次，仍然并列则取座位号较小的目标' },
+        { value: 1, label: '并列时取座位号较小的目标' },
       ],
       default: 2,
       editable: true,
-      hint: '线下局狼人必须统一刀口；只投一轮时，4 狼 2-2 或 2-1-1 都会变成空刀。',
+      hint: '空刀不计票。只有所有狼人都空刀，当晚才是空刀。2 人刀同一座位、另外 2 人空刀，刀口成立。',
     },
   ],
 
@@ -49,12 +49,12 @@ export const werewolf: RoleModule = {
     const v = rules.values;
     const lines = [
       `狼人：${v['wolf.knowTeammates'] ? '互知队友' : '不知道队友'}。每晚先按座位号各密谈一句，再同时提交刀口。` +
-        `${v['wolf.allowEmpty'] ? '可以空刀，' : ''}${v['wolf.allowTeammateTarget'] ? '可以刀狼队友或自己，' : '不能刀狼队友，'}` +
-        '某个选项（含空刀）的票数严格多于存活狼人数的一半才成为刀口' +
+        `${v['wolf.allowEmpty'] ? '可以空刀，空刀不计票。只有所有存活狼人都空刀，当晚才没有刀口。' : ''}${v['wolf.allowTeammateTarget'] ? '可以刀狼队友或自己。' : '不能刀狼队友。'}` +
+        '有人落刀时，得票最多的座位成为刀口' +
         (Number(v['wolf.killRounds']) > 1
-          ? '；第一轮未过半时公开各狼的选择并重投一次，仍未过半则空刀。'
-          : '，否则空刀。') +
-        '只剩一名狼人时他的提交直接生效。',
+          ? '；得票并列时公开各狼的选择并重投一次，仍然并列则座位号较小的目标成为刀口。'
+          : '；得票并列时，座位号较小的目标成为刀口。') +
+        '只剩一名狼人时，他的提交直接生效。',
     ];
     return lines;
   },
@@ -134,8 +134,8 @@ export const werewolf: RoleModule = {
             },
           ],
           prompt: () =>
-            (prev ? `上一轮未过半（${pickText(prev)}），请重新选择。` : '') +
-            `请提交刀口。存活狼人 ${wolves.length} 名，某个选项至少 ${Math.floor(wolves.length / 2) + 1} 票才生效。`,
+            (prev ? `上一轮刀口并列（${pickText(prev)}），请重新选择。` : '') +
+            '请提交刀口。空刀不计票。只有所有狼人都空刀，今晚才是空刀；否则得票最多的座位成为刀口。',
           title: `第${ctx.state.day}夜 · 落刀`,
           publicStage: '夜晚',
         });
@@ -154,20 +154,32 @@ export const werewolf: RoleModule = {
         if (!night) throw new Error('落刀缺少夜晚状态');
         const wolves = Object.keys(subs).map(Number).sort((a, b) => a - b);
         const picks: Pick[] = wolves.map((w) => [w, (subs[w].args.target as Seat | null) ?? null]);
-        const counts = new Map<string, number>();
-        for (const [, t] of picks) counts.set(String(t), (counts.get(String(t)) ?? 0) + 1);
-        const need = Math.floor(wolves.length / 2) + 1;
-        const winner = [...counts.entries()].find(([, c]) => c >= need)?.[0];
+        const counts = new Map<number, number>();
+        for (const [, t] of picks) if (t !== null) counts.set(t, (counts.get(t) ?? 0) + 1);
         const round = step.round as number;
-        if (winner === undefined && round < ctx.opt<number>('wolf.killRounds')) {
-          ctx.priv(wolves, 'wolf.kill.split', `第${round}轮落刀未过半（${pickText(picks)}），请重新选择。`, { picks });
-          ctx.pushFront({ type: 'wolf.kill', round: round + 1, previous: picks });
-          return;
+        let knife: Seat | null = null;
+        let tied = false;
+        if (counts.size === 0) {
+          knife = null;
+        } else {
+          const top = Math.max(...counts.values());
+          const leaders = [...counts.keys()].filter((seat) => counts.get(seat) === top);
+          if (leaders.length > 1 && round < ctx.opt<number>('wolf.killRounds')) {
+            ctx.priv(wolves, 'wolf.kill.split', `第${round}轮刀口并列（${pickText(picks)}），请重新选择。`, { picks });
+            ctx.pushFront({ type: 'wolf.kill', round: round + 1, previous: picks });
+            return;
+          }
+          tied = leaders.length > 1;
+          knife = tied ? Math.min(...leaders) : leaders[0];
         }
-        const knife = winner === undefined || winner === 'null' ? null : Number(winner);
         night.knife = knife;
         if (knife !== null) night.attacks.push({ target: knife, kind: 'wolf', by: wolves });
-        const outcome = knife === null ? (winner === undefined ? '未过半，今晚空刀' : '今晚空刀') : `今晚刀口：${seatLabel(knife)}`;
+        const outcome =
+          knife === null
+            ? '所有狼人都空刀，今晚空刀'
+            : tied
+              ? `刀口并列，取座位号较小的目标。今晚刀口：${seatLabel(knife)}`
+              : `今晚刀口：${seatLabel(knife)}`;
         ctx.priv(wolves, 'wolf.kill.result', `${outcome}（${pickText(picks)}）。`, { picks, knife });
         night.lines.push(`狼人（${seatList(wolves)}）${knife === null ? '空刀' : `刀 ${seatLabel(knife)}`}`);
       },

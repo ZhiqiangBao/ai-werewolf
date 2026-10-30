@@ -7,6 +7,7 @@ import type {
   CreateRoomResult,
   GodProjection,
   Projection,
+  ModelPresetView,
   RoomBrief,
   RoomSetupInput,
   RoomSetupView,
@@ -48,6 +49,7 @@ import {
   type AdapterConfig,
   type ChatMessage,
 } from '@werewolf/llm';
+import { ModelLibrary } from './model-library';
 import { maskKey, type SecretBox } from './secret';
 import type { RoomRecord, RoomStore, SeatRecord } from './store';
 
@@ -90,9 +92,20 @@ export interface ManagerOptions {
   adapters?: Partial<Record<AdapterKind, Adapter>>;
   /** 真人超时检查间隔，0 表示不启动定时器。 */
   tickMs?: number;
+  /** 页面里添加的模型。不传则只留在内存里。 */
+  modelsPath?: string;
 }
 
 const MAX_ATTEMPTS = 2;
+const SPEECH_LIMIT_SEC = 180;
+const VOTE_LIMIT_SEC = 90;
+
+/** 发言（含遗言、狼队密谈）3 分钟，放逐和警长投票 90 秒，其余用座位或真人时限。 */
+export function actionLimitSec(stepType: string, fallback: number): number {
+  if (stepType === 'speech' || stepType === 'wolf.discuss') return SPEECH_LIMIT_SEC;
+  if (stepType === 'exile.vote' || stepType === 'sheriff.vote') return VOTE_LIMIT_SEC;
+  return fallback;
+}
 const AUTO: ToolCall = { tool: '', args: {} };
 
 const token = () => randomBytes(18).toString('base64url');
@@ -117,6 +130,7 @@ function defaultSeat(seat: Seat): SeatRecord {
     model: '',
     apiKeyEnc: null,
     apiKeyMask: null,
+    modelId: null,
     temperature: 0.7,
     style: STYLES[(seat - 1) % STYLES.length].id,
     persona: '',
@@ -147,11 +161,13 @@ export class RoomManager {
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly adapters: Partial<Record<AdapterKind, Adapter>>;
+  private readonly models: ModelLibrary;
   private readonly timer: ReturnType<typeof setInterval> | null;
 
   constructor(o: ManagerOptions) {
     this.store = o.store;
     this.secrets = o.secrets;
+    this.models = new ModelLibrary(o.secrets, o.modelsPath);
     this.now = o.now ?? Date.now;
     this.sleep = o.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.adapters = o.adapters ?? {};
@@ -185,6 +201,27 @@ export class RoomManager {
 
   catalog(): Catalog {
     return { ...engineCatalog(), styles: STYLES };
+  }
+
+  /** 模型名单：页面里添加的，加上 settings.json 里写好的。没有密钥明文。 */
+  modelPresets(): ModelPresetView[] {
+    return this.models.views();
+  }
+
+  addModel(body: { name?: unknown; baseUrl?: unknown; apiKey?: unknown }): ModelPresetView {
+    try {
+      return this.models.add(String(body.name ?? ''), String(body.baseUrl ?? ''), String(body.apiKey ?? ''));
+    } catch (e) {
+      throw new ApiFailure(400, 'BAD_REQUEST', (e as Error).message);
+    }
+  }
+
+  deleteModel(id: string): void {
+    try {
+      this.models.remove(id);
+    } catch (e) {
+      throw new ApiFailure(400, 'BAD_REQUEST', (e as Error).message);
+    }
   }
 
   createRoom(): CreateRoomResult {
@@ -303,11 +340,30 @@ export class RoomManager {
       seat.apiKeyEnc = this.secrets.encrypt(s.apiKey.trim());
       seat.apiKeyMask = maskKey(s.apiKey);
     }
+    if (s.presetId) {
+      const preset = this.models.find(s.presetId);
+      if (!preset) throw new ApiFailure(400, 'BAD_REQUEST', '没有这个模型');
+      seat.modelId = preset.id;
+      seat.model = preset.model;
+      seat.baseUrl = preset.baseUrl;
+      seat.adapter = 'openai_compatible';
+      if (typeof s.apiKey !== 'string') {
+        if (preset.apiKey) {
+          seat.apiKeyEnc = this.secrets.encrypt(preset.apiKey);
+          seat.apiKeyMask = maskKey(preset.apiKey);
+        } else {
+          seat.apiKeyEnc = null;
+          seat.apiKeyMask = null;
+        }
+      }
+    } else if (s.modelId === null) {
+      seat.modelId = null;
+    }
   }
 
   private seatView(s: SeatRecord): SeatConfigView {
     const { apiKeyEnc: _enc, apiKeyMask, ...rest } = s;
-    return { ...rest, apiKeyMasked: apiKeyMask };
+    return { ...rest, apiKeyMasked: apiKeyMask, modelId: s.modelId ?? null };
   }
 
   private setupErrors(rec: RoomRecord): string[] {
@@ -346,8 +402,8 @@ export class RoomManager {
     const s = rec.seats.find((x) => x.seat === seat);
     if (!s) throw new ApiFailure(404, 'NOT_FOUND', `没有 ${seat} 号座位`);
     if (s.adapter === 'mock') return { ok: true, message: '模拟玩家不需要联网。', latencyMs: 0 };
-    if (!s.baseUrl || !s.model) return { ok: false, message: '请先填写接口地址和模型名。', latencyMs: 0 };
     const config = this.adapterConfig(s);
+    if (!config.baseUrl || !config.model) return { ok: false, message: '请先为这个座位选择模型。', latencyMs: 0 };
     const r = await testConnection(config);
     return { ...r, message: redact(r.message, config.apiKey) };
   }
@@ -570,7 +626,8 @@ export class RoomManager {
       for (const seat of waitingSeats(rec.state!)) {
         if (!this.isHuman(rec, seat)) continue;
         const key = `${d.id}:${seat}`;
-        next[key] = !reset && rec.deadlines[key] ? rec.deadlines[key] : this.now() + rec.humanTimeoutSec * 1000;
+        const limit = actionLimitSec(d.step.type, rec.humanTimeoutSec);
+        next[key] = !reset && rec.deadlines[key] ? rec.deadlines[key] : this.now() + limit * 1000;
       }
     }
     rec.deadlines = next;
@@ -593,10 +650,11 @@ export class RoomManager {
   }
 
   private adapterConfig(s: SeatRecord): AdapterConfig {
+    const live = s.modelId ? this.models.find(s.modelId) : undefined;
     return {
-      baseUrl: s.baseUrl,
-      model: s.model,
-      apiKey: s.apiKeyEnc ? this.secrets.decrypt(s.apiKeyEnc) : null,
+      baseUrl: live?.baseUrl || s.baseUrl,
+      model: live?.model || s.model,
+      apiKey: live ? live.apiKey : s.apiKeyEnc ? this.secrets.decrypt(s.apiKeyEnc) : null,
       temperature: s.temperature,
       toolMode: s.toolMode,
       timeoutSec: s.timeoutSec,
@@ -670,10 +728,11 @@ export class RoomManager {
     const model = cfg.adapter === 'mock' ? 'mock' : cfg.model;
     const stillWaiting = () => rec.state?.pending?.id === decision && waitingSeats(rec.state).includes(seat);
     try {
-      let messages: ChatMessage[] = buildMessages(projection, styleText(cfg.style, cfg.persona));
+      const limit = actionLimitSec(rec.state?.pending?.step.type ?? '', cfg.timeoutSec);
+      let messages: ChatMessage[] = buildMessages(projection, styleText(cfg.style, cfg.persona), limit);
       let config: AdapterConfig;
       try {
-        config = this.adapterConfig(cfg);
+        config = { ...this.adapterConfig(cfg), timeoutSec: limit };
       } catch {
         this.writeAudit(live, { seat, model, decisionId: decision, projectionVersion: projection.version, ok: false, error: '密钥无法解密（主密钥可能已更换），已托管' });
         if (stillWaiting()) this.apply(live, { seat, call: AUTO, auto: true, decisionId: decision });

@@ -1,5 +1,5 @@
 import type { Catalog, GodSeatInfo, Projection, RoomBrief } from '@werewolf/protocol';
-import { roleTone } from '../util';
+import { roleTone, seatStyle } from '../util';
 import { PhaseIcon } from './Icons';
 
 interface Props {
@@ -35,7 +35,7 @@ export function SeatRing({ projection: p, room, catalog, roles }: Props) {
           .filter(Boolean)
           .join(' ');
         return (
-          <div key={s.seat} className={cls} style={{ left: `${left}%`, top: `${top}%` }}>
+          <div key={s.seat} className={cls} style={{ left: `${left}%`, top: `${top}%`, ...seatStyle(s.seat) }}>
             <div className="disc">
               {s.seat}
               {s.sheriff && <span className="badge" title="警长">警</span>}

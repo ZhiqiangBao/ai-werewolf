@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   Catalog,
+  ModelPresetView,
   RoomSetupInput,
   RoomSetupView,
   RuleOptionInfo,
@@ -11,7 +12,7 @@ import type {
 import { api } from '../api';
 import { useCatalog } from '../hooks';
 import { RuleCard } from '../components/Cards';
-import { copyText, link, seatName } from '../util';
+import { copyText, link, seatName, seatStyle } from '../util';
 
 function mergeInput(a: RoomSetupInput, b: RoomSetupInput): RoomSetupInput {
   const seats = new Map((a.seats ?? []).map((s) => [s.seat, s]));
@@ -33,16 +34,17 @@ function applyLocal(s: RoomSetupView, input: RoomSetupInput): RoomSetupView {
     seats: s.seats.map((seat) => {
       const change = input.seats?.find((x) => x.seat === seat.seat);
       if (!change) return seat;
-      const { apiKey: _key, ...rest } = change;
+      const { apiKey: _key, presetId: _preset, ...rest } = change;
       return { ...seat, ...rest };
     }),
   };
 }
 
-/** 开局配置：版型、可改规则、座位（真人 / 模型及其接口）。改动自动保存。 */
+/** 开局配置：版型、可改规则、模型名单和座位。改动自动保存。 */
 export function Setup({ roomId, token, onStarted }: { roomId: string; token: string; onStarted: () => void }) {
   const catalog = useCatalog();
   const [setup, setSetup] = useState<RoomSetupView | null>(null);
+  const [models, setModels] = useState<ModelPresetView[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -51,9 +53,17 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
   const edits = useRef(0);
   const chain = useRef<Promise<void>>(Promise.resolve());
 
+  const loadModels = useCallback(() => {
+    api.modelPresets().then(setModels, (e: Error) => setError(e.message));
+  }, []);
+
   useEffect(() => {
     api.getSetup(roomId, token).then(setSetup, (e: Error) => setError(e.message));
   }, [roomId, token]);
+
+  useEffect(() => {
+    loadModels();
+  }, [loadModels]);
 
   /** 保存请求串行发送，后发的改动不会被先返回的旧结果覆盖。 */
   const flush = useCallback((): Promise<void> => {
@@ -134,7 +144,17 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
         <div style={{ display: 'grid', gap: 16 }}>
           <PresetPicker catalog={catalog} value={setup.presetId} onChange={(id) => void changePreset(id)} />
           <OptionsPanel catalog={catalog} roles={preset?.roles ?? []} values={setup.ruleValues} onChange={(k, v) => patch({ ruleValues: { [k]: v } }, 200)} />
-          <SeatsPanel setup={setup} catalog={catalog} roomId={roomId} token={token} patchSeat={patchSeat} patch={patch} flush={flush} />
+          <ModelsPanel models={models} onChange={loadModels} />
+          <SeatsPanel
+            setup={setup}
+            catalog={catalog}
+            models={models}
+            roomId={roomId}
+            token={token}
+            patchSeat={patchSeat}
+            patch={patch}
+            flush={flush}
+          />
         </div>
 
         <div style={{ display: 'grid', gap: 16, position: 'sticky', top: 70 }}>
@@ -277,9 +297,101 @@ function OptionsPanel({
   );
 }
 
+function choiceFor(models: ModelPresetView[]) {
+  return (id: string): Omit<SeatConfigInput, 'seat'> | null => {
+    if (id === 'mock') return { adapter: 'mock', modelId: null };
+    const preset = models.find((m) => m.id === id);
+    if (!preset) return null;
+    return {
+      adapter: 'openai_compatible',
+      presetId: preset.id,
+      modelId: preset.id,
+      model: preset.model,
+      baseUrl: preset.baseUrl,
+    };
+  };
+}
+
+function ModelsPanel({ models, onChange }: { models: ModelPresetView[]; onChange: () => void }) {
+  const [name, setName] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const added = models.filter((m) => m.source === 'added');
+  const fromSettings = models.filter((m) => m.source === 'settings');
+  const add = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.addModel({ name: name.trim(), baseUrl: baseUrl.trim(), apiKey: apiKey.trim() });
+      setName('');
+      setBaseUrl('');
+      setApiKey('');
+      onChange();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async (id: string) => {
+    setError(null);
+    try {
+      await api.deleteModel(id);
+      onChange();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  return (
+    <div className="panel">
+      <h3>模型</h3>
+      <p className="small muted" style={{ margin: '0 0 10px' }}>
+        在这里添加一次名称、接口地址和密钥。座位只从这份名单里选。settings.json 里写好的模型已经在名单里。
+      </p>
+      <div className="model-add">
+        <label className="field">
+          名称
+          <input type="text" value={name} maxLength={120} placeholder="例如 deepseek-v4-flash" onChange={(e) => setName(e.target.value)} />
+        </label>
+        <label className="field">
+          接口地址
+          <input type="text" value={baseUrl} placeholder="https://api.example.com/v1" onChange={(e) => setBaseUrl(e.target.value)} />
+        </label>
+        <label className="field">
+          密钥
+          <input type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+        </label>
+        <button className="btn sm primary" disabled={busy || !name.trim() || !baseUrl.trim() || !apiKey.trim()} onClick={() => void add()}>
+          {busy ? '添加中…' : '添加'}
+        </button>
+      </div>
+      {error && <div className="error-box small" style={{ marginTop: 8 }}>{error}</div>}
+      {added.length > 0 && (
+        <div className="model-list">
+          {added.map((m) => (
+            <div key={m.id} className="model-item">
+              <span>{m.label}</span>
+              <span className="tiny dim">{m.baseUrl}</span>
+              <button className="btn sm ghost" type="button" onClick={() => void remove(m.id)}>
+                删除
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="tiny dim" style={{ marginTop: 8 }}>
+        {fromSettings.length ? `settings 里有 ${fromSettings.length} 个模型，直接在座位上选。` : 'settings 里没有读到模型。'}
+      </div>
+    </div>
+  );
+}
+
 interface SeatsPanelProps {
   setup: RoomSetupView;
   catalog: Catalog;
+  models: ModelPresetView[];
   roomId: string;
   token: string;
   patchSeat: (seat: number, change: Omit<SeatConfigInput, 'seat'>, delay?: number) => void;
@@ -287,10 +399,17 @@ interface SeatsPanelProps {
   flush: () => Promise<void>;
 }
 
-function SeatsPanel({ setup, catalog, roomId, token, patchSeat, patch, flush }: SeatsPanelProps) {
+function SeatsPanel({ setup, catalog, models, roomId, token, patchSeat, patch, flush }: SeatsPanelProps) {
   const [open, setOpen] = useState<number | null>(null);
-  const [batch, setBatch] = useState(false);
+  const choice = choiceFor(models);
   const ai = setup.seats.filter((s) => s.controller === 'ai');
+  const added = models.filter((m) => m.source === 'added');
+  const fromSettings = models.filter((m) => m.source === 'settings');
+  const applyAll = (id: string) => {
+    const picked = choice(id);
+    if (!picked) return;
+    patch({ seats: ai.map((s) => ({ seat: s.seat, ...picked })) }, 0);
+  };
   return (
     <div className="panel">
       <h3>
@@ -299,11 +418,21 @@ function SeatsPanel({ setup, catalog, roomId, token, patchSeat, patch, flush }: 
           {ai.length} 个 AI，{setup.seats.length - ai.length} 个真人
         </span>
         <span className="spacer" />
-        <button className="btn sm" onClick={() => setBatch((x) => !x)}>
-          {batch ? '收起批量设置' : '批量设置模型'}
-        </button>
+        <select className="seat-model" style={{ maxWidth: 280 }} value="" onChange={(e) => applyAll(e.target.value)}>
+          <option value="">全部 AI 座位改成…</option>
+          <option value="mock">模拟玩家</option>
+          {added.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+          {fromSettings.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+        </select>
       </h3>
-      {batch && <BatchForm setup={setup} patch={patch} flush={flush} />}
       <div className="row small muted" style={{ marginBottom: 10 }}>
         <span>真人行动时限（秒，0 为不限时）</span>
         <input
@@ -331,6 +460,7 @@ function SeatsPanel({ setup, catalog, roomId, token, patchSeat, patch, flush }: 
             key={s.seat}
             s={s}
             catalog={catalog}
+            models={models}
             open={open === s.seat}
             onToggle={() => setOpen(open === s.seat ? null : s.seat)}
             patchSeat={patchSeat}
@@ -344,9 +474,44 @@ function SeatsPanel({ setup, catalog, roomId, token, patchSeat, patch, flush }: 
   );
 }
 
+function selectedId(s: SeatConfigView, models: ModelPresetView[]): string {
+  if (s.adapter !== 'openai_compatible') return 'mock';
+  if (s.modelId && models.some((m) => m.id === s.modelId)) return s.modelId;
+  return models.find((m) => m.model === s.model && m.baseUrl === s.baseUrl)?.id ?? (s.model ? 'custom' : 'mock');
+}
+
+function ModelOptions({ models }: { models: ModelPresetView[] }) {
+  const added = models.filter((m) => m.source === 'added');
+  const settings = models.filter((m) => m.source === 'settings');
+  return (
+    <>
+      <option value="mock">模拟玩家</option>
+      {added.length > 0 && (
+        <optgroup label="已添加">
+          {added.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+        </optgroup>
+      )}
+      {settings.length > 0 && (
+        <optgroup label="settings">
+          {settings.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+        </optgroup>
+      )}
+    </>
+  );
+}
+
 function SeatRow({
   s,
   catalog,
+  models,
   open,
   onToggle,
   patchSeat,
@@ -356,6 +521,7 @@ function SeatRow({
 }: {
   s: SeatConfigView;
   catalog: Catalog;
+  models: ModelPresetView[];
   open: boolean;
   onToggle: () => void;
   patchSeat: SeatsPanelProps['patchSeat'];
@@ -379,15 +545,16 @@ function SeatRow({
       setTesting(false);
     }
   };
-  const summary =
-    s.controller === 'human'
-      ? '真人操作：把座位链接发给对应玩家'
-      : real
-        ? `${s.model || '未填模型'} · ${s.apiKeyMasked ? `密钥 ${s.apiKeyMasked}` : '无密钥'}`
-        : '模拟玩家（不联网，用于试玩和测试）';
+  const value = selectedId(s, models);
+  const pick = (id: string) => {
+    const next = choiceFor(models)(id);
+    if (next) patchSeat(s.seat, next, 0);
+  };
   return (
     <div className="seat-row">
-      <div className="seat-no">{s.seat}</div>
+      <div className="seat-no" style={seatStyle(s.seat)}>
+        {s.seat}
+      </div>
       <input
         type="text"
         value={s.name === seatName(s.seat) ? '' : s.name}
@@ -404,9 +571,21 @@ function SeatRow({
           真人
         </button>
       </div>
-      <div className="small muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {summary}
-      </div>
+      {s.controller === 'ai' ? (
+        <select className="seat-model" value={value} onChange={(e) => pick(e.target.value)}>
+          {value === 'custom' && <option value="custom">{s.model || '未选择'}</option>}
+          <ModelOptions models={models} />
+        </select>
+      ) : (
+        <div className="small muted">真人操作，把座位链接发给对应玩家</div>
+      )}
+      {s.controller === 'ai' ? (
+        <button className="btn sm" disabled={testing} onClick={() => void runTest()}>
+          {testing ? '测通中…' : '测通'}
+        </button>
+      ) : (
+        <span />
+      )}
       {s.controller === 'ai' ? (
         <button className="btn sm" onClick={onToggle}>
           {open ? '收起' : '设置'}
@@ -414,26 +593,15 @@ function SeatRow({
       ) : (
         <span />
       )}
+      {test && (
+        <div className="small" style={{ gridColumn: '1 / -1', color: test.ok ? 'var(--good)' : 'var(--wolf-ink)' }}>
+          {test.message}
+        </div>
+      )}
       {open && s.controller === 'ai' && (
         <div className="seat-detail">
-          <label className="field">
-            接入方式
-            <select value={s.adapter} onChange={(e) => patchSeat(s.seat, { adapter: e.target.value as SeatConfigView['adapter'] }, 0)}>
-              <option value="mock">模拟玩家（不联网）</option>
-              <option value="openai_compatible">OpenAI 兼容接口</option>
-            </select>
-          </label>
           {real && (
             <>
-              <label className="field">
-                接口地址
-                <input type="text" value={s.baseUrl} placeholder="https://api.example.com/v1" onChange={(e) => patchSeat(s.seat, { baseUrl: e.target.value })} />
-              </label>
-              <label className="field">
-                模型名
-                <input type="text" value={s.model} placeholder="例如 deepseek-chat" onChange={(e) => patchSeat(s.seat, { model: e.target.value })} />
-              </label>
-              <KeyField masked={s.apiKeyMasked} onCommit={(key) => patchSeat(s.seat, { apiKey: key }, 0)} />
               <label className="field">
                 温度
                 <input
@@ -472,118 +640,9 @@ function SeatRow({
             人设补充（可选，只影响说话风格）
             <input type="text" value={s.persona} maxLength={300} onChange={(e) => patchSeat(s.seat, { persona: e.target.value })} />
           </label>
-          <div className="row" style={{ gridColumn: '1 / -1' }}>
-            <button className="btn sm" disabled={testing} onClick={runTest}>
-              {testing ? '测试中…' : '测试连通性'}
-            </button>
-            {test && <span className={`small ${test.ok ? '' : 'muted'}`} style={{ color: test.ok ? 'var(--good)' : '#ffb3b3' }}>{test.message}</span>}
-            {!real && <span className="tiny dim">模拟玩家只根据自己能看到的信息随机做合法决定，用来跑通流程。</span>}
-          </div>
+          {!real && <span className="tiny dim" style={{ gridColumn: '1 / -1' }}>模拟玩家不联网。选了名单里的模型之后，用这一行的「测通」检查。</span>}
         </div>
       )}
-    </div>
-  );
-}
-
-/** 密钥只写不读：输入后失焦或回车才保存，保存后输入框清空，只显示掩码。 */
-function KeyField({ masked, onCommit }: { masked: string | null; onCommit: (key: string | null) => void }) {
-  const [value, setValue] = useState('');
-  const commit = () => {
-    if (!value.trim()) return;
-    onCommit(value.trim());
-    setValue('');
-  };
-  return (
-    <label className="field">
-      API 密钥 {masked && <span className="dim">（已保存 {masked}）</span>}
-      <div className="row" style={{ flexWrap: 'nowrap', gap: 6 }}>
-        <input
-          type="password"
-          autoComplete="off"
-          value={value}
-          placeholder={masked ? '输入新密钥以替换' : '输入后回车保存'}
-          onChange={(e) => setValue(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => e.key === 'Enter' && commit()}
-        />
-        {masked && (
-          <button className="btn sm ghost" type="button" onClick={() => onCommit(null)}>
-            清除
-          </button>
-        )}
-      </div>
-    </label>
-  );
-}
-
-function BatchForm({ setup, patch, flush }: { setup: RoomSetupView; patch: SeatsPanelProps['patch']; flush: () => Promise<void> }) {
-  const [form, setForm] = useState({ baseUrl: '', model: '', apiKey: '', temperature: 0.7, toolMode: 'tools' as SeatConfigView['toolMode'], timeoutSec: 60 });
-  const [done, setDone] = useState<string | null>(null);
-  const ai = setup.seats.filter((s) => s.controller === 'ai');
-  const apply = async () => {
-    const seats: SeatConfigInput[] = ai.map((s) => ({
-      seat: s.seat,
-      adapter: 'openai_compatible',
-      baseUrl: form.baseUrl.trim(),
-      model: form.model.trim(),
-      temperature: form.temperature,
-      toolMode: form.toolMode,
-      timeoutSec: form.timeoutSec,
-      ...(form.apiKey.trim() ? { apiKey: form.apiKey.trim() } : {}),
-    }));
-    patch({ seats }, 0);
-    await flush();
-    setForm((f) => ({ ...f, apiKey: '' }));
-    setDone(`已应用到 ${seats.length} 个 AI 座位。`);
-  };
-  const toMock = async () => {
-    patch({ seats: ai.map((s) => ({ seat: s.seat, adapter: 'mock' as const })) }, 0);
-    await flush();
-    setDone(`${ai.length} 个 AI 座位已改为模拟玩家。`);
-  };
-  return (
-    <div className="note-box" style={{ marginBottom: 12 }}>
-      <div className="small" style={{ marginBottom: 8 }}>
-        把同一套接口配置应用到所有 AI 座位（之后仍可单独修改某个座位）。
-      </div>
-      <div className="seat-detail" style={{ borderTop: 0, paddingTop: 0 }}>
-        <label className="field">
-          接口地址
-          <input type="text" value={form.baseUrl} placeholder="https://api.example.com/v1" onChange={(e) => setForm({ ...form, baseUrl: e.target.value })} />
-        </label>
-        <label className="field">
-          模型名
-          <input type="text" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} />
-        </label>
-        <label className="field">
-          API 密钥
-          <input type="password" autoComplete="off" value={form.apiKey} placeholder="留空则不改动各座位的密钥" onChange={(e) => setForm({ ...form, apiKey: e.target.value })} />
-        </label>
-        <label className="field">
-          温度
-          <input type="number" min={0} max={2} step={0.1} value={form.temperature} onChange={(e) => setForm({ ...form, temperature: Number(e.target.value) })} />
-        </label>
-        <label className="field">
-          输出方式
-          <select value={form.toolMode} onChange={(e) => setForm({ ...form, toolMode: e.target.value as SeatConfigView['toolMode'] })}>
-            <option value="tools">工具调用（推荐）</option>
-            <option value="json">JSON 文本</option>
-          </select>
-        </label>
-        <label className="field">
-          单次超时（秒）
-          <input type="number" min={5} max={300} value={form.timeoutSec} onChange={(e) => setForm({ ...form, timeoutSec: Number(e.target.value) })} />
-        </label>
-      </div>
-      <div className="row" style={{ marginTop: 10 }}>
-        <button className="btn sm primary" disabled={!form.baseUrl.trim() || !form.model.trim() || !ai.length} onClick={apply}>
-          应用到全部 AI 座位
-        </button>
-        <button className="btn sm" disabled={!ai.length} onClick={toMock}>
-          全部改回模拟玩家
-        </button>
-        {done && <span className="small muted">{done}</span>}
-      </div>
     </div>
   );
 }

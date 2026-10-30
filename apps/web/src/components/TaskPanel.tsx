@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { ParamSpec, Projection, ToolCall, ToolSpec } from '@werewolf/protocol';
 import { useNow } from '../hooks';
-import { seatName } from '../util';
+import { seatName, seatStyle } from '../util';
 
 type Values = Record<string, unknown>;
 
@@ -37,7 +37,7 @@ function ParamInput({ p, value, onChange, onSubmit }: { p: ParamSpec; value: unk
       return (
         <div className="seat-picker">
           {p.options.map((s) => (
-            <button key={s} className={value === s ? 'on' : ''} onClick={() => onChange(s)}>
+            <button key={s} className={value === s ? 'on' : ''} style={seatStyle(s)} onClick={() => onChange(s)}>
               {seatName(s)}
             </button>
           ))}
@@ -56,6 +56,7 @@ function ParamInput({ p, value, onChange, onSubmit }: { p: ParamSpec; value: unk
             <button
               key={s}
               className={list.includes(s) ? 'on' : ''}
+              style={seatStyle(s)}
               onClick={() => onChange(list.includes(s) ? list.filter((x) => x !== s) : [...list, s].sort((a, b) => a - b))}
             >
               {seatName(s)}

@@ -1,5 +1,5 @@
 import type { Catalog, GodProjection, RoomBrief } from '@werewolf/protocol';
-import { roleTone, seatName } from '../util';
+import { roleTone, seatName, seatStyle } from '../util';
 
 /** 上帝视角：全部身份、当前决策里谁还没提交。 */
 export function GodPanel({ projection: p, room, catalog }: { projection: GodProjection; room: RoomBrief; catalog: Catalog | null }) {
@@ -44,6 +44,7 @@ export function GodPanel({ projection: p, room, catalog }: { projection: GodProj
             return (
               <tr key={r.seat} className={r.alive ? '' : 'dead'}>
                 <td>
+                  <i className="seat-dot" style={seatStyle(r.seat)} />
                   {seatName(r.seat)}
                   {seat && seat.name !== seatName(r.seat) ? ` ${seat.name}` : ''}
                   {seat?.sheriff ? ' ★' : ''}

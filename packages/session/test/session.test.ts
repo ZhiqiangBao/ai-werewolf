@@ -2,6 +2,7 @@ import type { GodProjection, Projection, Seat } from '@werewolf/protocol';
 import { mockAdapter, mockDecision, type Adapter, type DecideRequest } from '@werewolf/llm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MemoryStore, RoomManager, SecretBox, type ManagerOptions } from '../src/index';
+import { actionLimitSec } from '../src/manager';
 
 const managers: RoomManager[] = [];
 afterEach(() => {
@@ -171,9 +172,74 @@ describe('真人座位', () => {
     const other = actor === 1 ? 2 : 1;
     expect(m.view(roomId, seatToken(other)).projection!.events.some((e) => e.type === 'action.fallback')).toBe(false);
   });
+
+  it('发言限时 3 分钟，投票限时 90 秒', async () => {
+    expect(actionLimitSec('speech', 30)).toBe(180);
+    expect(actionLimitSec('wolf.discuss', 30)).toBe(180);
+    expect(actionLimitSec('exile.vote', 30)).toBe(90);
+    expect(actionLimitSec('sheriff.vote', 30)).toBe(90);
+    expect(actionLimitSec('night:guard', 30)).toBe(30);
+
+    let now = 1_000_000;
+    const { m, roomId, hostToken, seatToken } = setup({ now: () => now });
+    m.updateSetup(roomId, hostToken, {
+      aiPacingMs: 0,
+      humanTimeoutSec: 30,
+      seats: Array.from({ length: 12 }, (_, i) => ({ seat: i + 1, controller: 'human' }) as never),
+    });
+    m.start(roomId, hostToken);
+    const seen = { speech: false, vote: false };
+    const checked = new Set<string>();
+    for (let i = 0; i < 800 && (!seen.speech || !seen.vote); i++) {
+      await m.whenIdle(roomId);
+      const pending = god(m, roomId, hostToken).god.pending;
+      if (!pending) break;
+      const actor = pending.actors.find((a) => !a.submitted);
+      if (!actor) break;
+      const task = (m.view(roomId, seatToken(actor.seat)).projection as Projection).task!;
+      const speech = actor.tools.includes('speak') || actor.tools.includes('wolf_discuss');
+      const vote = actor.tools.includes('vote') || actor.tools.includes('sheriff_vote');
+      if (!checked.has(pending.decisionId)) {
+        checked.add(pending.decisionId);
+        const limit = speech ? 180_000 : vote ? 90_000 : 30_000;
+        expect(task.deadline).toBe(now + limit);
+      }
+      if (speech) seen.speech = true;
+      if (vote) seen.vote = true;
+      if (task.deadline && task.deadline > now) now = task.deadline;
+      m.tick();
+    }
+    expect(seen).toEqual({ speech: true, vote: true });
+  });
 });
 
 describe('模型调度', () => {
+  it('模型发言请求 180 秒，投票请求 90 秒，其余仍是座位时限', async () => {
+    const got = { speech: 0, vote: 0, other: 0 };
+    const recording: Adapter = {
+      async decide(req) {
+        const names = req.tools.map((t) => t.name);
+        const text = req.messages.map((m) => ('content' in m && m.content ? m.content : '')).join('\n');
+        if (names.includes('speak') || names.includes('wolf_discuss')) {
+          got.speech = req.config.timeoutSec;
+          expect(text).toContain('这一步限时 180 秒');
+        } else if (names.includes('vote') || names.includes('sheriff_vote')) {
+          got.vote = req.config.timeoutSec;
+          expect(text).toContain('这一步限时 90 秒');
+        } else if (!got.other) {
+          got.other = req.config.timeoutSec;
+          expect(text).toContain('这一步限时 60 秒');
+        }
+        return mockAdapter.decide(req);
+      },
+    };
+    const { m, roomId, hostToken } = setup({ adapters: { mock: recording } });
+    m.updateSetup(roomId, hostToken, { presetId: 'classic9', aiPacingMs: 0 });
+    m.start(roomId, hostToken);
+    await m.whenIdle(roomId);
+    expect(got).toEqual({ speech: 180, vote: 90, other: 60 });
+  });
+
   it('两次非法输出后托管，审计记录每次失败并把错误发回模型', async () => {
     const seen: number[] = [];
     const bad: Adapter = {

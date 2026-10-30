@@ -13,7 +13,8 @@ const DEV = process.argv.includes('--dev');
 const PORT = Number(process.env.PORT ?? 5173);
 const HOST = process.env.HOST ?? '127.0.0.1';
 
-const manager = new RoomManager({ store: new FileStore(DATA), secrets: SecretBox.fromEnvOrFile(DATA) });
+const secrets = SecretBox.fromEnvOrFile(DATA);
+const manager = new RoomManager({ store: new FileStore(DATA), secrets, modelsPath: join(DATA, 'models.json') });
 
 function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -67,6 +68,12 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL): Promise
   const token = tokenOf(req, url);
 
   if (parts[0] === 'catalog' && method === 'GET') return send(res, 200, manager.catalog());
+  if ((parts[0] === 'model-presets' || parts[0] === 'models') && !parts[1] && method === 'GET') return send(res, 200, manager.modelPresets());
+  if (parts[0] === 'models' && !parts[1] && method === 'POST') return send(res, 201, manager.addModel(await readBody(req)));
+  if (parts[0] === 'models' && parts[1] && method === 'DELETE') {
+    manager.deleteModel(decodeURIComponent(parts[1]));
+    return send(res, 200, { ok: true });
+  }
   if (parts[0] !== 'rooms') throw new ApiFailure(404, 'NOT_FOUND', '接口不存在');
   if (parts.length === 1 && method === 'POST') return send(res, 201, manager.createRoom());
 

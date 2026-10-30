@@ -142,13 +142,32 @@ describe('狼人落刀合并', () => {
     expect(lastPublic(g, 'dawn')?.text).toBe('昨夜出局：9号。');
   });
 
-  it('只投一轮的规则下 2-2 直接空刀', () => {
+  it('只投一轮时 2-2 并列，取座位号较小的目标，不空刀', () => {
     const g = new TestGame({ deal: DEAL12, values: { ...noSheriff, 'wolf.killRounds': 1 } });
     g.until((x) => x.hasTool('wolf_kill'));
     g.ok(1, 'wolf_kill', { target: 9 });
     g.ok(2, 'wolf_kill', { target: 9 });
     g.ok(3, 'wolf_kill', { target: 10 });
     g.ok(4, 'wolf_kill', { target: 10 });
+    g.night({});
+    expect(lastPublic(g, 'dawn')?.text).toBe('昨夜出局：9号。');
+  });
+
+  it('空刀不计票：2 人刀 9 号、2 人空刀，刀口是 9 号', () => {
+    const g = game();
+    g.until((x) => x.hasTool('wolf_kill'));
+    g.ok(1, 'wolf_kill', { target: 9 });
+    g.ok(2, 'wolf_kill', { target: 9 });
+    g.ok(3, 'wolf_kill', { target: null });
+    g.ok(4, 'wolf_kill', { target: null });
+    g.night({});
+    expect(lastPublic(g, 'dawn')?.text).toBe('昨夜出局：9号。');
+  });
+
+  it('只有所有狼人都空刀时才空刀', () => {
+    const g = game();
+    g.until((x) => x.hasTool('wolf_kill'));
+    for (const seat of [1, 2, 3, 4]) g.ok(seat, 'wolf_kill', { target: null });
     g.night({});
     expect(lastPublic(g, 'dawn')?.text).toBe('昨夜平安，无人出局。');
   });

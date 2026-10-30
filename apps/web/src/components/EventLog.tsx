@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { GameEvent, SeatInfo } from '@werewolf/protocol';
-import { audienceText, phaseLabel, seatName } from '../util';
+import { audienceText, phaseLabel, seatName, seatStyle } from '../util';
 import { PhaseIcon } from './Icons';
 import { VoteChart } from './VoteChart';
 
@@ -118,7 +118,7 @@ function EventItem({ e, nameOf, scope }: { e: GameEvent; nameOf: (s: number) => 
     const wolf = e.type === 'wolf.chat';
     const kind = wolf ? '狼队密谈' : (SPEECH_KIND[p.kind as string] ?? '发言');
     return (
-      <div className={`speech ${wolf ? 'wolfchat' : (p.kind as string)}`}>
+      <div className={`speech ${wolf ? 'wolfchat' : (p.kind as string)}`} style={seatStyle(seat)}>
         <div className="avatar">{seat}</div>
         <div>
           <div className="who">

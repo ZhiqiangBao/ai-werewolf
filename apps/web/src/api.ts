@@ -3,6 +3,8 @@ import type {
   AuditEntry,
   Catalog,
   ControlAction,
+  ModelDraft,
+  ModelPresetView,
   CreateRoomResult,
   RoomBrief,
   RoomSetupInput,
@@ -39,6 +41,9 @@ async function request<T>(method: string, path: string, token?: string, body?: u
 
 export const api = {
   catalog: () => request<Catalog>('GET', '/catalog'),
+  modelPresets: () => request<ModelPresetView[]>('GET', '/models'),
+  addModel: (draft: ModelDraft) => request<ModelPresetView>('POST', '/models', undefined, draft),
+  deleteModel: (id: string) => request<{ ok: true }>('DELETE', `/models/${encodeURIComponent(id)}`),
   createRoom: () => request<CreateRoomResult>('POST', '/rooms'),
   cloneRoom: (id: string, t: string) => request<CreateRoomResult>('POST', `/rooms/${id}/clone`, t),
   getSetup: (id: string, t: string) => request<RoomSetupView>('GET', `/rooms/${id}/setup`, t),

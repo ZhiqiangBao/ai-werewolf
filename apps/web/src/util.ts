@@ -1,6 +1,13 @@
+import type { CSSProperties } from 'react';
 import type { Audience, Catalog } from '@werewolf/protocol';
 
 export const seatName = (seat: number) => `${seat}号`;
+
+/** 每个座位一个固定色相：1 号到 12 号沿座位环走一圈彩虹。圆桌、日志、票型和选择器用同一套颜色认人。 */
+export const seatHue = (seat: number): number => (8 + (seat - 1) * 30) % 360;
+
+/** 把座位色相注入元素，样式表里用 hsl(var(--h) …) 取色。 */
+export const seatStyle = (seat: number): CSSProperties => ({ '--h': seatHue(seat) }) as CSSProperties;
 
 /** 按身份目录里的阵营和类别上色，新增身份不需要改网页。 */
 export function roleTone(catalog: Catalog | null, role?: string): string {

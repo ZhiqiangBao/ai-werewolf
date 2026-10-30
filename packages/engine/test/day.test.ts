@@ -323,11 +323,24 @@ describe('非法行动（DAY-10 / VIS-10）', () => {
     expect(g.spectator().events.some((e) => e.type === 'action.rejected')).toBe(false);
   });
 
-  it('参数越界被拒绝', () => {
+  it('参数越界被拒绝；座位号和布尔的字符串写法按声明收下', () => {
     const g = new TestGame({ deal: DEAL12, values: noSheriff });
     g.until((x) => x.hasTool('wolf_kill'));
     expect(g.act(1, 'wolf_kill', { target: 13 })?.code).toBe('TARGET_NOT_IN_GAME');
-    expect(g.act(1, 'wolf_kill', { target: '9' })?.code).toBe('INVALID_ARGUMENT');
+    expect(g.act(1, 'wolf_kill', { target: '九号' })?.code).toBe('INVALID_ARGUMENT');
+    expect(g.act(1, 'wolf_kill', { target: '9' })).toBeUndefined();
+    expect(g.act(2, 'wolf_kill', { target: ' 10号 ' })).toBeUndefined();
+    expect(g.act(3, 'wolf_kill', { target: '空刀' })).toBeUndefined();
+    expect(g.act(4, 'wolf_kill', { target: 'null' })).toBeUndefined();
+
+    const day = new TestGame({ deal: DEAL12, values: { ...noSheriff, 'explode.window': 'between_speeches' } });
+    day.night({ kill: null });
+    day.untilTool('wolf_explode_decision');
+    day.ok(1, 'wolf_explode_decision', { explode: 'false' });
+    day.ok(2, 'wolf_explode_decision', { explode: 'true' });
+    day.ok(3, 'wolf_explode_decision', { explode: false });
+    day.ok(4, 'wolf_explode_decision', { explode: '不自爆' });
+    expect(lastPublic(day, 'explode')?.text).toBe('2号自爆出局。');
   });
 });
 

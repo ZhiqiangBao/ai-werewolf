@@ -1,5 +1,5 @@
 import type { GameEvent } from '@werewolf/protocol';
-import { seatName } from '../util';
+import { seatName, seatStyle } from '../util';
 
 interface Payload {
   kind: 'exile' | 'sheriff';
@@ -22,13 +22,15 @@ export function VoteChart({ event }: { event: GameEvent }) {
       <div className="title">{title}</div>
       {p.rows.map((r) => (
         <div key={r.target} className="vote-row">
-          <div className="target">{seatName(r.target)}</div>
+          <div className="target" style={seatStyle(r.target)}>
+            {seatName(r.target)}
+          </div>
           <div className={`vote-bar ${r.weight === top ? 'top' : ''}`}>
             <div className="fill" style={{ width: `${(r.weight / max) * 100}%` }} />
             {[...r.voters].sort((a, b) => a - b).map((v) => {
               const w = weightOf(v);
               return (
-                <span key={v} className={`voter ${w !== 1 ? 'sheriff' : ''}`} title={w !== 1 ? `警长 ${w} 票` : undefined}>
+                <span key={v} className={`voter ${w !== 1 ? 'sheriff' : ''}`} style={seatStyle(v)} title={w !== 1 ? `警长 ${w} 票` : undefined}>
                   {seatName(v)}
                   {w !== 1 ? ` ×${w}` : ''}
                 </span>

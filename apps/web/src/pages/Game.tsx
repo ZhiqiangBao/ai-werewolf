@@ -14,6 +14,13 @@ import { LinksPanel, Setup } from './Setup';
 
 function TopBar({ room, projection, who, children }: { room: RoomBrief; projection: Projection | null; who: string; children?: ReactNode }) {
   const phase = projection?.status === 'ended' ? 'end' : (projection?.phase ?? 'setup');
+  // 页面背景随昼夜变化：样式表里用 body[data-phase] 切换暮色/晨光
+  useEffect(() => {
+    document.body.dataset.phase = phase;
+    return () => {
+      delete document.body.dataset.phase;
+    };
+  }, [phase]);
   return (
     <div className="topbar">
       <a className="brand" href="#/">

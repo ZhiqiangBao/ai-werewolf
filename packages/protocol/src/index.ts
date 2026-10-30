@@ -287,6 +287,8 @@ export interface SeatConfigView {
   persona: string;
   toolMode: ToolMode;
   timeoutSec: number;
+  /** 选用的模型名单条目。旧房间可能还没有。 */
+  modelId?: string | null;
 }
 
 /** 只需要带上要修改的字段。 */
@@ -294,6 +296,29 @@ export interface SeatConfigInput extends Partial<Omit<SeatConfigView, 'seat' | '
   seat: Seat;
   /** undefined 表示保持原值，null 表示清除。 */
   apiKey?: string | null;
+  /**
+   * 从模型名单里选用。服务端据此写入地址、模型名和密钥，响应里不会出现密钥明文。
+   * 若同时提交了 apiKey，密钥以 apiKey 为准。
+   */
+  presetId?: string;
+}
+
+/** 添加一个模型。名称同时作为接口里的模型名。 */
+export interface ModelDraft {
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+}
+
+/** 模型名单里的一条。没有密钥明文。 */
+export interface ModelPresetView {
+  id: string;
+  label: string;
+  model: string;
+  baseUrl: string;
+  hasKey: boolean;
+  /** settings：来自 Qwen Code 的 settings.json。added：在页面里添加的。 */
+  source: 'settings' | 'added';
 }
 
 export interface RoomLinks {

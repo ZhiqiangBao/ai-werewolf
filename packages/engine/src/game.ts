@@ -136,9 +136,10 @@ function apply(ctx: Ctx, input: SubmitInput): RuleError | null {
     const intr = interruptsIn(s.rules).find((i) => i.tool === call.tool);
     if (intr && intr.available(ctx, input.seat)) {
       const spec = intr.spec(ctx, input.seat);
-      const e = validateArgs(ctx, spec, call.args, input.seat);
+      const final = normalizeCall(spec, call);
+      const e = validateArgs(ctx, spec, final.args, input.seat);
       if (e) return e;
-      intr.apply(ctx, input.seat, normalizeCall(spec, call));
+      intr.apply(ctx, input.seat, final);
       return null;
     }
   }
@@ -161,11 +162,11 @@ function apply(ctx: Ctx, input: SubmitInput): RuleError | null {
     if (!spec) {
       return err('TOOL_NOT_LEGAL', `当前不能使用「${call.tool || '空'}」，可用工具：${tools.map((t) => t.name).join('、')}`);
     }
-    const e1 = handler.validate?.(ctx, d.step, input.seat, call);
-    if (e1) return e1;
-    const e2 = validateArgs(ctx, spec, call.args, input.seat);
-    if (e2) return e2;
     final = normalizeCall(spec, call);
+    const e1 = handler.validate?.(ctx, d.step, input.seat, { tool: final.tool, args: { ...call.args, ...final.args } });
+    if (e1) return e1;
+    const e2 = validateArgs(ctx, spec, final.args, input.seat);
+    if (e2) return e2;
   }
   d.submissions[input.seat] = final;
   const ack = handler.ack?.(ctx, d.step, input.seat, final);

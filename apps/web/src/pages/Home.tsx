@@ -25,7 +25,11 @@ export function Home() {
   return (
     <div className="wrap">
       <div className="hero">
-        <Logo size={64} />
+        <div className="emblem" aria-hidden="true">
+          <div className="face">
+            <Logo size={64} />
+          </div>
+        </div>
         <h1>AI 狼人杀</h1>
         <p>
           每个座位可以接一个大模型，也可以由真人操作。法官由规则引擎担任，每个座位只能看到自己该知道的信息。
@@ -34,6 +38,11 @@ export function Home() {
         <button className="btn primary lg" disabled={busy} onClick={create}>
           {busy ? '正在创建…' : '创建房间'}
         </button>
+        <div className="features">
+          <span className="chip">真人与大模型同桌</span>
+          <span className="chip">规则引擎当法官</span>
+          <span className="chip">每人只看得到自己该看的</span>
+        </div>
         {error && (
           <div className="error-box" style={{ maxWidth: 520, margin: '16px auto 0' }}>
             {error}
