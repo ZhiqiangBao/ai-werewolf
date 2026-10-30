@@ -22,8 +22,8 @@ function speakTool(): ToolSpec {
     name: 'speak',
     title: '发言',
     description:
-      '轮到你公开发言时使用：警上发言、白天发言、PK 发言或遗言。把要说的话写入 content，内容会公开给所有人，1–400 字。其他阶段不要调用。',
-    params: [textParam('content', '发言内容', 1, 400)],
+      '轮到你公开发言时使用：警上发言、白天发言、PK 发言或遗言。把要说的话写入 content，内容会公开给所有人。其他阶段不要调用。',
+    params: [textParam('content', '发言内容', 1)],
   };
 }
 
@@ -49,7 +49,7 @@ function sheriffTools(seats: Seat[], abstain: boolean): ToolSpec[] {
       name: 'sheriff_withdraw',
       title: '退水',
       description: '你的警上发言或竞选 PK 发言时使用，表示退出警长竞选。content 是同时发表的话，可以留空。其他阶段不要调用。',
-      params: [textParam('content', '退水时的发言（可留空）', 0, 400)],
+      params: [textParam('content', '退水时的发言（可留空）', 0)],
     },
     {
       name: 'sheriff_vote',
@@ -105,8 +105,8 @@ function wolfTools(seats: Seat[], v: GameState['rules']['values']): ToolSpec[] {
     {
       name: 'wolf_discuss',
       title: '狼人密谈',
-      description: '狼人夜间密谈、且轮到你发言时使用。content 只有当前存活的狼队友能看到，1–200 字。其他阶段不要调用。',
-      params: [textParam('content', '密谈内容', 1, 200)],
+      description: '狼人夜间密谈、且轮到你发言时使用。content 只有当前存活的狼队友能看到。其他阶段不要调用。',
+      params: [textParam('content', '密谈内容', 1)],
     },
     {
       name: 'wolf_kill',

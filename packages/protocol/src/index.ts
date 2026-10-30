@@ -50,7 +50,8 @@ export interface TextParam {
   name: string;
   label: string;
   minLength: number;
-  maxLength: number;
+  /** 不写就没有上限。上限会进工具参数，模型会去数字数。 */
+  maxLength?: number;
   placeholder?: string;
 }
 
@@ -96,8 +97,11 @@ export function paramToJsonSchema(p: ParamSpec): JsonSchema {
       };
     case 'boolean':
       return { type: 'boolean', description: p.label };
-    case 'text':
-      return { type: 'string', minLength: p.minLength, maxLength: p.maxLength, description: p.label };
+    case 'text': {
+      const schema: JsonSchema = { type: 'string', minLength: p.minLength, description: p.label };
+      if (p.maxLength !== undefined) schema.maxLength = p.maxLength;
+      return schema;
+    }
     case 'choice':
       return {
         type: 'string',

@@ -21,7 +21,7 @@ const withdrawTool: ToolSpec = {
   name: 'sheriff_withdraw',
   title: '退水',
   description: '退出警长竞选。可以附带一段公开发言，也可以留空。',
-  params: [textParam('content', '退水时的发言（可留空）', 0, 400)],
+  params: [textParam('content', '退水时的发言（可留空）', 0)],
 };
 
 /** 一段发言及其之前的自爆询问（仅「每段发言前询问」模式）。 */

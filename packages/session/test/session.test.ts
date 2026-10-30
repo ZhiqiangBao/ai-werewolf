@@ -390,12 +390,21 @@ describe('模型调度', () => {
     const said = JSON.stringify(bySeat.get(speaker)!.at(-1));
     expect(said).toContain(text);
     expect(said).not.toContain(`${speaker}号发言：${text}`);
-    expect(blob(outsider)).toContain(`${speaker}号发言：${text}`);
+    const listener = [1, 2, 3, 4, 5, 6, 7, 8, 9].find((seat) => seat !== speaker)!;
+    expect(blob(listener)).toContain(`${speaker}号发言：${text}`);
     const roles = god(m, roomId, hostToken).god.roles;
     const seer = roles.find((r) => r.role === 'seer')!.seat;
     const seerText = blob(seer);
     expect(seerText.indexOf('天黑请闭眼')).toBeGreaterThan(-1);
     expect(seerText.indexOf('你现在可以使用查验工具。')).toBeGreaterThan(seerText.indexOf('天黑请闭眼'));
+    const witch = roles.find((r) => r.role === 'witch')!.seat;
+    const witchText = blob(witch);
+    expect(witchText).toContain('你现在可以使用用药工具。');
+    expect(witchText).not.toMatch(/狼人今晚选择刀[^\n]*\n不要调用工具/);
+    expect(witchText).not.toMatch(/狼人今晚没有落刀。\n不要调用工具/);
+    const signupText = blob(1);
+    expect(signupText).toContain('你现在可以使用上警与否工具。');
+    expect(signupText).not.toContain('开始竞选警长。\n不要调用工具。');
     const lastOf = (row: (typeof audit)[number]) => {
       const messages = (row.messages ?? []) as { content?: string }[];
       return messages.filter((m) => m.content).at(-1)?.content ?? '';
@@ -530,6 +539,47 @@ describe('模型调度', () => {
     expect(max).toBeLessThanOrEqual(5);
     expect(g.events.some((e) => e.type === 'action.rejected' && Array.isArray(e.audience) && e.audience[0] === 1)).toBe(true);
     expect(g.events.filter((e) => e.audience === 'public').every((e) => e.type !== 'action.rejected')).toBe(true);
+  });
+
+  it('上警到点没交的记为不上警，全员到齐后结算', async () => {
+    let now = 1_000_000;
+    let held: number | null = null;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const adapter: Adapter = {
+      async decide(req) {
+        const signup = req.projection?.task?.tools.some((t) => t.name === 'sheriff_signup') && !req.projection.task.submitted;
+        if (signup && req.toolChoice !== 'auto') {
+          if (held === null) held = req.seat;
+          if (req.seat === held) {
+            await gate;
+            return { ok: false, fatal: true, error: '超过 90 秒没有返回', toolCallIds: [], latencyMs: 1 };
+          }
+        }
+        return mockAdapter.decide(req);
+      },
+    };
+    const { m, roomId, hostToken } = setup({ now: () => now, adapters: { mock: adapter } });
+    m.updateSetup(roomId, hostToken, { presetId: 'classic9', aiPacingMs: 0 });
+    m.start(roomId, hostToken);
+    let found = false;
+    for (let i = 0; i < 200 && !found; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      const pending = god(m, roomId, hostToken).god.pending;
+      const signup = pending?.actors.filter((a) => a.tools.includes('sheriff_signup')) ?? [];
+      found = !!held && signup.some((a) => a.seat === held && !a.submitted) && signup.every((a) => a.seat === held || a.submitted);
+    }
+    expect(found).toBe(true);
+    now += 90_000;
+    m.tick();
+    const g = god(m, roomId, hostToken);
+    expect(g.events.some((e) => e.type === 'action.fallback' && Array.isArray(e.audience) && e.audience.includes(held!))).toBe(true);
+    expect(g.events.some((e) => e.type === 'sheriff.signup' || e.text.includes('没有警长'))).toBe(true);
+    expect(g.god.pending?.actors.some((a) => a.tools.includes('sheriff_signup'))).toBe(false);
+    release();
+    await m.whenIdle(roomId);
   });
 
   it('复制房间保留配置、换掉全部凭证', () => {

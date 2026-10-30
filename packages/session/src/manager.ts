@@ -169,7 +169,7 @@ function clampTexts(call: ToolCall, tools: ToolSpec[]): ToolCall {
     const v = args[p.name];
     if (p.kind === 'text' && typeof v === 'string') {
       const chars = [...v.trim()];
-      if (chars.length > p.maxLength) args[p.name] = chars.slice(0, p.maxLength).join('');
+      if (p.maxLength !== undefined && chars.length > p.maxLength) args[p.name] = chars.slice(0, p.maxLength).join('');
     }
   }
   return { tool: call.tool, args };
@@ -760,23 +760,26 @@ export class RoomManager {
     return rec.seats[seat - 1]?.controller === 'human';
   }
 
-  /** 为当前决策里还没提交的真人座位设置截止时间；reset 时全部重新计时（例如恢复暂停后）。 */
+  /** 为当前决策里还没提交的座位设置截止时间。真人时限为 0 时不限时。reset 时全部重新计时。 */
   private armDeadlines(live: Live, reset: boolean): void {
     const rec = live.rec;
     const d = rec.state?.pending;
     const next: Record<string, number> = {};
-    if (d && rec.status === 'running' && rec.humanTimeoutSec > 0) {
+    if (d && rec.status === 'running') {
       for (const seat of waitingSeats(rec.state!)) {
-        if (!this.isHuman(rec, seat)) continue;
+        const human = this.isHuman(rec, seat);
+        if (human && rec.humanTimeoutSec <= 0) continue;
         const key = `${d.id}:${seat}`;
-        const limit = actionLimitSec(d.step.type, rec.humanTimeoutSec);
+        const limit = human
+          ? actionLimitSec(d.step.type, rec.humanTimeoutSec)
+          : aiTimeoutSec(d.step.type, rec.seats[seat - 1].timeoutSec);
         next[key] = !reset && rec.deadlines[key] ? rec.deadlines[key] : this.now() + limit * 1000;
       }
     }
     rec.deadlines = next;
   }
 
-  /** 真人超时托管。暂停期间不计时。 */
+  /** 到点还没提交的座位按该步骤的托管行动结算。上警托管就是不上警。暂停期间不计时。 */
   tick(): void {
     for (const live of this.rooms.values()) {
       const rec = live.rec;
@@ -784,7 +787,7 @@ export class RoomManager {
       if (rec.status !== 'running' || rec.paused || !d) continue;
       const expired = waitingSeats(rec.state!).find((seat) => {
         const dl = rec.deadlines[`${d.id}:${seat}`];
-        return this.isHuman(rec, seat) && dl !== undefined && this.now() >= dl;
+        return dl !== undefined && this.now() >= dl;
       });
       if (expired === undefined) continue;
       this.apply(live, { seat: expired, call: AUTO, auto: true, decisionId: d.id });
@@ -891,7 +894,7 @@ export class RoomManager {
       speechSec: SPEECH_LIMIT_SEC,
       skillSec: Math.max(MIN_EVENT_SEC, cfg.timeoutSec),
     })[0];
-    syncThread(thread, rec.events, system, this.turnHint(rec), maxSeq);
+    syncThread(thread, rec.events, system, { ...this.turnHint(rec), cue: rec.status === 'running' ? this.actionCue(rec) : null }, maxSeq);
     return thread;
   }
 
@@ -973,6 +976,21 @@ export class RoomManager {
     return n;
   }
 
+  /** 这个座位此刻还要交这一步，并且叫的就是这一步允许的工具。 */
+  private legalTaskTool(rec: RoomRecord, seat: Seat, decision: string, tool: string): boolean {
+    const d = rec.state?.pending;
+    return !!d && d.id === decision && waitingSeats(rec.state!).includes(seat) && !!d.tools[seat]?.some((t) => t.name === tool);
+  }
+
+  /** 还没提交的座位到点或放弃时，按引擎的托管行动补上。上警就是不上警。 */
+  private fallbackIfWaiting(live: Live, seat: Seat, decision: string): void {
+    const rec = live.rec;
+    const d = rec.state?.pending;
+    if (rec.status !== 'running' || !d || d.id !== decision) return;
+    if (!waitingSeats(rec.state!).includes(seat)) return;
+    this.apply(live, { seat, call: AUTO, auto: true, decisionId: decision });
+  }
+
   /** 收听刚写入的消息。调用了工具就提交给引擎：接受就执行，拒绝就留下仅该座位可见的记录。 */
   private async receive(live: Live, seat: Seat, decision: string): Promise<void> {
     const rec = live.rec;
@@ -1014,9 +1032,26 @@ export class RoomManager {
         throw e;
       }
       if (live.gen !== gen) return;
+      if (result.fatal) {
+        this.fallbackIfWaiting(live, seat, decision);
+        this.writeAudit(live, {
+          seat,
+          model,
+          decisionId: decision,
+          projectionVersion: projection.version,
+          ok: false,
+          messages,
+          ...(result.raw ? { response: result.raw } : {}),
+          ...(result.error ? { error: result.error } : {}),
+          latencyMs: result.latencyMs,
+        });
+        return;
+      }
       if (result.call) {
           const call = clampTexts(result.call, tools);
-          if (this.rejectionStreak(rec, seat) >= MAX_ATTEMPTS) {
+          const legal = this.legalTaskTool(rec, seat, decision, call.tool);
+          if (!legal && this.rejectionStreak(rec, seat) >= MAX_ATTEMPTS) {
+            this.fallbackIfWaiting(live, seat, decision);
             this.writeAudit(live, {
               seat,
               model,

@@ -17,6 +17,8 @@ export interface SeatThread {
 export interface TurnHint {
   nextSeat: number | null;
   nextStep: string | null;
+  /** 同步这一条时，如果它就是当前行动，用行动结尾，不用「不要调用工具」。 */
+  cue?: ActionCue | null;
 }
 
 /** 这一步要不要单独补一句法官提示。发言的结尾已经写在上一条里时不必再补。 */
@@ -150,7 +152,24 @@ export function eventToMessage(
     const who = first ? `有请${first}号玩家发言。` : '';
     return { role: 'user', name: 'judge', content: `法官：${e.text}${who}\n${turnSuffix(invite, yours)}` };
   }
+  const opened = openAction(e, me, hint);
+  if (opened) return opened;
   return { role: 'user', name: 'judge', content: `法官：${e.text}\n不要调用工具。` };
+}
+
+/** 这条事件就是当前行动。写成一句，带上能不能用工具，不再先停再追问。 */
+function openAction(e: GameEvent, me: Seat, hint: TurnHint): ChatMessage | null {
+  const cue = hint.cue;
+  if (!cue) return null;
+  const match =
+    (e.type === 'witch.knife' && cue.tool === 'witch_act') ||
+    (e.type === 'sheriff.start' && cue.tool === 'sheriff_signup') ||
+    (e.type === 'wolf.kill.split' && cue.tool === 'wolf_kill');
+  if (!match) return null;
+  const actor = cue.actors.includes(me);
+  if (!actor && !(cue.broadcast && e.type === 'sheriff.start')) return null;
+  const prompt = (actor ? cue.prompts[me] : Object.values(cue.prompts).find(Boolean)) || e.text;
+  return { role: 'user', name: 'judge', content: `法官：${prompt}\n${cueTail(cue, me)}` };
 }
 
 /** 把该座位还没见过、且不超过 maxSeq 的事件接在对话后面。系统消息只在第一句写入，之后不改。 */

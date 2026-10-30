@@ -15,7 +15,7 @@ function ready(p: ParamSpec, v: unknown): boolean {
       return typeof v === 'boolean';
     case 'text': {
       const n = typeof v === 'string' ? v.trim().length : 0;
-      return n >= p.minLength && n <= p.maxLength;
+      return n >= p.minLength && (p.maxLength === undefined || n <= p.maxLength);
     }
     case 'choice':
       return typeof v === 'string';
@@ -85,15 +85,17 @@ function ParamInput({ p, value, onChange, onSubmit }: { p: ParamSpec; value: unk
             value={text}
             maxLength={p.maxLength}
             placeholder={p.placeholder ?? (p.minLength ? '' : '可以留空')}
-            rows={p.maxLength > 300 ? 6 : 3}
+            rows={p.maxLength !== undefined && p.maxLength > 300 ? 6 : 3}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) onSubmit();
             }}
           />
-          <div className={`tiny ${n > p.maxLength || n < p.minLength ? 'muted' : 'dim'}`} style={{ textAlign: 'right' }}>
-            {n} / {p.maxLength}　Ctrl+Enter 提交
-          </div>
+          {p.maxLength !== undefined && (
+            <div className={`tiny ${n > p.maxLength || n < p.minLength ? 'muted' : 'dim'}`} style={{ textAlign: 'right' }}>
+              {n} / {p.maxLength}　Ctrl+Enter 提交
+            </div>
+          )}
         </>
       );
     }

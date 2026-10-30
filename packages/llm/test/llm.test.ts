@@ -42,6 +42,8 @@ describe('提示词', () => {
     expect(sys.indexOf('【本局规则')).toBeLessThan(sys.indexOf('【你的身份】'));
     expect(sys.indexOf('【你的身份】')).toBeLessThan(sys.indexOf('【扮演风格】'));
     expect(sys.indexOf('【扮演风格】')).toBeLessThan(sys.indexOf('【输出要求】'));
+    expect(sys).toContain('发言尽量精简');
+    expect(sys).not.toContain('400');
     expect(sys).toContain('发言限时 180 秒');
     expect(sys).toContain('技能限时 90 秒');
     expect(sys).toContain('后面按座位写明的发言');

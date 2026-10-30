@@ -23,6 +23,16 @@ describe('座位工具目录', () => {
     expect(names(5)).not.toContain('wolf_kill');
     expect(names(9)).not.toContain('seer_inspect');
 
+    const speak = seatTools(g.state, 1).find((t) => t.name === 'speak');
+    const withdraw = seatTools(g.state, 1).find((t) => t.name === 'sheriff_withdraw');
+    expect(speak?.description).not.toMatch(/\d+\s*字/);
+    expect(speak?.params[0]).toMatchObject({ kind: 'text', name: 'content' });
+    expect(speak?.params[0]).not.toHaveProperty('maxLength');
+    expect(withdraw?.params[0]).not.toHaveProperty('maxLength');
+    const discuss = seatTools(g.state, 1).find((t) => t.name === 'wolf_discuss');
+    expect(discuss?.description).not.toMatch(/\d+\s*字/);
+    expect(discuss?.params[0]).not.toHaveProperty('maxLength');
+
     const witch = seatTools(g.state, 6).find((t) => t.name === 'witch_act');
     expect(witch?.params.map((p) => p.name)).toEqual(['save', 'poisonTarget']);
     const before = JSON.stringify(seatTools(g.state, 6));

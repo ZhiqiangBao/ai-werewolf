@@ -17,21 +17,19 @@ export const seatParam = (
   ...(nullLabel ? { nullable: true, nullLabel } : {}),
 });
 
-export const textParam = (name: string, label: string, minLength: number, maxLength: number): ParamSpec => ({
+export const textParam = (name: string, label: string, minLength: number, maxLength?: number): ParamSpec => ({
   kind: 'text',
   name,
   label,
   minLength,
-  maxLength,
+  ...(maxLength === undefined ? {} : { maxLength }),
 });
-
-export const SPEECH_LIMIT = 400;
 
 export const speakTool = (what: string): ToolSpec => ({
   name: 'speak',
   title: '发言',
-  description: `${what}。内容会公开给所有人，1–${SPEECH_LIMIT} 字。`,
-  params: [textParam('content', '发言内容', 1, SPEECH_LIMIT)],
+  description: `${what}。内容会公开给所有人。`,
+  params: [textParam('content', '发言内容', 1)],
 });
 
 export const explodeTool: ToolSpec = {
@@ -159,7 +157,9 @@ export function validateArgs(ctx: Ctx, spec: ToolSpec, args: Record<string, unkn
         if (typeof v !== 'string') return err('INVALID_ARGUMENT', `缺少参数「${p.label}」`);
         const len = [...v].length;
         if (len < p.minLength) return err('INVALID_ARGUMENT', `「${p.label}」不能为空`);
-        if (len > p.maxLength) return err('INVALID_ARGUMENT', `「${p.label}」不能超过 ${p.maxLength} 字（当前 ${len} 字）`);
+        if (p.maxLength !== undefined && len > p.maxLength) {
+          return err('INVALID_ARGUMENT', `「${p.label}」不能超过 ${p.maxLength} 字（当前 ${len} 字）`);
+        }
         break;
       }
       case 'choice':

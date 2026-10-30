@@ -98,10 +98,10 @@ export const werewolf: RoleModule = {
               name: 'wolf_discuss',
               title: '狼人密谈',
               description: '和狼队友商量今晚的刀口，只有当前存活的狼队友能看到。',
-              params: [textParam('content', '密谈内容', 1, 200)],
+              params: [textParam('content', '密谈内容', 1)],
             },
           ],
-          prompt: () => '轮到你在狼队频道发言（1–200 字），商量今晚刀谁、白天怎么打。',
+          prompt: () => '轮到你在狼队频道发言，商量今晚刀谁、白天怎么打。',
           title: `第${ctx.state.day}夜 · 狼人密谈`,
           publicStage: '夜晚',
         });
