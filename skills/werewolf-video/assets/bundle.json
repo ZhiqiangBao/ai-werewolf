@@ -1,0 +1,8 @@
+{
+  "format": "werewolf-video-skill-bundle",
+  "version": 1,
+  "pipelineFiles": 18,
+  "artFiles": 10,
+  "source": "scripts/video/",
+  "generatedAt": "2026-10-31T20:20:20.390Z"
+}
