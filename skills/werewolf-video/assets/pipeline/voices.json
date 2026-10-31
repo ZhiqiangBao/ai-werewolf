@@ -1,0 +1,20 @@
+{
+  "model": "qwen-audio-3.0-tts-plus",
+  "source": "https://platform.qianwenai.com/docs/developer-guides/speech/voice-list/qwen-audio-tts",
+  "profiles": {
+    "commentator": { "voice": "longanlingxin", "label": "上帝解说 · 温暖知性女声", "rate": 1.08, "instruction": "请用普通话为一段狼人杀上帝视角视频配旁白。声音知性自然，像懂游戏的朋友陪观众看对局，分析时清楚克制，转折处有一点兴味和停顿。不要逐字念文稿的播音腔，不要夸张叫喊，不要擅自添加文字。" },
+    "judge": { "voice": "qwen-audio-3.0-tts-plus-longshuojizhu", "label": "法官 · 清晰中性播报", "rate": 1.08, "instruction": "请用标准普通话，以狼人杀法官的口吻清晰播报，冷静、公正、简洁，有自然停顿，不要夸张表演。" },
+    "seat-1": { "voice": "qwen-audio-3.0-tts-plus-longchengtaohui", "label": "大老师 · 慵懒犀利男声", "rate": 1.04, "instruction": "请用普通话配音。一位聪明、慵懒、略带冷幽默的年轻男生，音色偏低，语气随性，分析时冷静犀利，像坐在朋友间玩推理游戏。自然说话，不要播音腔，不要夸张愤怒。" },
+    "seat-2": { "voice": "qwen-audio-3.0-tts-plus-longlingxingxia", "label": "雪之下雪乃 · 清冷理性女声", "rate": 1.02, "instruction": "请用普通话配音。一位清冷、理性、从容的年轻女生，咬字准确，句子干净，思路严密，带一点锋利的自信。语气克制，自然讨论，不要甜腻或机械播报。" },
+    "seat-3": { "voice": "longanlufeng", "label": "叶山 · 阳光可靠男声", "rate": 1.06, "instruction": "请用普通话配音。一位阳光、温和、自信的年轻男生，声音清朗，像可靠的同学组织讨论，有说服力而不盛气凌人。保持自然交流的节奏。" },
+    "seat-4": { "voice": "qwen-audio-3.0-tts-plus-longlingjinquan", "label": "团子 · 亲切元气女声", "rate": 1.05, "instruction": "请用普通话配音。一位亲切、明亮、有元气的年轻女生，带温暖的笑意，讨论游戏时会认真解释，有自然起伏。可爱但不幼童化，不要新闻播音腔。" },
+    "seat-5": { "voice": "qwen-audio-3.0-tts-plus-longlanyufu", "label": "彩加 · 轻柔清秀男声", "rate": 1.01, "instruction": "请用普通话配音。一位温柔、清秀、细腻的年轻男生，声音轻而清楚，态度友善，推理时认真坚定。语调自然，不用刻意压低嗓音，不要夸张撒娇。" },
+    "seat-6": { "voice": "qwen-audio-3.0-tts-plus-longluanlanju", "label": "小鸟游 · 灵动自信女声", "rate": 1.04, "instruction": "请用普通话配音。一位灵动、认真又稍有戏剧感的年轻女生，发言自信，论点转折清晰，偶尔有一点中二气质，但总体像真实同学在玩狼人杀。不要全程喊叫。" },
+    "seat-7": { "voice": "qwen-audio-3.0-tts-plus-longtongxianhong", "label": "才木座 · 略带戏剧感男声", "rate": 1.04, "instruction": "请用普通话配音。一位热爱推理、带一点戏剧感的年轻男生，音色厚一些，讲论据时郑重自信，重音有层次。像朋友桌游讨论，保持清楚自然，不要舞台式大喊。" },
+    "seat-8": { "voice": "qwen-audio-3.0-tts-plus-longlanlingying", "label": "一色 · 俏皮机敏女声", "rate": 1.07, "instruction": "请用普通话配音。一位俏皮、聪明、机敏的年轻女生，语调轻快，有一点小狡黠，提出反问时灵动，认真分析时仍然清晰。不要幼童化，不要夸张娇嗲。" },
+    "seat-9": { "voice": "qwen-audio-3.0-tts-plus-longlinhongxi", "label": "平次 · 爽朗干脆男声", "rate": 1.07, "instruction": "请用普通话配音。一位爽朗、有活力的年轻男生，表达直截了当，分析节奏利落，有热情和行动力。保留自然停顿，不要喊麦或机械宣读。" },
+    "seat-10": { "voice": "qwen-audio-3.0-tts-plus-longshuangxuandie", "label": "金发 · 明亮坚定女声", "rate": 1.04, "instruction": "请用普通话配音。一位声音明亮、爽朗、坚定的年轻女生，推理发言有底气，观点清晰，面对质疑保持自信。自然讨论，不要怒吼，不要播音腔。" },
+    "seat-11": { "voice": "qwen-audio-3.0-tts-plus-longyanfengying", "label": "我的朋友很少 · 内敛沉静男声", "rate": 1.02, "instruction": "请用普通话配音。一位内敛、沉静、谨慎的年轻男生，声音自然偏轻，先思考再陈述，分析时逐渐坚定。清楚但不过度热情，不要机械或新闻播音腔。" },
+    "seat-12": { "voice": "qwen-audio-3.0-tts-plus-longlanqinluan", "label": "眼镜妹 · 清晰知性女声", "rate": 1.04, "instruction": "请用普通话配音。一位知性、细心、思路清楚的年轻女生，语速稳健，强调证据与因果，像同学认真讨论推理。语气自然，有温度，不要客服或新闻播音腔。" }
+  }
+}
