@@ -158,6 +158,18 @@ describe('OpenAI 兼容适配器', () => {
     expect(auths.at(-1)).toBe('Bearer sk-local-secret-key-0000');
   });
 
+  it('思考选择12但工具参数为5时保留实际参数，不能从思考文字擅自改号', async () => {
+    handler = () => ({ sse: [
+      JSON.stringify({ choices: [{ delta: { reasoning_content: '决定：警徽移交给12号。' } }] }),
+      JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'badge-call', type: 'function', function: { name: 'badge_dispose', arguments: '{"target":' } }] } }] }),
+      JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '"5"}' } }] } }] }),
+    ] });
+    const result = await openaiAdapter.decide({ seat: 8, stream: true, messages: [{ role: 'user', content: '请处理警徽。' }], tools: [{ name: 'badge_dispose', title: '处理警徽', description: '移交或撕毁警徽', params: [{ kind: 'seat', name: 'target', label: '移交给', options: [5, 12], nullable: true }] }], config: config() });
+    expect(result.thinking).toContain('移交给12号');
+    expect(result.call).toEqual({ tool: 'badge_dispose', args: { target: '5' } });
+    expect(result.ok).toBe(true);
+  });
+
   it('没有工具调用、多个工具调用、未知工具都算失败', async () => {
     handler = () => ({ json: { choices: [{ message: { role: 'assistant', content: '我想刀 3 号' } }] } });
     expect((await decide()).error).toContain('没有调用工具');

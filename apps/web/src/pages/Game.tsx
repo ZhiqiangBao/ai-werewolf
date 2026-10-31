@@ -10,6 +10,7 @@ import { Logo, PhaseIcon } from '../components/Icons';
 import { SeatRing } from '../components/SeatRing';
 import { TaskPanel } from '../components/TaskPanel';
 import { ThoughtFeed } from '../components/ThoughtFeed';
+import { downloadVideoScript } from '../video';
 import { phaseLabel, seatName } from '../util';
 import { LinksPanel, Setup } from './Setup';
 
@@ -187,8 +188,9 @@ function HostGame({ roomId, token, room, projection: p, refresh }: { roomId: str
                       导出公开记录
                     </a>
                     <a className="btn sm" href={exportUrl(roomId, token, 'god')}>
-                      导出上帝记录（含身份与全部行动）
+                      导出原始上帝记录
                     </a>
+                    <button className="btn sm primary" onClick={() => downloadVideoScript(p, room)}>导出视频剪辑稿</button>
                   </div>
                 </div>
               )}
@@ -196,7 +198,7 @@ function HostGame({ roomId, token, room, projection: p, refresh }: { roomId: str
             </div>
           </div>
           <div className="game-right">
-            <ThoughtFeed thoughts={p.thoughts} seats={p.seats} />
+            <ThoughtFeed thoughts={p.thoughts} seats={p.seats} events={p.events} />
             <EventLog events={p.events} seats={p.seats} mode="god" />
           </div>
         </div>
@@ -260,7 +262,7 @@ export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
             <RuleCard text={p.ruleCard} />
           </div>
           <div className="game-right">
-            <ThoughtFeed thoughts={p.thoughts} seats={p.seats} />
+            <ThoughtFeed thoughts={p.thoughts} seats={p.seats} events={p.events} />
             <EventLog events={p.events} seats={p.seats} mode="seat" mySeat={room.seat} />
           </div>
         </div>

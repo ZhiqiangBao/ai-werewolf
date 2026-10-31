@@ -61,13 +61,17 @@ export function AuditPanel({ roomId, token }: { roomId: string; token: string })
             <span className="dim tiny">{formatTime(e.at)}</span>
             <b>{seatName(e.seat)}</b>
             <span className="tag">{e.model}</span>
+            {e.purpose && <span className="tag">{e.purpose === 'listen' ? '旁听' : '行动'}</span>}
             <span className={`tag ${e.ok ? 'ok' : 'bad'}`}>{e.ok ? '被采纳' : '未采纳'}</span>
             {e.toolCall && <code className="small">{e.toolCall.tool}({JSON.stringify(e.toolCall.args).slice(0, 80)})</code>}
             {e.latencyMs !== undefined && <span className="dim tiny">{e.latencyMs} ms</span>}
+            {e.firstDeltaMs !== undefined && <span className="dim tiny">首段 {e.firstDeltaMs} ms</span>}
           </summary>
           {e.error && <div className="error-box small" style={{ margin: '6px 10px' }}>{e.error}</div>}
           <div className="tiny dim" style={{ margin: '0 10px' }}>
             决策 {e.decisionId} · 视图版本 {e.projectionVersion}
+            {e.thinkingMode && <> · 思考档位 {e.thinkingMode}</>}
+            {e.thinkingChars !== undefined && <> · 思考 {e.thinkingChars} 字符 / 工具外正文 {e.replyChars ?? 0} 字符</>}
           </div>
           {Array.isArray(e.messages) &&
             (e.messages as Message[]).map((m, i) => (

@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { thinkingOptions, thinkingParameters } from '@werewolf/protocol';
+import { thinkingOptions, thinkingParameters, defaultThinkingMode } from '@werewolf/protocol';
 
 const tokenPlan = 'https://token-plan.maas.qianwenaiapi.com/v1';
 const native = 'https://api.example.com/v1';
 
 describe('思考强度与接口能力', () => {
+  it('未配置时优先真实轻度档，强制思考仍开启，无轻度的接口不自动关闭', () => {
+    expect(defaultThinkingMode(tokenPlan, 'qwen3.8-max')).toBe('low');
+    expect(defaultThinkingMode(tokenPlan, 'glm-5.3')).toBe('low');
+    expect(thinkingParameters(tokenPlan, 'glm-5.3', defaultThinkingMode(tokenPlan, 'glm-5.3')).enable_thinking).toBe(true);
+    expect(defaultThinkingMode(tokenPlan, 'deepseek-v4-pro')).toBe('default');
+    expect(defaultThinkingMode(native, 'custom')).toBe('default');
+  });
   it('跟随模型不追加参数，保持旧配置行为', () => {
     expect(thinkingParameters(tokenPlan, 'qwen3.8-flash')).toEqual({});
     expect(thinkingParameters(native, 'custom-model', 'default')).toEqual({});

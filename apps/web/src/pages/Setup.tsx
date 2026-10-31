@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { thinkingOptions } from '@werewolf/protocol';
+import { thinkingOptions, defaultThinkingMode } from '@werewolf/protocol';
 import type {
   Catalog,
   ModelPresetView,
@@ -314,9 +314,12 @@ function choiceFor(models: ModelPresetView[]) {
 }
 
 function keepThinking(seat: SeatConfigView, next: Omit<SeatConfigInput, 'seat'>): Omit<SeatConfigInput, 'seat'> {
-  const mode = seat.thinkingMode ?? 'default';
-  const supported = thinkingOptions(next.baseUrl ?? seat.baseUrl, next.model ?? seat.model).some((o) => o.value === mode && o.supported);
-  return { ...next, thinkingMode: supported ? mode : 'default' };
+  const baseUrl = next.baseUrl ?? seat.baseUrl;
+  const model = next.model ?? seat.model;
+  const preferred = defaultThinkingMode(baseUrl, model);
+  const mode = seat.thinkingMode ?? preferred;
+  const supported = thinkingOptions(baseUrl, model).some((o) => o.value === mode && o.supported);
+  return { ...next, thinkingMode: supported ? mode : preferred };
 }
 
 function ModelsPanel({ models, onChange }: { models: ModelPresetView[]; onChange: () => void }) {

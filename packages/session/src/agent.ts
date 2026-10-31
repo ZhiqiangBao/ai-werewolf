@@ -1,4 +1,4 @@
-import type { GameEvent, Seat } from '@werewolf/protocol';
+import { eventPurpose, gameRecordEvents, type GameEvent, type Seat } from '@werewolf/protocol';
 import type { ChatMessage } from '@werewolf/llm';
 
 /** 旁听轮次调用了工具时，原样退回。不执行。 */
@@ -139,7 +139,7 @@ export function eventToMessage(
   hint: TurnHint,
   latestTalk: boolean,
 ): ChatMessage | null {
-  if (e.payload.announced === true) return null;
+  if (e.payload.announced === true || eventPurpose(e) === 'diagnostic') return null;
   const content = e.payload.content;
   const speaker = e.payload.seat;
   if ((e.type === 'speech' || e.type === 'wolf.chat') && typeof content === 'string' && typeof speaker === 'number') {
@@ -159,27 +159,31 @@ export function eventToMessage(
   if (invite) {
     const first = firstSeat(e);
     const yours = latestTalk && first === me && hint.nextStep === 'speech' && hint.nextSeat === me;
-    const who = first ? `有请${first}号玩家发言。` : '';
+    const who = latestTalk && first && hint.nextStep === 'speech' && hint.nextSeat === first ? `有请${first}号玩家发言。` : '';
     return { role: 'user', name: 'judge', content: `法官：${e.text}${who}\n${turnSuffix(invite, yours)}` };
   }
   const opened = openAction(e, me, hint);
   if (opened) return opened;
   if (e.type === 'judge') {
     const cue = hint.cue;
-    if (cue && e.payload.step === cue.step && (!e.payload.decisionId || e.payload.decisionId === cue.id)) {
+    if (cue && e.payload.step === cue.step &&
+        (e.payload.decisionId ? e.payload.decisionId === cue.id : e.seq === cue.afterSeq)) {
       const actor = cue.actors.includes(me);
       const prompt = (actor ? cue.prompts[me] : e.text) || e.text;
       return { role: 'user', name: 'judge', content: `法官：${prompt}\n${cueTail(cue, me)}` };
     }
-    return { role: 'user', name: 'judge', content: `法官：${e.text}\n不要调用工具。` };
+    // 过期问话不是新事实，不能把「轮到你」与「不要调用」一起重播。
+    return null;
   }
-  return { role: 'user', name: 'judge', content: `法官：${e.text}\n不要调用工具。` };
+  const fact = ['witch.knife', 'sheriff.start', 'wolf.kill.split'].includes(e.type) ? gameRecordEvents([e])[0]?.text ?? e.text : e.text;
+  return { role: 'user', name: 'judge', content: `法官：${fact}\n不要调用工具。` };
 }
 
 /** 这条事件就是当前行动。写成一句，带上能不能用工具，不再先停再追问。 */
 function openAction(e: GameEvent, me: Seat, hint: TurnHint): ChatMessage | null {
   const cue = hint.cue;
   if (!cue) return null;
+  if (e.payload.decisionId ? e.payload.decisionId !== cue.id : e.seq !== cue.afterSeq) return null;
   const match =
     (e.type === 'witch.knife' && cue.tool === 'witch_act') ||
     (e.type === 'sheriff.start' && cue.tool === 'sheriff_signup') ||
@@ -201,6 +205,7 @@ export function syncThread(
 ): void {
   if (!thread.messages.length) thread.messages.push(system);
   const start = thread.messages.length;
+  const previousUser = thread.messages.findLast((m) => m.role === 'user');
   // 当前决策的行动许可不能倒灌到尚未送完的历史消息里。
   const complete = !hint.cue?.afterSeq || maxSeq >= hint.cue.afterSeq;
   const turn = complete ? hint : { nextSeat: null, nextStep: null, cue: null };
@@ -227,7 +232,9 @@ export function syncThread(
     }
     thread.seen = e.seq;
   }
-  if (complete && turn.cue?.actors.includes(thread.seat) && lastUser(thread.messages).endsWith(cueTail(turn.cue, thread.seat))) {
+  if (complete && turn.cue?.actors.includes(thread.seat) &&
+      thread.messages.findLast((m) => m.role === 'user') !== previousUser &&
+      lastUser(thread.messages).endsWith(cueTail(turn.cue, thread.seat))) {
     thread.cueFor = turn.cue.id;
   }
 }
@@ -251,17 +258,15 @@ export function readyToAct(thread: SeatThread, cue: ActionCue | null): boolean {
  * 否则补一句法官提示，工具说明写在这句的结尾。
  */
 export function ensureCue(thread: SeatThread, cue: ActionCue | null): void {
-  if (!cue || thread.cueFor === cue.id) return;
+  if (!cue) return;
   if (thread.seen < (cue.afterSeq ?? 0)) return;
   const actor = cue.actors.includes(thread.seat);
+  if (thread.cueFor === cue.id && !actor) return;
   const spoken = cue.step === 'speech' || cue.step === 'wolf.discuss';
   const tail = cueTail(cue, thread.seat);
   const prev = lastUser(thread.messages);
   const body = (actor ? cue.prompts[thread.seat] : Object.values(cue.prompts).find(Boolean)) || '';
-  if (actor && prev.endsWith(tail)) {
-    thread.cueFor = cue.id;
-    return;
-  }
+  if (actor && thread.cueFor === cue.id && prev.endsWith(tail)) return;
   if (!actor && (spoken || !cue.broadcast)) {
     thread.cueFor = cue.id;
     return;

@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { THINKING_MODES, thinkingOptions } from '@werewolf/protocol';
+import { THINKING_MODES, thinkingOptions, defaultThinkingMode } from '@werewolf/protocol';
 import type {
   AdapterKind,
   AuditEntry,
@@ -54,6 +54,7 @@ import {
   type DecideResult,
 } from '@werewolf/llm';
 import {
+  NOT_TOOL_TURN,
   ensureCue,
   ownLine,
   readyToAct,
@@ -159,7 +160,6 @@ function defaultSeat(seat: Seat): SeatRecord {
     persona: '',
     toolMode: 'tools',
     timeoutSec: 90,
-    thinkingMode: 'default',
   };
 }
 
@@ -394,17 +394,19 @@ export class RoomManager {
     } else if (s.modelId === null) {
       seat.modelId = null;
     }
-    const option = thinkingOptions(seat.baseUrl, seat.model).find((o) => o.value === (seat.thinkingMode ?? 'default'));
+    const preferred = defaultThinkingMode(seat.baseUrl, seat.model);
+    const option = thinkingOptions(seat.baseUrl, seat.model).find((o) => o.value === (seat.thinkingMode ?? preferred));
     if (!option?.supported) {
       if (s.thinkingMode !== undefined) throw new ApiFailure(400, 'BAD_REQUEST', option?.hint ?? '无效的思考强度');
-      seat.thinkingMode = 'default';
+      seat.thinkingMode = preferred;
     }
+    if (seat.adapter === 'openai_compatible' && seat.thinkingMode === undefined) seat.thinkingMode = preferred;
     Object.assign(current, seat);
   }
 
   private seatView(s: SeatRecord): SeatConfigView {
     const { apiKeyEnc: _enc, apiKeyMask, ...rest } = s;
-    return { ...rest, apiKeyMasked: apiKeyMask, modelId: s.modelId ?? null };
+    return { ...rest, ...(s.adapter === 'openai_compatible' ? { thinkingMode: s.thinkingMode ?? defaultThinkingMode(s.baseUrl, s.model) } : {}), apiKeyMasked: apiKeyMask, modelId: s.modelId ?? null };
   }
 
   private setupErrors(rec: RoomRecord): string[] {
@@ -413,7 +415,7 @@ export class RoomManager {
       if (s.controller !== 'ai' || s.adapter !== 'openai_compatible') continue;
       if (!s.baseUrl) errors.push(`${s.seat}号：没有填写接口地址`);
       if (!s.model) errors.push(`${s.seat}号：没有填写模型名`);
-      const thinking = thinkingOptions(s.baseUrl, s.model).find((o) => o.value === (s.thinkingMode ?? 'default'));
+      const thinking = thinkingOptions(s.baseUrl, s.model).find((o) => o.value === (s.thinkingMode ?? defaultThinkingMode(s.baseUrl, s.model)));
       if (!thinking?.supported) errors.push(`${s.seat}号：${thinking?.hint ?? '无效的思考强度'}`);
     }
     return errors;
@@ -843,7 +845,7 @@ export class RoomManager {
       temperature: s.temperature,
       toolMode: s.toolMode,
       timeoutSec: s.timeoutSec,
-      thinkingMode: s.thinkingMode ?? 'default',
+      thinkingMode: s.thinkingMode ?? defaultThinkingMode(s.baseUrl, s.model),
     };
   }
 
@@ -940,7 +942,7 @@ export class RoomManager {
 
   /**
    * 一次只送出一条可见消息。看得到的每个模型座位都调用一次。
-   * 结尾允许用工具的，这次就是行动。其余只收听；收听时如果调用了工具，交给引擎判定。
+   * 结尾允许用工具的，这次就是行动。其余只收听，只接受本次收听时已允许的打断技能。
    */
   /** 有新消息返回调用列表（可能为空，表示这条没有座位看得见）。没有新消息返回 null。 */
   private prepareWave(live: Live): { seat: Seat; action: boolean }[] | null {
@@ -970,6 +972,7 @@ export class RoomManager {
         this.syncThread(live, s.seat, next);
         if (thread.messages.slice(before).some((m) => m.role !== 'system')) {
           const action = readyToAct(thread, cue);
+          if (action) ensureCue(thread, cue);
           wave.push({ seat: s.seat, action });
         }
       }
@@ -1020,23 +1023,6 @@ export class RoomManager {
     };
   }
 
-  /** 这个座位末尾连续被拒绝的次数。中间出现别的事件就重新计。 */
-  private rejectionStreak(rec: RoomRecord, seat: Seat): number {
-    let n = 0;
-    for (let i = rec.events.length - 1; i >= 0; i--) {
-      const e = rec.events[i];
-      if (e.type !== 'action.rejected') break;
-      if (Array.isArray(e.audience) && e.audience.length === 1 && e.audience[0] === seat) n += 1;
-    }
-    return n;
-  }
-
-  /** 这个座位此刻还要交这一步，并且叫的就是这一步允许的工具。 */
-  private legalTaskTool(rec: RoomRecord, seat: Seat, decision: string, tool: string): boolean {
-    const d = rec.state?.pending;
-    return !!d && d.id === decision && waitingSeats(rec.state!).includes(seat) && !!d.tools[seat]?.some((t) => t.name === tool);
-  }
-
   /** 还没提交的座位到点或放弃时，按引擎的托管行动补上。上警就是不上警。 */
   private fallbackIfWaiting(live: Live, seat: Seat, decision: string, reason: SubmitInput['autoReason']): void {
     const rec = live.rec;
@@ -1081,6 +1067,10 @@ export class RoomManager {
     const gen = live.gen;
     const model = cfg.adapter === 'mock' ? 'mock' : cfg.model;
     const messages: ChatMessage[] = [...thread.messages];
+    const started = this.now();
+    let firstDeltaMs: number | undefined;
+    let thinkingChars = 0;
+    let replyChars = 0;
     try {
       let config: AdapterConfig;
       try {
@@ -1101,6 +1091,11 @@ export class RoomManager {
           signal: ctrl.signal,
           stream: cfg.adapter !== 'mock',
           toolChoice: 'auto',
+          onDelta: (delta) => {
+            firstDeltaMs ??= this.now() - started;
+            thinkingChars += delta.thinking?.length ?? 0;
+            replyChars += delta.reply?.length ?? 0;
+          },
         });
       } catch (e) {
         if (live.gen !== gen || ctrl.signal.aborted) return;
@@ -1110,10 +1105,10 @@ export class RoomManager {
       let error = result.ok ? undefined : result.error ?? '旁听请求失败';
       if (result.ok && result.call) {
         const call = clampTexts(result.call, tools);
-        const legal = this.legalTaskTool(rec, seat, decision, call.tool);
-        if (legal && !readyToAct(thread, this.actionCue(rec))) error = '不是工具调用轮次，请勿调用。法官还没有把这一步问到上下文里。';
-        else if (!legal && this.rejectionStreak(rec, seat) >= MAX_ATTEMPTS) error = '不是工具调用轮次，请勿调用。';
-        else error = this.apply(live, { seat, call, ...(decision === 'end' ? {} : { decisionId: decision }) }).error?.reason;
+        const allowed = projection.interrupts.some((t) => t.name === call.tool) &&
+          rec.status === 'running' && projectSeat(rec.state!, rec.events, seat).interrupts.some((t) => t.name === call.tool);
+        // 旁听生成的普通行动不能借用随后到来的行动许可；错误只作为本次工具反馈返回。
+        error = allowed ? this.apply(live, { seat, call }).error?.reason : NOT_TOOL_TURN;
       }
       this.rememberReply(thread, result, error);
       this.writeAudit(live, {
@@ -1121,6 +1116,8 @@ export class RoomManager {
         ok: !error, messages, response: result.raw ?? result.call,
         ...(result.call ? { toolCall: result.call } : {}), ...(error ? { error: redact(error, config.apiKey) } : {}),
         failureKind: result.failureKind ?? (error ? 'invalid_tool' : undefined), latencyMs: result.latencyMs,
+        thinkingMode: config.thinkingMode, firstDeltaMs,
+        thinkingChars: result.thinking?.length ?? thinkingChars, replyChars: result.reply?.length ?? replyChars,
       });
     } finally {
       live.inflight.delete(key);
@@ -1133,6 +1130,7 @@ export class RoomManager {
     const adapter = this.adapters[cfg.adapter] ?? getAdapter(cfg.adapter);
     const thread = this.threadFor(live, seat);
     if (rec.state?.pending?.id !== decision || !readyToAct(thread, this.actionCue(rec))) return;
+    ensureCue(thread, this.actionCue(rec));
     // 此刻才真正发出行动请求，排队、旁听和 AI 展示间隔均不占用行动时限。
     this.markAsked(live, seat);
     this.scheduleSave(live);
@@ -1159,10 +1157,6 @@ export class RoomManager {
         this.fallbackIfWaiting(live, seat, decision, 'request_failed');
         return;
       }
-      const onDelta = (delta: { thinking?: string; reply?: string }) => {
-        if (!stillWaiting() || ctrl.signal.aborted) return;
-        this.pushThought(live, seat, decision, delta);
-      };
       if (cfg.adapter !== 'mock') this.pushThought(live, seat, decision, {});
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         const deadline = rec.deadlines[`${decision}:${seat}`];
@@ -1172,6 +1166,10 @@ export class RoomManager {
           return;
         }
         const messages = [...thread.messages];
+        const started = this.now();
+        let firstDeltaMs: number | undefined;
+        let thinkingChars = 0;
+        let replyChars = 0;
         let result: DecideResult;
         try {
           result = await adapter.decide({
@@ -1182,7 +1180,12 @@ export class RoomManager {
             config: { ...config, timeoutSec: deadline === undefined ? limit : Math.max(0.001, Math.min(limit, (deadline - this.now()) / 1000)) },
             signal: ctrl.signal,
             stream: cfg.adapter !== 'mock',
-            onDelta,
+            onDelta: (delta) => {
+              firstDeltaMs ??= this.now() - started;
+              thinkingChars += delta.thinking?.length ?? 0;
+              replyChars += delta.reply?.length ?? 0;
+              if (stillWaiting() && !ctrl.signal.aborted) this.pushThought(live, seat, decision, delta);
+            },
           });
           last = result;
         } catch (e) {
@@ -1213,6 +1216,8 @@ export class RoomManager {
           ...(result.call ? { toolCall: result.call } : {}),
           ...(error ? { error: redact(error, config.apiKey) } : {}),
           latencyMs: result.latencyMs,
+          thinkingMode: config.thinkingMode, firstDeltaMs,
+          thinkingChars: result.thinking?.length ?? thinkingChars, replyChars: result.reply?.length ?? replyChars,
         });
         if (!error) return;
         if (result.fatal) {

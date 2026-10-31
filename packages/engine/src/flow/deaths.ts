@@ -1,6 +1,6 @@
 import type { Seat } from '@werewolf/protocol';
 import type { Ctx } from '../context';
-import { seatLabel } from '../text';
+import { seatLabel, seatList } from '../text';
 import { seatParam } from '../tools';
 import type { Step, StepHandler } from '../types';
 import { speechSteps } from './day';
@@ -74,7 +74,7 @@ export const deathSteps: Record<string, StepHandler> = {
             params: [seatParam('target', '移交给', targets, '撕毁警徽')],
           },
         ],
-        prompt: () => '你是警长并且已经出局。请把警徽移交给一名存活玩家，或者撕毁警徽。移交不限阵营，不能移交给自己。',
+        prompt: () => `你是警长并且已经出局。请把警徽移交给一名存活玩家，或者撕毁警徽。可移交座位：${seatList(targets)}。target 填最终选择的座位号，null 表示撕毁。移交不限阵营，不能移交给自己。`,
         title: `第${s.day}天 · 警徽`,
         publicStage: `${seatLabel(sheriff)}处理警徽`,
         publicActor: sheriff,

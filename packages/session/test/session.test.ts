@@ -461,12 +461,14 @@ describe('模型调度', () => {
     expect(() => m.control(roomId, hostToken, 'resume')).toThrow(/不在进行中/);
   });
 
-  it('收听时调用工具交给引擎，拒绝只记在该座位', async () => {
+  it('旁听误调普通工具只返回私有反馈，不生成会被再次旁听的拒绝事件', async () => {
     let trapped = false;
+    let trappedSeat = 0;
     const adapter: Adapter = {
       async decide(req) {
         if (!trapped && req.toolChoice === 'auto') {
           trapped = true;
+          trappedSeat = req.seat;
           return { ok: true, call: { tool: 'vote', args: { target: 1 } }, assistant: { role: 'assistant', content: null }, toolCallIds: ['c1'], latencyMs: 1 };
         }
         return mockAdapter.decide(req);
@@ -478,17 +480,17 @@ describe('模型调度', () => {
     await m.whenIdle(roomId);
     const g = god(m, roomId, hostToken);
     const rejected = g.events.filter((e) => e.type === 'action.rejected');
-    expect(rejected.length).toBeGreaterThan(0);
-    expect(rejected.every((e) => Array.isArray(e.audience) && e.audience.length === 1)).toBe(true);
-    const seat = (rejected[0].audience as number[])[0];
+    expect(rejected).toHaveLength(0);
+    const seat = trappedSeat;
     const spectator = m.view(roomId, m.getSetup(roomId, hostToken).tokens.spectator).projection as Projection;
     expect(spectator.events.some((e) => e.type === 'action.rejected')).toBe(false);
     const other = [1, 2, 3, 4, 5, 6, 7, 8, 9].find((n) => n !== seat)!;
     expect((m.view(roomId, seatToken(other)).projection as Projection).events.some((e) => e.type === 'action.rejected')).toBe(false);
     const mine = m.view(roomId, seatToken(seat)).projection as Projection;
-    expect(mine.events.some((e) => e.type === 'action.rejected' && e.text.includes('行动被拒绝'))).toBe(true);
-    const heard = m.audit(roomId, hostToken).some((row) => row.seat === seat && JSON.stringify(row.messages).includes('行动被拒绝'));
-    expect(heard).toBe(true);
+    expect(mine.events.some((e) => e.type === 'action.rejected')).toBe(false);
+    const audit = m.audit(roomId, hostToken);
+    expect(audit.some((row) => row.seat === seat && row.purpose === 'listen' && row.error?.includes('不是工具调用轮次'))).toBe(true);
+    expect(audit.some((row) => row.seat === seat && JSON.stringify(row.messages).includes('不是工具调用轮次'))).toBe(true);
     expect(g.status).toBe('ended');
   });
 
@@ -516,7 +518,7 @@ describe('模型调度', () => {
     expect(g.status).toBe('ended');
   });
 
-  it('连续非法调用只保留五次拒绝，对局仍能结束', async () => {
+  it('连续旁听误调用不会产生拒绝事件循环，对局仍能结束', async () => {
     const adapter: Adapter = {
       async decide(req) {
         if (req.toolChoice === 'auto' && req.seat === 1) {
@@ -540,7 +542,7 @@ describe('模型调度', () => {
       } else if (e.type !== 'action.rejected') streak = 0;
     }
     expect(max).toBeLessThanOrEqual(5);
-    expect(g.events.some((e) => e.type === 'action.rejected' && Array.isArray(e.audience) && e.audience[0] === 1)).toBe(true);
+    expect(g.events.some((e) => e.type === 'action.rejected' && Array.isArray(e.audience) && e.audience[0] === 1)).toBe(false);
     expect(g.events.filter((e) => e.audience === 'public').every((e) => e.type !== 'action.rejected')).toBe(true);
   });
 
@@ -684,6 +686,7 @@ describe('警长投票播报', () => {
     };
     const cue = {
       id: 'd1',
+      afterSeq: event.seq,
       step: 'exile.vote',
       kind: null,
       actors: [1],

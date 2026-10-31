@@ -14,7 +14,7 @@ describe('法官的行动问话和一次播报', () => {
       for (const seat of d.actors) {
         const own = questions.filter((e) => e.audience === 'public' || (e.audience as number[]).includes(seat));
         expect(own).toHaveLength(1);
-        expect(own[0].text).toContain(d.prompts[seat]);
+        expect(own[0].payload.prompt ?? own[0].text).toContain(d.prompts[seat]);
       }
       checked.add(d.step.type);
       if (required.every((step) => checked.has(step))) break;

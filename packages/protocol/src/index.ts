@@ -1,5 +1,7 @@
 export type Seat = number;
-export { THINKING_MODES, thinkingOptions, thinkingParameters } from './thinking';
+export { eventPurpose, gameRecordEvents, buildVideoScript, recordedBadgeOutcome } from './recording';
+export type { VideoScriptEntry } from './recording';
+export { THINKING_MODES, thinkingOptions, thinkingParameters, defaultThinkingMode } from './thinking';
 export type { ThinkingMode, ThinkingOption } from './thinking';
 import type { ThinkingMode } from './thinking';
 
@@ -86,7 +88,8 @@ export function paramToJsonSchema(p: ParamSpec): JsonSchema {
     case 'seat': {
       const values: (number | null)[] = [...p.options];
       if (p.nullable) values.push(null);
-      const desc = p.nullable ? `${p.label}。传 null 表示「${p.nullLabel ?? '不选'}」` : p.label;
+      const label = `${p.label}。填写玩家的真实座位号（整数），不是候选列表下标；提交值须与最终选择一致`;
+      const desc = p.nullable ? `${label}。传 null 表示「${p.nullLabel ?? '不选'}」` : label;
       return { type: p.nullable ? ['integer', 'null'] : 'integer', enum: values, description: desc };
     }
     case 'seats':
@@ -432,4 +435,8 @@ export interface AuditEntry {
   attempt?: number;
   deadline?: number;
   failureKind?: 'timeout' | 'cancelled' | 'http' | 'network' | 'invalid_tool';
+  thinkingMode?: ThinkingMode;
+  firstDeltaMs?: number;
+  thinkingChars?: number;
+  replyChars?: number;
 }

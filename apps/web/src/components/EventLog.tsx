@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { GameEvent, SeatInfo } from '@werewolf/protocol';
+import { gameRecordEvents } from '@werewolf/protocol';
 import { audienceText, phaseLabel, seatName, seatStyle } from '../util';
 import { PhaseIcon } from './Icons';
 import { VoteChart } from './VoteChart';
@@ -28,6 +29,7 @@ export function EventLog({ events, seats, mode, mySeat }: Props) {
   const stick = useRef(true);
   const [away, setAway] = useState(false);
   const [onlyPublic, setOnlyPublic] = useState(false);
+  const shown = gameRecordEvents(events).filter((e) => !onlyPublic || e.audience === 'public');
 
   const nameOf = (seat: number) => {
     const s = seats.find((x) => x.seat === seat);
@@ -44,7 +46,7 @@ export function EventLog({ events, seats, mode, mySeat }: Props) {
   useLayoutEffect(() => {
     const el = box.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [events.length, onlyPublic]);
+  }, [shown.length, onlyPublic]);
 
   useEffect(() => {
     const el = box.current;
@@ -57,7 +59,6 @@ export function EventLog({ events, seats, mode, mySeat }: Props) {
     return () => el.removeEventListener('scroll', onScroll);
   }, []);
 
-  const shown = events.filter((e) => e.payload.announced !== true && (!onlyPublic || e.audience === 'public'));
   let lastKey = '';
 
   return (

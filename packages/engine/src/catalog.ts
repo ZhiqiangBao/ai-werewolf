@@ -77,7 +77,7 @@ function sheriffTools(seats: Seat[], abstain: boolean): ToolSpec[] {
     {
       name: 'badge_dispose',
       title: '处理警徽',
-      description: '你是警长并且已经出局、法官要求处理警徽时使用。target 是接收警徽的存活玩家，传 null 表示撕毁警徽。不能交给自己。其他阶段不要调用。',
+      description: '你是警长且已出局、法官要求处理警徽时使用。target 填最终选定接收者的真实座位号，必须存活且不能是自己；不分阵营。例：最终决定交给12号，就提交 {"target":12}；决定撕毁，就提交 {"target":null}。提交前核对 target 与本次最终决定一致。只执行参数中的目标，不按思考文字执行。其他阶段不要调用。',
       params: [seatParam('target', '移交给', seats, '撕毁警徽')],
     },
   ];

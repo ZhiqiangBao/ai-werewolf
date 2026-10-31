@@ -180,7 +180,7 @@ export class Ctx {
     this.state.pending.openedAtSeq = this.state.seq;
   }
 
-  /** 法官这句问话进对局记录。能看见的座位随后把它读进上下文，不是另写一套。 */
+  /** 行动问话留在内部事件流供 Agent 同步；对局画面只展示游戏事实。 */
   private sayAsk(hear: 'public' | 'actors', step: string, actors: Seat[], prompts: Record<number, string>): void {
     const first = prompts[actors[0]];
     const same = actors.every((s) => prompts[s] === first);
@@ -189,8 +189,7 @@ export class Ctx {
     const trigger = { 'sheriff.signup': 'sheriff.start', 'night:witch': 'witch.knife', 'wolf.kill': 'wolf.kill.split' }[step];
     const previous = this.events.at(-1);
     if (same && previous && trigger && previous.type === trigger) {
-      previous.text = step === 'sheriff.signup' || first.startsWith(previous.text) ? first : `${previous.text}${first}`;
-      Object.assign(previous.payload, payload);
+      Object.assign(previous.payload, payload, { prompt: first });
       return;
     }
     if (hear === 'public' && same) {

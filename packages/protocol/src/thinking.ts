@@ -48,6 +48,12 @@ export interface ThinkingOption {
 const labels: Record<ThinkingMode, string> = { default: '跟随模型', off: '关闭', low: '轻度', medium: '标准', high: '深度' };
 const budget: Record<Level, number> = { low: 1024, medium: 4096, high: 16384 };
 
+/** 未配置档位时优先轻度；没有真实轻度档的接口继续使用模型默认，不自动关闭思考。 */
+export function defaultThinkingMode(baseUrl: string, model: string): ThinkingMode {
+  const p = profile(baseUrl, model);
+  return p.budget || p.effort?.low ? 'low' : 'default';
+}
+
 export function thinkingOptions(baseUrl: string, model: string): ThinkingOption[] {
   const p = profile(baseUrl, model);
   return THINKING_MODES.map((value) => {

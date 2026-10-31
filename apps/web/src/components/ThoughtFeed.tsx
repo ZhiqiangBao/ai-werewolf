@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { SeatInfo, Thought } from '@werewolf/protocol';
+import { recordedBadgeOutcome, type GameEvent, type SeatInfo, type Thought } from '@werewolf/protocol';
 import { seatName, seatStyle } from '../util';
 
 function StreamingText({ text, live }: { text: string; live: boolean }) {
@@ -19,7 +19,8 @@ function StreamingText({ text, live }: { text: string; live: boolean }) {
   );
 }
 
-function ThoughtBody({ thought }: { thought: Thought }) {
+function ThoughtBody({ thought, events }: { thought: Thought; events: GameEvent[] }) {
+  const outcome = recordedBadgeOutcome(thought, events);
   return (
     <>
       {(thought.thinking || (thought.live && !thought.reply)) && (
@@ -34,6 +35,12 @@ function ThoughtBody({ thought }: { thought: Thought }) {
           <StreamingText text={thought.reply} live={thought.live} />
         </div>
       )}
+      {outcome && (
+        <div className="thought-body">
+          <div className="thought-kicker">本轮实际结果{outcome.automatic ? ' · 系统托管' : ''}</div>
+          {outcome.text}
+        </div>
+      )}
     </>
   );
 }
@@ -41,7 +48,7 @@ function ThoughtBody({ thought }: { thought: Thought }) {
 const SHOW_KEY = 'werewolf-show-thoughts';
 
 /** 思考用虚线浅底，正文用实线正文块。发言气泡仍在对局记录里，样式不混用。默认收起。 */
-export function ThoughtFeed({ thoughts, seats }: { thoughts?: Thought[]; seats: SeatInfo[] }) {
+export function ThoughtFeed({ thoughts, seats, events = [] }: { thoughts?: Thought[]; seats: SeatInfo[]; events?: GameEvent[] }) {
   const list = (thoughts ?? []).filter((t) => t.live || t.thinking || t.reply);
   const [open, setOpen] = useState(() => localStorage.getItem(SHOW_KEY) === '1');
   if (!list.length) return null;
@@ -76,7 +83,7 @@ export function ThoughtFeed({ thoughts, seats }: { thoughts?: Thought[]; seats: 
                 {t.thinking ? ' · 思考' : ''}
                 {t.reply ? ' · 正文' : ''}
               </summary>
-              <ThoughtBody thought={t} />
+              <ThoughtBody thought={t} events={events} />
             </details>
           ))}
         </div>
@@ -84,7 +91,7 @@ export function ThoughtFeed({ thoughts, seats }: { thoughts?: Thought[]; seats: 
       {open && live.map((t) => (
         <article key={`${t.decisionId}:${t.seat}`} className="thought-live" style={seatStyle(t.seat)}>
           <div className="thought-who">{nameOf(t.seat)} · 正在写</div>
-          <ThoughtBody thought={t} />
+          <ThoughtBody thought={t} events={events} />
         </article>
       ))}
     </div>
