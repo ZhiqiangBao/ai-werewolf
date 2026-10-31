@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { AuditEntry } from '@werewolf/protocol';
+import { API_PROTOCOL_LABELS, type AuditEntry } from '@werewolf/protocol';
 import { api } from '../api';
 import { formatTime, seatName } from '../util';
 
@@ -8,6 +8,7 @@ interface Message {
   content?: string | null;
   tool_calls?: unknown;
   tool_call_id?: string;
+  calls?: unknown;
 }
 
 const ROLE_LABEL: Record<string, string> = { system: '系统提示', user: '用户消息', assistant: '模型回复', tool: '工具结果' };
@@ -71,7 +72,9 @@ export function AuditPanel({ roomId, token }: { roomId: string; token: string })
           <div className="tiny dim" style={{ margin: '0 10px' }}>
             决策 {e.decisionId} · 视图版本 {e.projectionVersion}
             {e.thinkingMode && <> · 思考档位 {e.thinkingMode}</>}
+            {e.apiProtocol && <> · {API_PROTOCOL_LABELS[e.apiProtocol]}</>}
             {e.thinkingChars !== undefined && <> · 思考 {e.thinkingChars} 字符 / 工具外正文 {e.replyChars ?? 0} 字符</>}
+            {e.usage && <> · 输入 {e.usage.inputTokens} / 输出 {e.usage.outputTokens} token · 缓存读取 {e.usage.cacheReadTokens} / 写入 {e.usage.cacheWriteTokens}</>}
           </div>
           {Array.isArray(e.messages) &&
             (e.messages as Message[]).map((m, i) => (
@@ -79,6 +82,7 @@ export function AuditPanel({ roomId, token }: { roomId: string; token: string })
                 <div className="role">{ROLE_LABEL[m.role] ?? m.role}</div>
                 {m.content && <pre>{m.content}</pre>}
                 {m.tool_calls !== undefined && <pre className="dim">{JSON.stringify(m.tool_calls, null, 2)}</pre>}
+                {m.calls !== undefined && <pre className="dim">{JSON.stringify(m.calls, null, 2)}</pre>}
               </div>
             ))}
           {e.response !== undefined && (

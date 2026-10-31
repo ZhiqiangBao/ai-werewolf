@@ -1,3 +1,4 @@
+import type { ToolSpec } from '@werewolf/protocol';
 import type { Seat } from '@werewolf/protocol';
 import { seatLabel } from '../text';
 import { seatParam } from '../tools';
@@ -14,6 +15,7 @@ const bool = (key: string, label: string, def: boolean) => ({
 
 export const hunter: RoleModule = {
   id: 'hunter',
+  tools: ({ seats, rules }) => [hunterTool(seats)],
   name: '猎人',
   faction: 'good',
   category: 'god',
@@ -104,3 +106,12 @@ export const hunter: RoleModule = {
     },
   },
 };
+
+function hunterTool(seats: Seat[]): ToolSpec {
+  return {
+    name: 'hunter_shoot',
+    title: '开枪',
+    description: '猎人出局且法官允许开枪时使用。target 是要带走的存活玩家，null 表示放弃开枪。开枪会公开猎人身份。不能射自己。例：{"target":3} 为带走3号，{"target":null} 为放弃。是否能发动由死因和本局规则决定，以法官询问为准。其他阶段不要调用。',
+    params: [seatParam('target', '开枪目标', seats, '放弃开枪')],
+  };
+}

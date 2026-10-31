@@ -2,7 +2,7 @@ import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { THINKING_MODES, thinkingOptions, type AuditEntry, type ThinkingMode } from '@werewolf/protocol';
 import { seatTools } from '@werewolf/engine';
-import { openaiAdapter, type ChatMessage } from '@werewolf/llm';
+import { remoteAdapter, migrateTranscript, type ChatMessage } from '@werewolf/llm';
 import { SecretBox } from '../src/secret';
 import { ModelLibrary } from '../src/model-library';
 import type { RoomRecord } from '../src/store';
@@ -42,7 +42,7 @@ if (process.argv.includes('--live')) {
     const model = cfg.modelId ? library.find(cfg.modelId) : undefined;
     const baseUrl = model?.baseUrl ?? cfg.baseUrl;
     const name = model?.model ?? cfg.model;
-    if (!thinkingOptions(baseUrl, name).some((o) => o.value === mode && o.supported)) throw new Error(`${seat}号的入口不支持${mode}`);
+    if (!thinkingOptions(baseUrl, name, cfg.apiProtocol).some((o) => o.value === mode && o.supported)) throw new Error(`${seat}号的入口不支持${mode}`);
     const sample = rows.findLast((a) => a.seat === seat && a.purpose === 'action' && timedOut(a) && Array.isArray(a.messages));
     if (!sample) throw new Error(`${seat}号没有正式行动超时样本`);
     const step = record.events.find((e) => e.payload.decisionId === sample.decisionId)?.payload.step;
@@ -54,9 +54,9 @@ if (process.argv.includes('--live')) {
     for (;;) {
       const t = targets[next++]; if (!t) return;
       const start = Date.now(); let firstDeltaMs: number | undefined;
-      const result = await openaiAdapter.decide({
-        seat: t.seat, messages: structuredClone(t.sample.messages as ChatMessage[]), tools: seatTools(record.state!, t.seat), stream: true, toolChoice: 'required',
-        config: { baseUrl: t.baseUrl, model: t.name, apiKey: t.apiKey, temperature: t.cfg.temperature, toolMode: t.cfg.toolMode, timeoutSec: t.step === 'speech' ? 180 : 90, thinkingMode: mode },
+      const result = await remoteAdapter(t.cfg.apiProtocol).decide({
+        seat: t.seat, messages: migrateTranscript(structuredClone(t.sample.messages as ChatMessage[])), tools: seatTools(record.state!, t.seat), stream: true, toolChoice: 'required',
+        config: { apiProtocol: t.cfg.apiProtocol, baseUrl: t.baseUrl, model: t.name, apiKey: t.apiKey, temperature: t.cfg.temperature, toolMode: t.cfg.toolMode, timeoutSec: t.step === 'speech' ? 180 : 90, thinkingMode: mode },
         onDelta: () => { firstDeltaMs ??= Date.now() - start; },
       });
       const expected = t.step === 'speech' ? 'speak' : t.step === 'exile.vote' ? 'vote' : t.step === 'sheriff.vote' ? 'sheriff_vote' : undefined;

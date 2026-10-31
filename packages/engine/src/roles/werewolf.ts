@@ -1,3 +1,4 @@
+import type { RuleSet, ToolSpec } from '@werewolf/protocol';
 import type { Seat } from '@werewolf/protocol';
 import type { Ctx } from '../context';
 import { seatLabel, seatList } from '../text';
@@ -16,6 +17,7 @@ function killTargets(ctx: Ctx): Seat[] {
 
 export const werewolf: RoleModule = {
   id: 'werewolf',
+  tools: ({ seats, rules }) => wolfTools(seats, rules.values),
   name: '狼人',
   faction: 'wolf',
   category: 'wolf',
@@ -187,3 +189,36 @@ export const werewolf: RoleModule = {
     },
   },
 };
+
+function wolfTools(seats: Seat[], v: RuleSet['values']): ToolSpec[] {
+  const tools: ToolSpec[] = [
+    {
+      name: 'wolf_discuss',
+      title: '狼人密谈',
+      description: '狼人夜间密谈、且轮到你发言时使用。content 是非空字符串，只有当前存活的狼队友能看到。例：{"content":"今晚建议刀3号。"}。密谈只传达意见，正式落刀须等待法官再调用 wolf_kill。其他阶段不要调用。',
+      params: [textParam('content', '密谈内容', 1)],
+    },
+    {
+      name: 'wolf_kill',
+      title: '落刀',
+      description: `狼人夜间落刀时使用。target 是今晚的刀口。${v['wolf.allowEmpty'] === true ? '传 null 表示空刀，空刀不计票。' : '本局不能空刀。'}${v['wolf.allowTeammateTarget'] === true ? '可以刀狼队友或自己。' : '不能刀狼队友或自己。'}只能选择存活目标。例：{"target":3} 表示刀3号（须符合本局限制）。所有存活狼人同时提交；按法官公布的合刀规则结算，不在密谈工具里直接落刀。其他阶段不要调用。`,
+      params: [seatParam('target', '刀口', seats, v['wolf.allowEmpty'] === true ? '空刀' : undefined)],
+    },
+  ];
+  if (v['explode.enabled'] !== true) return tools;
+  tools.push(
+    {
+      name: 'wolf_explode',
+      title: '自爆',
+      description: `存活狼人按本局自爆窗口使用。${v['explode.window'] === 'interrupt' ? '法官开放发言窗口时可在自己的发言或旁听中打断自爆。' : v['explode.window'] === 'speaker_only' ? '仅轮到自己正常发言时可用，遗言不能用。' : '本局在每段发言前专门询问，请在询问时用 wolf_explode_decision，不直接用本工具。'}立刻出局并公开身份，取消当天剩余流程，后续警徽、遗言与胜负由法官结算。无参数，填写 {}。投票与夜间不能使用。`,
+      params: [],
+    },
+    {
+      name: 'wolf_explode_decision',
+      title: '是否自爆',
+      description: '法官在下一段发言前询问是否自爆时使用。explode 必须是布尔值，true 表示自爆，false 表示不自爆。例：{"explode":false}。多人同时选 true 时由最小座位号执行，其余仍存活。只回答该次询问；其他阶段不要调用。',
+      params: [{ kind: 'boolean', name: 'explode', label: '是否自爆', trueLabel: '自爆', falseLabel: '不自爆' }],
+    },
+  );
+  return tools;
+}

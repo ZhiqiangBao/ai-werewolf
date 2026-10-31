@@ -1,4 +1,6 @@
-import type { Projection, Seat, ThinkingMode, ToolCall, ToolMode, ToolSpec } from '@werewolf/protocol';
+import type { ApiProtocol, Projection, Seat, ThinkingMode, TokenUsage, ToolCall, ToolMode, ToolSpec } from '@werewolf/protocol';
+import type { TranscriptMessage } from './transcript';
+export type { ChatMessage, TranscriptMessage, TranscriptCall, NativeTurn } from './transcript';
 
 export interface ToolCallMessage {
   id: string;
@@ -6,13 +8,8 @@ export interface ToolCallMessage {
   function: { name: string; arguments: string };
 }
 
-export type ChatMessage =
-  | { role: 'system'; content: string }
-  | { role: 'user'; content: string; name?: string }
-  | { role: 'assistant'; content: string | null; tool_calls?: ToolCallMessage[] }
-  | { role: 'tool'; tool_call_id: string; content: string };
-
 export interface AdapterConfig {
+  apiProtocol?: ApiProtocol;
   baseUrl: string;
   model: string;
   /** 解密后的密钥，只在内存中传给适配器。 */
@@ -21,13 +18,16 @@ export interface AdapterConfig {
   toolMode: ToolMode;
   timeoutSec: number;
   thinkingMode?: ThinkingMode;
+  maxOutputTokens?: number;
 }
 
 export interface DecideRequest {
   seat: Seat;
   /** 与该座位网页所用完全相同的投影。连通性测试没有投影。 */
   projection?: Projection;
-  messages: ChatMessage[];
+  messages: TranscriptMessage[];
+  /** 房间与座位独立的缓存路由键；不共享远程会话。 */
+  cacheKey?: string;
   tools: ToolSpec[];
   config: AdapterConfig;
   /**
@@ -49,13 +49,14 @@ export interface DecideResult {
   fatal?: boolean;
   failureKind?: 'timeout' | 'cancelled' | 'http' | 'network' | 'invalid_tool';
   /** 模型这次的回复，重试时连同反馈一起追加到消息末尾。 */
-  assistant?: ChatMessage;
+  assistant?: TranscriptMessage;
+  usage?: TokenUsage;
   toolCallIds: string[];
   raw?: unknown;
   latencyMs: number;
-  /** 模型的思考过程。只供显示，调用方不得写进提示词。 */
+  /** 供显示的思考文本；原生 reasoning/签名由 assistant.native 独立保存、原样续接。 */
   thinking?: string;
-  /** 工具调用之外的正文。只供显示，调用方不得写进提示词。 */
+  /** 展示用正文；不转成法官事实，本座位的 assistant 内容由语义历史与原生块分别保存。 */
   reply?: string;
 }
 

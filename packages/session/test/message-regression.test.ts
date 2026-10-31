@@ -133,7 +133,7 @@ describe('座位消息与行动的回归场景', () => {
           const id = `FAILED_CALL_${++attempts}`;
           return {
             ok: true, call: { tool: 'nonexistent_tool', args: {} },
-            assistant: { role: 'assistant', content: null, tool_calls: [{ id, type: 'function', function: { name: 'nonexistent_tool', arguments: '{}' } }] },
+            assistant: { role: 'assistant', content: null, calls: [{ id, name: 'nonexistent_tool', arguments: '{}' }] },
             toolCallIds: [id], latencyMs: 1,
           };
         }
@@ -153,8 +153,8 @@ describe('座位消息与行动的回归场景', () => {
       manager.dispose();
       const messages = store.loadAll()[0].threads!.find((t) => t.seat === seat)!.messages;
       for (let i = 1; i <= 5; i++) {
-        expect(messages.some((m) => m.role === 'assistant' && m.tool_calls?.some((c) => c.id === `FAILED_CALL_${i}`))).toBe(true);
-        expect(messages.some((m) => m.role === 'tool' && m.tool_call_id === `FAILED_CALL_${i}` && m.content.includes('工具调用错误'))).toBe(true);
+        expect(messages.some((m) => m.role === 'assistant' && m.calls?.some((c) => c.id === `FAILED_CALL_${i}`))).toBe(true);
+        expect(messages.some((m) => m.role === 'tool' && m.callId === `FAILED_CALL_${i}` && m.content.includes('工具调用错误'))).toBe(true);
       }
     } finally { manager.dispose(); }
   });

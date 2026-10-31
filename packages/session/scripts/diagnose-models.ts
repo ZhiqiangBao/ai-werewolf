@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync, statSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildMessages, openaiAdapter, type ChatMessage } from '@werewolf/llm';
+import { buildMessages, remoteAdapter, migrateTranscript, type TranscriptMessage } from '@werewolf/llm';
 import { projectSeat, seatTools } from '@werewolf/engine';
 import { THINKING_MODES, thinkingOptions, type AuditEntry, type ThinkingMode } from '@werewolf/protocol';
 import { ModelLibrary } from '../src/model-library';
@@ -24,12 +24,12 @@ if (!/^[a-zA-Z0-9_-]+$/.test(roomId)) throw new Error('非法房间号');
 const record = JSON.parse(readFileSync(join(directory, `${roomId}.json`), 'utf8')) as RoomRecord;
 const audits = readFileSync(join(directory, `${roomId}.audit.jsonl`), 'utf8').trim().split('\n').map((line) => JSON.parse(line) as AuditEntry);
 const source = audits.findLast((a) => a.seat === 1 && Array.isArray(a.messages) &&
-  (a.messages as ChatMessage[]).at(-1)?.content?.endsWith('你现在可以使用投票工具。'));
+  (a.messages as TranscriptMessage[]).at(-1)?.content?.endsWith('你现在可以使用投票工具。'));
 if (!source) throw new Error('指定房间没有 1 号的投票请求可供诊断');
 const projection = projectSeat(record.state!, record.events, 1);
 const tools = seatTools(record.state!, 1);
 const system = buildMessages(projection, '在逻辑和直觉之间保持平衡，发言精简。', { speechSec: 180, skillSec: 90 })[0];
-const history = structuredClone(source.messages as ChatMessage[]);
+const history = migrateTranscript(structuredClone(source.messages as TranscriptMessage[]));
 history[0] = system;
 const speech = record.events.findLast((e) => e.type === 'speech' && e.audience === 'public' && e.payload.seat !== 1)!;
 const library = new ModelLibrary(SecretBox.fromEnvOrFile('data'), join('data', 'models.json'));
@@ -43,7 +43,7 @@ const targets = selections.filter(([, model]) => !requested || requested.include
   (provider === 'token-plan' ? new URL(m.baseUrl).host.startsWith('token-plan.') : new URL(m.baseUrl).host === 'maas.qianwenaiapi.com'))).filter((m) => !!m);
 if (!targets.length) throw new Error('没有找到匹配的已配置 Token Plan / 千问模型');
 for (const target of targets) {
-  const option = thinkingOptions(target.baseUrl, target.model).find((o) => o.value === thinkingMode)!;
+  const option = thinkingOptions(target.baseUrl, target.model, target.apiProtocol).find((o) => o.value === thinkingMode)!;
   if (!option.supported) throw new Error(`${target.model}：${option.hint}`);
 }
 const suffix = thinkingMode === 'default' ? 'latest' : thinkingMode === 'off' ? 'fast' : thinkingMode;
@@ -58,9 +58,9 @@ async function probe(model: (typeof targets)[number]) {
     };
     const started = Date.now();
     let firstDeltaMs: number | undefined;
-    const result = await openaiAdapter.decide({
+    const result = await remoteAdapter(model.apiProtocol).decide({
       seat: 1, messages, tools, stream: true, toolChoice: purpose === 'listen' ? 'auto' : 'required',
-      config: { baseUrl: model.baseUrl, model: model.model, apiKey: model.apiKey, temperature: 0.7, toolMode: 'tools', timeoutSec: 90, thinkingMode },
+      config: { apiProtocol: model.apiProtocol, baseUrl: model.baseUrl, model: model.model, apiKey: model.apiKey, temperature: 0.7, toolMode: 'tools', timeoutSec: 90, thinkingMode },
       onDelta: () => { firstDeltaMs ??= Date.now() - started; },
     });
     const valid = result.ok && (purpose === 'listen' ? !result.call : result.call?.tool === 'vote');

@@ -1,11 +1,12 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { ModelPresetView } from '@werewolf/protocol';
-import { chatBase, loadQwenPresets } from './qwen-presets';
+import { apiBase, type ApiProtocol, type ModelPresetView } from '@werewolf/protocol';
+import { loadQwenPresets } from './qwen-presets';
 import type { SecretBox } from './secret';
 
 interface SavedModel {
+  apiProtocol?: ApiProtocol;
   id: string;
   name: string;
   baseUrl: string;
@@ -13,6 +14,7 @@ interface SavedModel {
 }
 
 export interface ResolvedModel {
+  apiProtocol: ApiProtocol;
   id: string;
   label: string;
   model: string;
@@ -44,6 +46,7 @@ export class ModelLibrary {
       label: preset.label,
       model: preset.model,
       baseUrl: preset.baseUrl,
+      apiProtocol: preset.apiProtocol ?? 'chat_completions',
       apiKey: preset.apiKey,
       source: 'settings' as const,
     }));
@@ -52,6 +55,7 @@ export class ModelLibrary {
       label: m.name,
       model: m.name,
       baseUrl: m.baseUrl,
+      apiProtocol: m.apiProtocol ?? 'chat_completions',
       apiKey: this.keyOf(m),
       source: 'added' as const,
     }));
@@ -64,6 +68,7 @@ export class ModelLibrary {
       label: m.label,
       model: m.model,
       baseUrl: m.baseUrl,
+      apiProtocol: m.apiProtocol,
       hasKey: !!m.apiKey,
       source: m.source,
     }));
@@ -73,17 +78,18 @@ export class ModelLibrary {
     return this.list().find((m) => m.id === id);
   }
 
-  add(name: string, baseUrl: string, apiKey: string): ModelPresetView {
+  add(name: string, baseUrl: string, apiKey: string, protocol: ApiProtocol = 'chat_completions'): ModelPresetView {
     const model = name.trim();
-    const url = chatBase(baseUrl);
+    const url = apiBase(baseUrl, protocol);
     const key = apiKey.trim();
     if (!model) throw new Error('请填写模型名称');
     if (!url) throw new Error('请填写接口地址');
     if (!key) throw new Error('请填写密钥');
-    if (this.added.some((m) => m.name === model && m.baseUrl === url)) throw new Error('这个名称和地址已经添加过了');
+    if (this.added.some((m) => m.name === model && m.baseUrl === url && (m.apiProtocol ?? 'chat_completions') === protocol)) throw new Error('这个名称、地址和协议已经添加过了');
     const saved: SavedModel = {
       id: `m_${randomBytes(8).toString('hex')}`,
       name: model.slice(0, 120),
+      apiProtocol: protocol,
       baseUrl: url.slice(0, 300),
       apiKeyEnc: this.secrets.encrypt(key),
     };
@@ -94,6 +100,7 @@ export class ModelLibrary {
       label: saved.name,
       model: saved.name,
       baseUrl: saved.baseUrl,
+      apiProtocol: protocol,
       hasKey: true,
       source: 'added',
     };

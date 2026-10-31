@@ -1,5 +1,6 @@
 import type { Audience, GameEvent, RuleValue, Seat, ToolSpec } from '@werewolf/protocol';
 import { getRole, modulesIn } from './registry';
+import { seatTools } from './catalog';
 import { decisionId, nextRandom } from './rng';
 import type { DeathRecord, DeathVia, GameState, PlayerState, RoleModule, Step } from './types';
 
@@ -159,7 +160,8 @@ export class Ctx {
     const tools: Record<number, ToolSpec[]> = {};
     const prompts: Record<number, string> = {};
     for (const s of actors) {
-      tools[s] = o.tools(s);
+      const catalog = seatTools(this.state, s);
+      tools[s] = o.tools(s).map((tool) => ({ ...tool, description: catalog.find((t) => t.name === tool.name)?.description ?? tool.description }));
       prompts[s] = o.prompt(s);
     }
     this.state.pending = {

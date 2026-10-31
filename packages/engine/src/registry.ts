@@ -12,6 +12,7 @@ export function registerRole(mod: RoleModule): void {
   if (roles.has(mod.id)) throw new Error(`身份模块重复注册：${mod.id}`);
   for (const key of Object.keys(mod.steps ?? {})) {
     if (coreSteps.has(key)) throw new Error(`步骤 ${key} 与核心流程重名`);
+    for (const existing of roles.values()) if (existing.steps?.[key]) throw new Error(`步骤 ${key} 与身份 ${existing.id} 重名`);
   }
   roles.set(mod.id, mod);
   stepCache = null;
@@ -25,6 +26,7 @@ export function registerPreset(preset: PresetDef): void {
 export function registerCoreSteps(steps: Record<string, StepHandler>): void {
   for (const [key, handler] of Object.entries(steps)) {
     if (coreSteps.has(key)) throw new Error(`核心步骤重复注册：${key}`);
+    for (const existing of roles.values()) if (existing.steps?.[key]) throw new Error(`核心步骤 ${key} 与身份 ${existing.id} 重名`);
     coreSteps.set(key, handler);
   }
   stepCache = null;

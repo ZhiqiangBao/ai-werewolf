@@ -6,7 +6,7 @@ import { ModelLibrary } from '../src/model-library';
 
 if (!process.argv.includes('--live')) throw new Error('需显式传入 --live；在内存对局中测试 3 类真实请求，行动错误最多重试 5 次，其余使用模拟玩家。');
 const library = new ModelLibrary(SecretBox.fromEnvOrFile('data'), join('data', 'models.json'));
-const models = library.list().filter((m) => m.apiKey && new URL(m.baseUrl).host.startsWith('token-plan.'));
+const models = library.list().filter((m) => m.apiKey && m.apiProtocol === 'chat_completions' && new URL(m.baseUrl).host.startsWith('token-plan.'));
 const flash = models.find((m) => m.model === 'qwen3.8-flash');
 const pro = models.find((m) => m.model === 'deepseek-v4-pro');
 if (!flash || !pro) throw new Error('需要已配置的 Token Plan qwen3.8-flash 和 deepseek-v4-pro');
@@ -29,7 +29,7 @@ const adapter: Adapter = {
       injectedSeat = req.seat;
       injectedDecision = req.projection!.task!.decisionId;
       return { ok: true, call: { tool: 'speak', args: { content: '错误工具，不应公开' } },
-        assistant: { role: 'assistant', content: null, tool_calls: [{ id: 'injected_wrong_tool', type: 'function', function: { name: 'speak', arguments: '{"content":"错误工具，不应公开"}' } }] },
+        assistant: { role: 'assistant', content: null, calls: [{ id: 'injected_wrong_tool', name: 'speak', arguments: '{"content":"错误工具，不应公开"}' }] },
         toolCallIds: ['injected_wrong_tool'], latencyMs: 0 };
     }
     if (retryOnly && (req.seat !== injectedSeat || req.projection?.task?.decisionId !== injectedDecision)) return mockAdapter.decide(req);
@@ -44,7 +44,7 @@ const adapter: Adapter = {
       config: { ...req.config, baseUrl: model.baseUrl, model: model.model, apiKey: model.apiKey, thinkingMode: 'off' },
     });
     const valid = result.ok && (key === 'listen' ? !result.call : names.includes(result.call?.tool ?? ''));
-    const afterToolError = req.messages.some((m) => m.role === 'tool' && m.tool_call_id === 'injected_wrong_tool' && m.content.includes('工具调用错误'));
+    const afterToolError = req.messages.some((m) => m.role === 'tool' && m.callId === 'injected_wrong_tool' && m.content.includes('工具调用错误'));
     const row = { purpose: key, model: model.model, seat: req.seat, ok: result.ok, valid, afterToolError, tool: result.call?.tool, latencyMs: result.latencyMs, failureKind: result.failureKind, error: result.error };
     results.push(row);
     console.log(JSON.stringify(row));

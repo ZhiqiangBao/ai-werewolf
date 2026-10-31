@@ -1,3 +1,4 @@
+import type { ToolSpec } from '@werewolf/protocol';
 import type { Seat } from '@werewolf/protocol';
 import { seatLabel } from '../text';
 import { seatParam } from '../tools';
@@ -11,6 +12,7 @@ interface Check {
 
 export const seer: RoleModule = {
   id: 'seer',
+  tools: ({ seats, rules }) => [seerTool(seats)],
   name: '预言家',
   faction: 'good',
   category: 'god',
@@ -79,3 +81,12 @@ export const seer: RoleModule = {
     },
   },
 };
+
+function seerTool(seats: Seat[]): ToolSpec {
+  return {
+    name: 'seer_inspect',
+    title: '查验',
+    description: '预言家夜间查验时使用。target 是一名其他存活玩家，不能查自己。target 必须为整数，不能填 null；例：{"target":3}（须为其他存活玩家）。可以重复查验。结果只区分好人或狼人，不返回具体神职，只有你能看到。其他阶段不要调用。',
+    params: [seatParam('target', '查验目标', seats)],
+  };
+}

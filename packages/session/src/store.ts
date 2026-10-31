@@ -1,5 +1,6 @@
 import type { AuditEntry, GameEvent, RuleSet, RuleValue, SeatConfigView, Thought } from '@werewolf/protocol';
 import type { SeatThread } from './agent';
+import { migrateThread } from './agent';
 import type { ActionRecord, GameState } from '@werewolf/engine';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -126,7 +127,7 @@ export class FileStore implements RoomStore {
     for (const f of readdirSync(dir)) {
       if (!/^s\d+\.json$/.test(f)) continue;
       try {
-        threads.push(JSON.parse(readFileSync(join(dir, f), 'utf8')));
+        threads.push(migrateThread(JSON.parse(readFileSync(join(dir, f), 'utf8'))));
       } catch (e) {
         console.warn(`跳过无法读取的座位文件 ${roomId}/${f}：${(e as Error).message}`);
       }

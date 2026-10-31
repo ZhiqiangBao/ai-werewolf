@@ -1,5 +1,5 @@
 import type { GodProjection, GameEvent, Projection, Seat } from '@werewolf/protocol';
-import { mockAdapter, mockDecision, type Adapter, type ChatMessage, type DecideRequest } from '@werewolf/llm';
+import { mockAdapter, mockDecision, type Adapter, type TranscriptMessage, type DecideRequest } from '@werewolf/llm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { syncThread } from '../src/agent';
 import { MemoryStore, RoomManager, SecretBox, type ManagerOptions } from '../src/index';
@@ -619,10 +619,10 @@ describe('模型调度', () => {
 });
 
 describe('警长投票播报', () => {
-  const system: ChatMessage = { role: 'system', content: '规则' };
+  const system: TranscriptMessage = { role: 'system', content: '规则' };
 
   function feed(seat: number, event: GameEvent, hint: { nextSeat: number | null; nextStep: string | null }) {
-    const thread = { seat, seen: 0, messages: [] as ChatMessage[] };
+    const thread = { seat, seen: 0, messages: [] as TranscriptMessage[] };
     syncThread(thread, [event], system, hint);
     return thread.messages.filter((m) => m.role === 'user').map((m) => m.content ?? '');
   }
@@ -694,13 +694,13 @@ describe('警长投票播报', () => {
       tool: 'vote',
       broadcast: true,
     };
-    const voter = { seat: 1, seen: 0, messages: [] as ChatMessage[] };
+    const voter = { seat: 1, seen: 0, messages: [] as TranscriptMessage[] };
     syncThread(voter, [event], system, { nextSeat: null, nextStep: 'exile.vote', cue });
     expect(voter.messages.filter((m) => m.role === 'user')).toHaveLength(1);
     expect(voter.messages.at(-1)?.content).toContain('请投票放逐一名玩家');
     expect(voter.messages.at(-1)?.content).toContain('你现在可以使用投票工具。');
 
-    const other = { seat: 2, seen: 0, messages: [] as ChatMessage[] };
+    const other = { seat: 2, seen: 0, messages: [] as TranscriptMessage[] };
     syncThread(other, [event], system, { nextSeat: null, nextStep: 'exile.vote', cue });
     expect(other.messages.at(-1)?.content).toContain('请投票放逐一名玩家');
     expect(other.messages.at(-1)?.content).toContain('不要调用工具。');

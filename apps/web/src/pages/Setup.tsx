@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { thinkingOptions, defaultThinkingMode } from '@werewolf/protocol';
+import { thinkingOptions, defaultThinkingMode, API_PROTOCOLS, API_PROTOCOL_LABELS, type ApiProtocol } from '@werewolf/protocol';
 import type {
   Catalog,
   ModelPresetView,
@@ -309,6 +309,7 @@ function choiceFor(models: ModelPresetView[]) {
       modelId: preset.id,
       model: preset.model,
       baseUrl: preset.baseUrl,
+      apiProtocol: preset.apiProtocol ?? 'chat_completions',
     };
   };
 }
@@ -316,9 +317,10 @@ function choiceFor(models: ModelPresetView[]) {
 function keepThinking(seat: SeatConfigView, next: Omit<SeatConfigInput, 'seat'>): Omit<SeatConfigInput, 'seat'> {
   const baseUrl = next.baseUrl ?? seat.baseUrl;
   const model = next.model ?? seat.model;
-  const preferred = defaultThinkingMode(baseUrl, model);
+  const protocol = next.apiProtocol ?? seat.apiProtocol;
+  const preferred = defaultThinkingMode(baseUrl, model, protocol);
   const mode = seat.thinkingMode ?? preferred;
-  const supported = thinkingOptions(baseUrl, model).some((o) => o.value === mode && o.supported);
+  const supported = thinkingOptions(baseUrl, model, protocol).some((o) => o.value === mode && o.supported);
   return { ...next, thinkingMode: supported ? mode : preferred };
 }
 
@@ -326,6 +328,7 @@ function ModelsPanel({ models, onChange }: { models: ModelPresetView[]; onChange
   const [name, setName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [protocol, setProtocol] = useState<ApiProtocol>('chat_completions');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const added = models.filter((m) => m.source === 'added');
@@ -334,7 +337,7 @@ function ModelsPanel({ models, onChange }: { models: ModelPresetView[]; onChange
     setBusy(true);
     setError(null);
     try {
-      await api.addModel({ name: name.trim(), baseUrl: baseUrl.trim(), apiKey: apiKey.trim() });
+      await api.addModel({ name: name.trim(), baseUrl: baseUrl.trim(), apiKey: apiKey.trim(), apiProtocol: protocol });
       setName('');
       setBaseUrl('');
       setApiKey('');
@@ -358,9 +361,15 @@ function ModelsPanel({ models, onChange }: { models: ModelPresetView[]; onChange
     <div className="panel">
       <h3>模型</h3>
       <p className="small muted" style={{ margin: '0 0 10px' }}>
-        在这里添加一次名称、接口地址和密钥。座位只从这份名单里选。settings.json 里写好的模型已经在名单里。
+        选择协议并添加模型，各座位可重复选用。settings.json 中的模型已自动导入，也可在座位设置中调整接口。
       </p>
       <div className="model-add">
+        <label className="field">
+          接口协议
+          <select value={protocol} onChange={(e) => setProtocol(e.target.value as ApiProtocol)}>
+            {API_PROTOCOLS.map((p) => <option key={p} value={p}>{API_PROTOCOL_LABELS[p]}</option>)}
+          </select>
+        </label>
         <label className="field">
           名称
           <input type="text" value={name} maxLength={120} placeholder="例如 deepseek-v4-flash" onChange={(e) => setName(e.target.value)} />
@@ -382,7 +391,7 @@ function ModelsPanel({ models, onChange }: { models: ModelPresetView[]; onChange
         <div className="model-list">
           {added.map((m) => (
             <div key={m.id} className="model-item">
-              <span>{m.label}</span>
+              <span>{m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}</span>
               <span className="tiny dim">{m.baseUrl}</span>
               <button className="btn sm ghost" type="button" onClick={() => void remove(m.id)}>
                 删除
@@ -433,12 +442,12 @@ function SeatsPanel({ setup, catalog, models, roomId, token, patchSeat, patch, f
           <option value="mock">模拟玩家</option>
           {added.map((m) => (
             <option key={m.id} value={m.id}>
-              {m.label}
+              {m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}
             </option>
           ))}
           {fromSettings.map((m) => (
             <option key={m.id} value={m.id}>
-              {m.label}
+              {m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}
             </option>
           ))}
         </select>
@@ -487,7 +496,7 @@ function SeatsPanel({ setup, catalog, models, roomId, token, patchSeat, patch, f
 function selectedId(s: SeatConfigView, models: ModelPresetView[]): string {
   if (s.adapter !== 'openai_compatible') return 'mock';
   if (s.modelId && models.some((m) => m.id === s.modelId)) return s.modelId;
-  return models.find((m) => m.model === s.model && m.baseUrl === s.baseUrl)?.id ?? (s.model ? 'custom' : 'mock');
+  return models.find((m) => m.model === s.model && m.baseUrl === s.baseUrl && (m.apiProtocol ?? 'chat_completions') === (s.apiProtocol ?? 'chat_completions'))?.id ?? (s.model ? 'custom' : 'mock');
 }
 
 function ModelOptions({ models }: { models: ModelPresetView[] }) {
@@ -500,7 +509,7 @@ function ModelOptions({ models }: { models: ModelPresetView[] }) {
         <optgroup label="已添加">
           {added.map((m) => (
             <option key={m.id} value={m.id}>
-              {m.label}
+              {m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}
             </option>
           ))}
         </optgroup>
@@ -509,7 +518,7 @@ function ModelOptions({ models }: { models: ModelPresetView[] }) {
         <optgroup label="settings">
           {settings.map((m) => (
             <option key={m.id} value={m.id}>
-              {m.label}
+              {m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}
             </option>
           ))}
         </optgroup>
@@ -542,6 +551,7 @@ function SeatRow({
   const [test, setTest] = useState<{ ok: boolean; message: string } | null>(null);
   const [testing, setTesting] = useState(false);
   const real = s.adapter === 'openai_compatible';
+  const providerTemperature = s.apiProtocol === 'anthropic_messages' || (s.apiProtocol === 'responses' && /^(?:gpt-[56]|o[134])(?:[.-]|$)/i.test(s.model));
   const runTest = async () => {
     setTesting(true);
     setTest(null);
@@ -560,7 +570,7 @@ function SeatRow({
     const next = choiceFor(models)(id);
     if (next) patchSeat(s.seat, keepThinking(s, next), 0);
   };
-  const thinking = thinkingOptions(s.baseUrl, s.model);
+  const thinking = thinkingOptions(s.baseUrl, s.model, s.apiProtocol);
   const thinkingHint = thinking.find((o) => o.value === (s.thinkingMode ?? 'default'))?.hint;
   return (
     <div className="seat-row">
@@ -615,6 +625,24 @@ function SeatRow({
           {real && (
             <>
               <label className="field">
+                接口协议
+                <select value={s.apiProtocol ?? 'chat_completions'} onChange={(e) => patchSeat(s.seat, keepThinking(s, { apiProtocol: e.target.value as ApiProtocol, modelId: null }), 0)}>
+                  {API_PROTOCOLS.map((p) => <option key={p} value={p}>{API_PROTOCOL_LABELS[p]}</option>)}
+                </select>
+              </label>
+              <label className="field">
+                接口地址
+                <input type="text" value={s.baseUrl} onChange={(e) => patchSeat(s.seat, { baseUrl: e.target.value, modelId: null })} />
+              </label>
+              <label className="field">
+                模型名
+                <input type="text" value={s.model} onChange={(e) => patchSeat(s.seat, keepThinking(s, { model: e.target.value, modelId: null }))} />
+              </label>
+              {s.apiProtocol && s.apiProtocol !== 'chat_completions' && <label className="field" title="按供应商定义计数，部分接口把思考也计入上限。">
+                输出 token 上限
+                <input type="number" min={1024} max={128000} step={1024} value={s.maxOutputTokens ?? 32768} onChange={(e) => patchSeat(s.seat, { maxOutputTokens: Number(e.target.value) })} />
+              </label>}
+              <label className="field">
                 温度
                 <input
                   type="number"
@@ -622,6 +650,8 @@ function SeatRow({
                   max={2}
                   step={0.1}
                   value={s.temperature}
+                  disabled={providerTemperature}
+                  title={providerTemperature ? '当前协议配置使用供应商默认温度。' : undefined}
                   onChange={(e) => patchSeat(s.seat, { temperature: Number(e.target.value) })}
                 />
               </label>

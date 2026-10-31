@@ -1,3 +1,4 @@
+import type { RuleSet, ToolSpec } from '@werewolf/protocol';
 import type { ParamSpec, Seat } from '@werewolf/protocol';
 import type { Ctx } from '../context';
 import { seatLabel } from '../text';
@@ -48,6 +49,7 @@ function promptFor(ctx: Ctx, seat: Seat): string {
 
 export const witch: RoleModule = {
   id: 'witch',
+  tools: ({ seats, rules }) => [witchTool(seats, rules.values)],
   name: '女巫',
   faction: 'good',
   category: 'god',
@@ -173,3 +175,17 @@ export const witch: RoleModule = {
     },
   },
 };
+
+function witchTool(seats: Seat[], v: RuleSet['values']): ToolSpec {
+  const self = v['witch.selfSave'] === 'always' ? '可以自救。' : v['witch.selfSave'] === 'first_night' ? '仅第 1 夜可以自救。' : '不能自救。';
+  const both = v['witch.bothPotionsSameNight'] === true ? '同一晚可以既救又毒。' : '同一晚不能既救又毒。';
+  return {
+    name: 'witch_act',
+    title: '用药',
+    description: `女巫夜间用药时使用。save 为 true 表示用尚未用过的解药救当晚刀口，false 表示不救。解药只能救当晚刀口，${self}poisonTarget 是毒药目标的整数座位号，只可选其他存活玩家，null 表示不用毒药。药品各只能用一次；解药用尽时 save 必须 false，毒药用尽时 poisonTarget 必须 null。${both}两个字段一次提交：不用药填 {"save":false,"poisonTarget":null}；只救人填 {"save":true,"poisonTarget":null}；只毒3号填 {"save":false,"poisonTarget":3}（须为合法目标）。其他阶段不要调用。`,
+    params: [
+      { kind: 'boolean', name: 'save', label: '使用解药', trueLabel: '救', falseLabel: '不救' },
+      seatParam('poisonTarget', '毒药目标', seats, '不用毒药'),
+    ],
+  };
+}

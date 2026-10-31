@@ -1,5 +1,5 @@
 import type { GameEvent, Projection } from '@werewolf/protocol';
-import type { ChatMessage } from './types';
+import type { TranscriptMessage } from './types';
 
 function when(e: GameEvent): string {
   if (e.day === 0) return '开局';
@@ -36,7 +36,7 @@ export function buildMessages(
   p: Projection,
   style: string,
   limits: { speechSec?: number; skillSec?: number } = {},
-): ChatMessage[] {
+): TranscriptMessage[] {
   if (!p.me) throw new Error('只有座位投影可以生成提示词');
   const speechSec = Math.max(1, Math.round(limits.speechSec ?? 180));
   const skillSec = Math.max(1, Math.round(limits.skillSec ?? 90));
@@ -89,14 +89,14 @@ export function buildMessages(
 
 /** 上一次行动没有被接受时，追加到消息末尾的反馈。 */
 export function feedbackMessages(
-  previous: { assistant?: ChatMessage; toolCallIds: string[] },
+  previous: { assistant?: TranscriptMessage; toolCallIds: string[] },
   reason: string,
-): ChatMessage[] {
+): TranscriptMessage[] {
   const text = `工具调用错误，请调用正确工具。${reason}`;
   if (!previous.assistant) return [{ role: 'user', content: text }];
-  const out: ChatMessage[] = [previous.assistant];
+  const out: TranscriptMessage[] = [previous.assistant];
   if (previous.toolCallIds.length) {
-    for (const id of previous.toolCallIds) out.push({ role: 'tool', tool_call_id: id, content: text });
+    for (const id of previous.toolCallIds) out.push({ role: 'tool', callId: id, content: text, isError: true });
   } else out.push({ role: 'user', content: text });
   return out;
 }

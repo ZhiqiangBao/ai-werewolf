@@ -1,4 +1,7 @@
 export type Seat = number;
+export { API_PROTOCOLS, API_PROTOCOL_LABELS, apiProtocol, apiBase, apiUrl, isDashscopeEndpoint } from './api';
+export type { ApiProtocol, TokenUsage } from './api';
+import type { ApiProtocol, TokenUsage } from './api';
 export { eventPurpose, gameRecordEvents, buildVideoScript, recordedBadgeOutcome } from './recording';
 export type { VideoScriptEntry } from './recording';
 export { THINKING_MODES, thinkingOptions, thinkingParameters, defaultThinkingMode } from './thinking';
@@ -99,10 +102,10 @@ export function paramToJsonSchema(p: ParamSpec): JsonSchema {
         minItems: p.min,
         maxItems: p.max,
         uniqueItems: true,
-        description: p.label,
+        description: `${p.label}。填写互不重复的真实整数座位号列表，不是列表下标；数量为 ${p.min}–${p.max} 个`,
       };
     case 'boolean':
-      return { type: 'boolean', description: p.label };
+      return { type: 'boolean', description: `${p.label}。true=${p.trueLabel ?? '是'}；false=${p.falseLabel ?? '否'}。填写布尔值，不要填写字符串` };
     case 'text': {
       const schema: JsonSchema = { type: 'string', minLength: p.minLength, description: p.label };
       if (p.maxLength !== undefined) schema.maxLength = p.maxLength;
@@ -304,6 +307,8 @@ export interface SeatConfigView {
   name: string;
   controller: Controller;
   adapter: AdapterKind;
+  /** 旧配置缺省为 Chat Completions。远程调用方式与协议分别保存。 */
+  apiProtocol?: ApiProtocol;
   baseUrl: string;
   model: string;
   apiKeyMasked: string | null;
@@ -312,6 +317,7 @@ export interface SeatConfigView {
   persona: string;
   toolMode: ToolMode;
   timeoutSec: number;
+  maxOutputTokens?: number;
   /** 统一的思考档位；接口不支持的档位不能选用。 */
   thinkingMode?: ThinkingMode;
   /** 选用的模型名单条目。旧房间可能还没有。 */
@@ -335,6 +341,7 @@ export interface ModelDraft {
   name: string;
   baseUrl: string;
   apiKey: string;
+  apiProtocol?: ApiProtocol;
 }
 
 /** 模型名单里的一条。没有密钥明文。 */
@@ -343,6 +350,7 @@ export interface ModelPresetView {
   label: string;
   model: string;
   baseUrl: string;
+  apiProtocol?: ApiProtocol;
   hasKey: boolean;
   /** settings：来自 Qwen Code 的 settings.json。added：在页面里添加的。 */
   source: 'settings' | 'added';
@@ -419,6 +427,8 @@ export interface ActResult {
 }
 
 export interface AuditEntry {
+  apiProtocol?: ApiProtocol;
+  usage?: TokenUsage;
   id: number;
   at: number;
   seat: Seat;

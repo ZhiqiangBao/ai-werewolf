@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { THINKING_MODES, thinkingOptions, defaultThinkingMode } from '@werewolf/protocol';
+import { THINKING_MODES, thinkingOptions, defaultThinkingMode, apiProtocol, apiUrl } from '@werewolf/protocol';
 import type {
   AdapterKind,
   AuditEntry,
@@ -50,11 +50,12 @@ import {
   testConnection,
   type Adapter,
   type AdapterConfig,
-  type ChatMessage,
+  type TranscriptMessage,
   type DecideResult,
 } from '@werewolf/llm';
 import {
   NOT_TOOL_TURN,
+  migrateThread,
   ensureCue,
   ownLine,
   readyToAct,
@@ -237,9 +238,9 @@ export class RoomManager {
     return this.models.views();
   }
 
-  addModel(body: { name?: unknown; baseUrl?: unknown; apiKey?: unknown }): ModelPresetView {
+  addModel(body: { name?: unknown; baseUrl?: unknown; apiKey?: unknown; apiProtocol?: unknown }): ModelPresetView {
     try {
-      return this.models.add(String(body.name ?? ''), String(body.baseUrl ?? ''), String(body.apiKey ?? ''));
+      return this.models.add(String(body.name ?? ''), String(body.baseUrl ?? ''), String(body.apiKey ?? ''), apiProtocol(body.apiProtocol));
     } catch (e) {
       throw new ApiFailure(400, 'BAD_REQUEST', (e as Error).message);
     }
@@ -345,6 +346,13 @@ export class RoomManager {
     const current = rec.seats.find((x) => x.seat === s.seat);
     if (!current) throw new ApiFailure(400, 'BAD_REQUEST', `没有 ${s.seat} 号座位`);
     const seat = { ...current };
+    if (s.apiProtocol !== undefined) {
+      try { seat.apiProtocol = apiProtocol(s.apiProtocol); } catch (error) { throw new ApiFailure(400, 'BAD_REQUEST', (error as Error).message); }
+    }
+    if (s.maxOutputTokens !== undefined) {
+      if (!Number.isInteger(s.maxOutputTokens) || s.maxOutputTokens < 1024 || s.maxOutputTokens > 128000) throw new ApiFailure(400, 'BAD_REQUEST', '单次输出上限须为 1024–128000 的整数');
+      seat.maxOutputTokens = s.maxOutputTokens;
+    }
     if (s.controller !== undefined) {
       if (s.controller !== 'human' && s.controller !== 'ai') throw new ApiFailure(400, 'BAD_REQUEST', '控制者只能是 human 或 ai');
       seat.controller = s.controller;
@@ -378,9 +386,10 @@ export class RoomManager {
     if (s.presetId) {
       const preset = this.models.find(s.presetId);
       if (!preset) throw new ApiFailure(400, 'BAD_REQUEST', '没有这个模型');
-      seat.modelId = preset.id;
+      seat.modelId = s.modelId === null ? null : preset.id;
       seat.model = preset.model;
       seat.baseUrl = preset.baseUrl;
+      seat.apiProtocol = s.apiProtocol ?? preset.apiProtocol ?? 'chat_completions';
       seat.adapter = 'openai_compatible';
       if (typeof s.apiKey !== 'string') {
         if (preset.apiKey) {
@@ -394,8 +403,8 @@ export class RoomManager {
     } else if (s.modelId === null) {
       seat.modelId = null;
     }
-    const preferred = defaultThinkingMode(seat.baseUrl, seat.model);
-    const option = thinkingOptions(seat.baseUrl, seat.model).find((o) => o.value === (seat.thinkingMode ?? preferred));
+    const preferred = defaultThinkingMode(seat.baseUrl, seat.model, seat.apiProtocol);
+    const option = thinkingOptions(seat.baseUrl, seat.model, seat.apiProtocol).find((o) => o.value === (seat.thinkingMode ?? preferred));
     if (!option?.supported) {
       if (s.thinkingMode !== undefined) throw new ApiFailure(400, 'BAD_REQUEST', option?.hint ?? '无效的思考强度');
       seat.thinkingMode = preferred;
@@ -406,7 +415,7 @@ export class RoomManager {
 
   private seatView(s: SeatRecord): SeatConfigView {
     const { apiKeyEnc: _enc, apiKeyMask, ...rest } = s;
-    return { ...rest, ...(s.adapter === 'openai_compatible' ? { thinkingMode: s.thinkingMode ?? defaultThinkingMode(s.baseUrl, s.model) } : {}), apiKeyMasked: apiKeyMask, modelId: s.modelId ?? null };
+    return { ...rest, apiProtocol: s.apiProtocol ?? 'chat_completions', ...(s.adapter === 'openai_compatible' ? { thinkingMode: s.thinkingMode ?? defaultThinkingMode(s.baseUrl, s.model, s.apiProtocol) } : {}), apiKeyMasked: apiKeyMask, modelId: s.modelId ?? null };
   }
 
   private setupErrors(rec: RoomRecord): string[] {
@@ -415,7 +424,8 @@ export class RoomManager {
       if (s.controller !== 'ai' || s.adapter !== 'openai_compatible') continue;
       if (!s.baseUrl) errors.push(`${s.seat}号：没有填写接口地址`);
       if (!s.model) errors.push(`${s.seat}号：没有填写模型名`);
-      const thinking = thinkingOptions(s.baseUrl, s.model).find((o) => o.value === (s.thinkingMode ?? defaultThinkingMode(s.baseUrl, s.model)));
+      if (s.baseUrl) { try { apiUrl(s.baseUrl, s.apiProtocol); } catch (error) { errors.push(`${s.seat}号：${(error as Error).message}`); } }
+      const thinking = thinkingOptions(s.baseUrl, s.model, s.apiProtocol).find((o) => o.value === (s.thinkingMode ?? defaultThinkingMode(s.baseUrl, s.model, s.apiProtocol)));
       if (!thinking?.supported) errors.push(`${s.seat}号：${thinking?.hint ?? '无效的思考强度'}`);
     }
     return errors;
@@ -837,15 +847,16 @@ export class RoomManager {
   }
 
   private adapterConfig(s: SeatRecord): AdapterConfig {
-    const live = s.modelId ? this.models.find(s.modelId) : undefined;
     return {
-      baseUrl: live?.baseUrl || s.baseUrl,
-      model: live?.model || s.model,
-      apiKey: live ? live.apiKey : s.apiKeyEnc ? this.secrets.decrypt(s.apiKeyEnc) : null,
+      apiProtocol: s.apiProtocol ?? 'chat_completions',
+      baseUrl: s.baseUrl,
+      model: s.model,
+      apiKey: s.apiKeyEnc ? this.secrets.decrypt(s.apiKeyEnc) : null,
       temperature: s.temperature,
       toolMode: s.toolMode,
       timeoutSec: s.timeoutSec,
-      thinkingMode: s.thinkingMode ?? defaultThinkingMode(s.baseUrl, s.model),
+      thinkingMode: s.thinkingMode ?? defaultThinkingMode(s.baseUrl, s.model, s.apiProtocol),
+      maxOutputTokens: s.maxOutputTokens,
     };
   }
 
@@ -924,7 +935,7 @@ export class RoomManager {
       thread = { seat, seen: 0, messages: [] };
       rec.threads.push(thread);
     }
-    return thread;
+    return migrateThread(thread);
   }
 
   private syncThread(live: Live, seat: Seat, maxSeq = Number.POSITIVE_INFINITY): SeatThread {
@@ -1047,9 +1058,9 @@ export class RoomManager {
     }
     const call = result.call;
     const reply = result.assistant ?? { role: 'assistant' as const, content: call ? ownLine(call.tool, call.args) : result.reply ?? '' };
-    if (reply.content || (reply.role === 'assistant' && reply.tool_calls?.length)) thread.messages.push(reply);
-    if (reply.role === 'assistant' && reply.tool_calls?.length) {
-      for (const c of reply.tool_calls) thread.messages.push({ role: 'tool', tool_call_id: c.id, content: call ? ownLine(call.tool, call.args) : '已收到。' });
+    if (reply.content || (reply.role === 'assistant' && (reply.calls?.length || reply.native?.items.length))) thread.messages.push(reply);
+    if (reply.role === 'assistant' && reply.calls?.length) {
+      for (const c of reply.calls) thread.messages.push({ role: 'tool', callId: c.id, content: call ? ownLine(call.tool, call.args) : '已收到。' });
     }
   }
 
@@ -1057,7 +1068,7 @@ export class RoomManager {
   private async receive(live: Live, seat: Seat, decision: string): Promise<void> {
     const rec = live.rec;
     const cfg = rec.seats[seat - 1];
-    const adapter = this.adapters[cfg.adapter] ?? getAdapter(cfg.adapter);
+    const adapter = this.adapters[cfg.adapter] ?? getAdapter(cfg.adapter, cfg.apiProtocol);
     const projection = this.attachDeadline(rec, seat, projectSeat(rec.state!, rec.events, seat));
     const tools = seatTools(rec.state!, seat);
     const thread = this.threadFor(live, seat);
@@ -1066,7 +1077,7 @@ export class RoomManager {
     live.inflight.set(key, ctrl);
     const gen = live.gen;
     const model = cfg.adapter === 'mock' ? 'mock' : cfg.model;
-    const messages: ChatMessage[] = [...thread.messages];
+    const messages: TranscriptMessage[] = [...thread.messages];
     const started = this.now();
     let firstDeltaMs: number | undefined;
     let thinkingChars = 0;
@@ -1088,6 +1099,7 @@ export class RoomManager {
           messages,
           tools,
           config,
+          cacheKey: `werewolf:${rec.id}:seat:${seat}`,
           signal: ctrl.signal,
           stream: cfg.adapter !== 'mock',
           toolChoice: 'auto',
@@ -1116,7 +1128,7 @@ export class RoomManager {
         ok: !error, messages, response: result.raw ?? result.call,
         ...(result.call ? { toolCall: result.call } : {}), ...(error ? { error: redact(error, config.apiKey) } : {}),
         failureKind: result.failureKind ?? (error ? 'invalid_tool' : undefined), latencyMs: result.latencyMs,
-        thinkingMode: config.thinkingMode, firstDeltaMs,
+        apiProtocol: config.apiProtocol, usage: result.usage, thinkingMode: config.thinkingMode, firstDeltaMs,
         thinkingChars: result.thinking?.length ?? thinkingChars, replyChars: result.reply?.length ?? replyChars,
       });
     } finally {
@@ -1127,7 +1139,7 @@ export class RoomManager {
   private async runAi(live: Live, seat: Seat, decision: string): Promise<void> {
     const rec = live.rec;
     const cfg = rec.seats[seat - 1];
-    const adapter = this.adapters[cfg.adapter] ?? getAdapter(cfg.adapter);
+    const adapter = this.adapters[cfg.adapter] ?? getAdapter(cfg.adapter, cfg.apiProtocol);
     const thread = this.threadFor(live, seat);
     if (rec.state?.pending?.id !== decision || !readyToAct(thread, this.actionCue(rec))) return;
     ensureCue(thread, this.actionCue(rec));
@@ -1178,6 +1190,7 @@ export class RoomManager {
             messages,
             tools,
             config: { ...config, timeoutSec: deadline === undefined ? limit : Math.max(0.001, Math.min(limit, (deadline - this.now()) / 1000)) },
+            cacheKey: `werewolf:${rec.id}:seat:${seat}`,
             signal: ctrl.signal,
             stream: cfg.adapter !== 'mock',
             onDelta: (delta) => {
@@ -1216,7 +1229,7 @@ export class RoomManager {
           ...(result.call ? { toolCall: result.call } : {}),
           ...(error ? { error: redact(error, config.apiKey) } : {}),
           latencyMs: result.latencyMs,
-          thinkingMode: config.thinkingMode, firstDeltaMs,
+          apiProtocol: config.apiProtocol, usage: result.usage, thinkingMode: config.thinkingMode, firstDeltaMs,
           thinkingChars: result.thinking?.length ?? thinkingChars, replyChars: result.reply?.length ?? replyChars,
         });
         if (!error) return;

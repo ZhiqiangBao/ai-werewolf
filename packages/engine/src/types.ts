@@ -179,7 +179,16 @@ export interface InterruptDef {
 
 export type OptionDef = RuleOptionInfo;
 
+/** 目录构建只读取开局规则与座位，不可读取阶段、存活或私有资源，保持整局 Schema 稳定。 */
+export interface ToolCatalogContext {
+  readonly seat: Seat;
+  readonly seats: Seat[];
+  readonly rules: RuleSet;
+}
+
 export interface RoleModule {
+  /** 身份自行声明固定工具，新身份无需修改公共目录分支。 */
+  tools?(context: ToolCatalogContext): ToolSpec[];
   id: string;
   name: string;
   faction: 'good' | 'wolf';

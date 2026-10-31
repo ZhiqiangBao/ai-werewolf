@@ -1,3 +1,4 @@
+import type { RuleSet, ToolSpec } from '@werewolf/protocol';
 import type { Seat } from '@werewolf/protocol';
 import type { Ctx } from '../context';
 import { seatLabel } from '../text';
@@ -16,6 +17,7 @@ function targetsFor(ctx: Ctx, seat: Seat): Seat[] {
 
 export const guard: RoleModule = {
   id: 'guard',
+  tools: ({ seats, rules }) => [guardTool(seats, rules.values)],
   name: '守卫',
   faction: 'good',
   category: 'god',
@@ -127,3 +129,12 @@ export const guard: RoleModule = {
     }
   },
 };
+
+function guardTool(seats: Seat[], v: RuleSet['values']): ToolSpec {
+  return {
+    name: 'guard_protect',
+    title: '守护',
+    description: `守卫夜间守护时使用。target 是今晚守护的存活玩家，null 表示空守。${v['guard.allowSelf'] === true ? '可以守护自己。' : '不能守护自己。'}${v['guard.noConsecutive'] === true ? '不能连续两晚守护同一人。' : ''}守护只挡狼刀，挡不住毒药；上一晚空守会解除连续守护限制。例：{"target":3} 为守3号，{"target":null} 为空守，目标以本轮限制为准。其他阶段不要调用。`,
+    params: [seatParam('target', '守护目标', seats, '空守')],
+  };
+}

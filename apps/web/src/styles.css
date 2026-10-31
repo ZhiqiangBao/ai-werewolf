@@ -763,7 +763,7 @@ label.field {
 
 .model-add {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(150px, 1fr) minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr) auto;
   gap: 8px;
   align-items: end;
 }

@@ -1,16 +1,26 @@
 import { eventPurpose, gameRecordEvents, type GameEvent, type Seat } from '@werewolf/protocol';
-import type { ChatMessage } from '@werewolf/llm';
+import { migrateTranscript, type TranscriptMessage } from '@werewolf/llm';
 
 /** 旁听轮次调用了工具时，原样退回。不执行。 */
 export const NOT_TOOL_TURN = '不是工具调用轮次，请勿调用。';
 
 export interface SeatThread {
+  formatVersion?: 2;
   seat: Seat;
   /** 已经写进对话的最后一条事件序号。 */
   seen: number;
   /** 当前这个决策的结尾已经写过，就不再写第二条。 */
   cueFor?: string;
-  messages: ChatMessage[];
+  messages: TranscriptMessage[];
+}
+
+/** 旧 Chat 消息仅转换结构，不重放历史工具、不读取其他座位，也不改消息文本。 */
+export function migrateThread(thread: SeatThread): SeatThread {
+  if (thread.formatVersion !== 2) {
+    thread.messages = migrateTranscript(thread.messages);
+    thread.formatVersion = 2;
+  }
+  return thread;
 }
 
 /** 写结尾时用。下一步是谁、是什么。 */
@@ -104,7 +114,7 @@ function firstSeat(e: GameEvent): number | null {
   return null;
 }
 
-function lastUser(messages: ChatMessage[]): string {
+function lastUser(messages: TranscriptMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if (m.role === 'user' && m.content) return m.content;
@@ -112,7 +122,7 @@ function lastUser(messages: ChatMessage[]): string {
   return '';
 }
 
-function alreadySaid(prior: ChatMessage[], content: string): boolean {
+function alreadySaid(prior: TranscriptMessage[], content: string): boolean {
   const quoted = JSON.stringify(content);
   for (let i = prior.length - 1; i >= 0; i--) {
     const m = prior[i];
@@ -122,7 +132,7 @@ function alreadySaid(prior: ChatMessage[], content: string): boolean {
     }
     if (m.role !== 'assistant') break;
     if (m.content === content || (m.content ?? '').includes(quoted)) return true;
-    if ((m.tool_calls ?? []).some((c) => c.function.arguments.includes(quoted))) return true;
+    if ((m.calls ?? []).some((c) => c.arguments.includes(quoted))) return true;
     break;
   }
   return false;
@@ -135,10 +145,10 @@ function alreadySaid(prior: ChatMessage[], content: string): boolean {
 export function eventToMessage(
   e: GameEvent,
   me: Seat,
-  prior: ChatMessage[],
+  prior: TranscriptMessage[],
   hint: TurnHint,
   latestTalk: boolean,
-): ChatMessage | null {
+): TranscriptMessage | null {
   if (e.payload.announced === true || eventPurpose(e) === 'diagnostic') return null;
   const content = e.payload.content;
   const speaker = e.payload.seat;
@@ -180,7 +190,7 @@ export function eventToMessage(
 }
 
 /** 这条事件就是当前行动。写成一句，带上能不能用工具，不再先停再追问。 */
-function openAction(e: GameEvent, me: Seat, hint: TurnHint): ChatMessage | null {
+function openAction(e: GameEvent, me: Seat, hint: TurnHint): TranscriptMessage | null {
   const cue = hint.cue;
   if (!cue) return null;
   if (e.payload.decisionId ? e.payload.decisionId !== cue.id : e.seq !== cue.afterSeq) return null;
@@ -199,7 +209,7 @@ function openAction(e: GameEvent, me: Seat, hint: TurnHint): ChatMessage | null 
 export function syncThread(
   thread: SeatThread,
   events: GameEvent[],
-  system: ChatMessage,
+  system: TranscriptMessage,
   hint: TurnHint = { nextSeat: null, nextStep: null },
   maxSeq = Number.POSITIVE_INFINITY,
 ): void {
@@ -291,11 +301,11 @@ export function ownLine(tool: string, args: Record<string, unknown>): string {
   return tool;
 }
 
-export function notToolTurnMessages(previous: { assistant?: ChatMessage; toolCallIds: string[] }): ChatMessage[] {
+export function notToolTurnMessages(previous: { assistant?: TranscriptMessage; toolCallIds: string[] }): TranscriptMessage[] {
   if (!previous.assistant) return [{ role: 'user', content: NOT_TOOL_TURN }];
-  const out: ChatMessage[] = [previous.assistant];
+  const out: TranscriptMessage[] = [previous.assistant];
   if (previous.toolCallIds.length) {
-    for (const id of previous.toolCallIds) out.push({ role: 'tool', tool_call_id: id, content: NOT_TOOL_TURN });
+    for (const id of previous.toolCallIds) out.push({ role: 'tool', callId: id, content: NOT_TOOL_TURN, isError: true });
   } else out.push({ role: 'user', content: NOT_TOOL_TURN });
   return out;
 }

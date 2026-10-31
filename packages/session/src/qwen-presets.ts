@@ -2,10 +2,11 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { ModelPresetView } from '@werewolf/protocol';
+import { apiBase, apiProtocol, type ApiProtocol, type ModelPresetView } from '@werewolf/protocol';
 
 /** 读到的一条模型配置。apiKey 只在服务端内存里使用，不能放进接口响应或仓库。 */
 export interface QwenPreset {
+  apiProtocol?: ApiProtocol;
   id: string;
   label: string;
   model: string;
@@ -21,10 +22,7 @@ function resolveEnv(template: string, env: Record<string, string>): string {
 
 /** OpenAI SDK 会自己补 /v1，这里的适配器不会，所以把裸域名补成兼容地址。 */
 export function chatBase(url: string): string {
-  const base = url.trim().replace(/\/+$/, '');
-  if (!base || base.includes('${')) return '';
-  if (base.endsWith('/chat/completions') || /\/v\d+$/.test(base)) return base;
-  return `${base}/v1`;
+  return apiBase(url, 'chat_completions');
 }
 
 function mergedEnv(raw: Record<string, unknown>, env: Record<string, string | undefined>): Record<string, string> {
@@ -43,19 +41,24 @@ export function presetsFromQwenSettings(raw: unknown, env: Record<string, string
   if (!raw || typeof raw !== 'object') return [];
   const doc = raw as Record<string, unknown>;
   const values = mergedEnv(doc, env);
-  const providers = (doc.modelProviders as { openai?: unknown } | undefined)?.openai;
-  if (!Array.isArray(providers)) return [];
+  const groups = doc.modelProviders as Record<string, unknown> | undefined;
+  const providers = [['openai', 'chat_completions'], ['responses', 'responses'], ['anthropic', 'anthropic_messages']].flatMap(([key, protocol]) =>
+    Array.isArray(groups?.[key]) ? (groups[key] as unknown[]).map((item) => ({ item, protocol })) : []);
   const out: QwenPreset[] = [];
   const seen = new Set<string>();
-  for (const item of providers) {
+  for (const { item, protocol: groupProtocol } of providers) {
     if (!item || typeof item !== 'object') continue;
     const row = item as Record<string, unknown>;
     const model = typeof row.id === 'string' ? row.id.trim() : '';
     const name = typeof row.name === 'string' ? row.name.trim() : '';
     if (!model || IMAGE.test(model) || IMAGE.test(name)) continue;
-    const baseUrl = chatBase(resolveEnv(typeof row.baseUrl === 'string' ? row.baseUrl : '', values));
+    let protocol: ApiProtocol; let baseUrl: string;
+    try {
+      protocol = apiProtocol(row.apiProtocol ?? groupProtocol);
+      baseUrl = apiBase(resolveEnv(typeof row.baseUrl === 'string' ? row.baseUrl : '', values), protocol);
+    } catch { continue; }
     if (!baseUrl) continue;
-    const dedupe = `${baseUrl}\n${model}`;
+    const dedupe = `${baseUrl}\n${model}${protocol === 'chat_completions' ? '' : `\n${protocol}`}`;
     if (seen.has(dedupe)) continue;
     seen.add(dedupe);
     const envKey = typeof row.envKey === 'string' ? row.envKey : '';
@@ -65,6 +68,7 @@ export function presetsFromQwenSettings(raw: unknown, env: Record<string, string
       label: name || model,
       model,
       baseUrl,
+      apiProtocol: protocol,
       apiKey: apiKey || null,
     });
   }
@@ -83,7 +87,7 @@ export function presetsFromQwenSettings(raw: unknown, env: Record<string, string
 }
 
 export function presetView(preset: QwenPreset): ModelPresetView {
-  return { id: preset.id, label: preset.label, model: preset.model, baseUrl: preset.baseUrl, hasKey: !!preset.apiKey, source: 'settings' };
+  return { id: preset.id, label: preset.label, model: preset.model, baseUrl: preset.baseUrl, apiProtocol: preset.apiProtocol ?? 'chat_completions', hasKey: !!preset.apiKey, source: 'settings' };
 }
 
 /** 读取本机 Qwen Code 配置。文件不存在或无法解析时返回空列表，不抛出路径和内容。 */
