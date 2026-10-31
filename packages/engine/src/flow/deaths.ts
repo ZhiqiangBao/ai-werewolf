@@ -74,7 +74,9 @@ export const deathSteps: Record<string, StepHandler> = {
             params: [seatParam('target', '移交给', targets, '撕毁警徽')],
           },
         ],
-        prompt: () => `你是警长并且已经出局。请把警徽移交给一名存活玩家，或者撕毁警徽。可移交座位：${seatList(targets)}。target 填最终选择的座位号，null 表示撕毁。移交不限阵营，不能移交给自己。`,
+        prompt: () => `你是警长并且已经出局。请把警徽移交给一名存活玩家，或者撕毁警徽。可移交座位：${seatList(targets)}。` +
+          (s.rules.toolsetVersion === 2 ? '移交时调用 badge_transfer，recipientSeat 填最终接收者的整数座位号；撕毁时调用 badge_tear，填写 {}。' : 'target 填最终选择的座位号，null 表示撕毁。') +
+          '移交不限阵营，不能移交给自己。',
         title: `第${s.day}天 · 警徽`,
         publicStage: `${seatLabel(sheriff)}处理警徽`,
         publicActor: sheriff,

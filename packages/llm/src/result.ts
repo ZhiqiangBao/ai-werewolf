@@ -13,13 +13,13 @@ export function parseAssistant(started: number, assistant: Extract<TranscriptMes
   if (calls.length > 1) return failure(started, `一次调用了 ${calls.length} 个工具，每次只能调用一个`, base);
   let args: unknown;
   try { args = JSON.parse(calls[0].arguments || '{}'); } catch { return failure(started, '工具参数不是合法的 JSON', base); }
-  if (!tools.some((t) => t.name === calls[0].name)) return failure(started, `工具「${calls[0].name}」不在当前合法列表中，可用：${tools.map((t) => t.name).join('、')}`, base);
+  if (!tools.some((t) => t.name === calls[0].name)) return failure(started, `工具「${calls[0].name}」不在本座位的固定工具目录中；本轮可用动作请看最新法官菜单`, base);
   if (!args || typeof args !== 'object' || Array.isArray(args)) return failure(started, '工具参数必须是一个 JSON 对象', base);
   return { ok: true, call: { tool: calls[0].name, args: args as Record<string, unknown> }, ...base, latencyMs: Date.now() - started };
 }
 
 export function jsonInstruction(tools: ToolSpec[]): string {
-  return '这次不使用函数调用。只输出一个 JSON 对象，不要输出任何其他文字，格式为 {"tool":"工具名","args":{参数}}。\n当前可用工具：' + JSON.stringify(tools.map((t) => ({ name: t.name, description: `${t.title}：${t.description}`, parameters: toolToJsonSchema(t) })));
+  return '这次不使用函数调用。只输出一个 JSON 对象，不要输出任何其他文字，格式为 {"tool":"工具名","args":{参数}}。\n下面是本座位整局固定工具目录；当前只允许最新法官菜单中的动作和目标，无参数工具填写 {}：' + JSON.stringify(tools.map((t) => ({ name: t.name, description: `${t.title}：${t.description}`, parameters: toolToJsonSchema(t) })));
 }
 
 export function parseJson(started: number, assistant: Extract<TranscriptMessage, { role: 'assistant' }>, tools: ToolSpec[], raw: unknown): DecideResult {

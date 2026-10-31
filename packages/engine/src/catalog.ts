@@ -1,4 +1,5 @@
 import type { Seat, ToolSpec } from '@werewolf/protocol';
+import { expandActionTools } from '@werewolf/protocol';
 import { seatParam, textParam } from './tools';
 import { getRole } from './registry';
 import type { GameState } from './types';
@@ -16,7 +17,7 @@ export function seatTools(state: GameState, seat: Seat): ToolSpec[] {
   if (v['sheriff.enabled'] === true) tools.push(...sheriffTools(seats, v['vote.allowAbstain'] === true, Number(v['vote.normalWeight'])));
   tools.push(...(getRole(player.role).tools?.({ seats, seat, rules: state.rules }) ?? []));
   if (new Set(tools.map((t) => t.name)).size !== tools.length) throw new Error(`身份 ${player.role} 的工具名称重复`);
-  return tools;
+  return expandActionTools(tools, state.rules);
 }
 
 function speakTool(): ToolSpec {

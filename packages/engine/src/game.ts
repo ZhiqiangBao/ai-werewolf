@@ -1,4 +1,5 @@
-import type { GameEvent, RuleSet, Seat, ToolCall } from '@werewolf/protocol';
+import type { GameEvent, RuleSet, Seat, ToolCall, ToolSpec } from '@werewolf/protocol';
+import { canonicalAction } from '@werewolf/protocol';
 import { Ctx } from './context';
 import { getRole, getStep, interruptsIn } from './registry';
 import { hashSeed } from './rng';
@@ -68,6 +69,14 @@ function sameMultiset(a: string[], b: string[]): boolean {
   return a.length === b.length && [...a].sort().join('|') === [...b].sort().join('|');
 }
 
+function strictArguments(ctx: Ctx, spec: ToolSpec, call: ToolCall, seat: Seat): RuleError | null {
+  if (ctx.state.rules.toolsetVersion !== 2) return null;
+  if (Array.isArray(call.args)) return err('INVALID_ARGUMENT', '工具参数必须是 JSON 对象');
+  const extra = Object.keys(call.args).filter((name) => !spec.params.some((p) => p.name === name));
+  if (extra.length) return err('INVALID_ARGUMENT', `「${spec.name}」不接受参数 ${extra.join('、')}；${spec.params.length ? `只填写 ${spec.params.map((p) => p.name).join('、')}` : '它是无参数工具，请填写 {}'}`);
+  return validateArgs(ctx, spec, call.args, seat);
+}
+
 export function createGame(o: CreateGameOptions): EngineResult {
   const errors = validateRules(o.rules);
   if (errors.length) throw new RulesError(errors);
@@ -124,6 +133,9 @@ export function createGame(o: CreateGameOptions): EngineResult {
 function apply(ctx: Ctx, input: SubmitInput): RuleError | null {
   const s = ctx.state;
   if (s.result) return err('GAME_ENDED', '对局已经结束');
+  if (!input.auto && s.rules.toolsetVersion === 2 && (!input.call?.args || typeof input.call.args !== 'object' || Array.isArray(input.call.args))) {
+    return err('INVALID_ARGUMENT', '工具参数必须是 JSON 对象；无参数工具填写 {}');
+  }
   const call: ToolCall = {
     tool: typeof input.call?.tool === 'string' ? input.call.tool : '',
     args: input.call?.args && typeof input.call.args === 'object' ? input.call.args : {},
@@ -135,6 +147,8 @@ function apply(ctx: Ctx, input: SubmitInput): RuleError | null {
     const intr = interruptsIn(s.rules).find((i) => i.tool === call.tool);
     if (intr && intr.available(ctx, input.seat)) {
       const spec = intr.spec(ctx, input.seat);
+      const strict = strictArguments(ctx, spec, call, input.seat);
+      if (strict) return strict;
       const final = normalizeCall(spec, call);
       const e = validateArgs(ctx, spec, final.args, input.seat);
       if (e) return e;
@@ -164,10 +178,16 @@ function apply(ctx: Ctx, input: SubmitInput): RuleError | null {
       return err('TOOL_NOT_LEGAL', `当前不能使用「${call.tool || '空'}」，可用工具：${tools.map((t) => t.name).join('、')}`);
     }
     final = normalizeCall(spec, call);
-    const e1 = handler.validate?.(ctx, d.step, input.seat, { tool: final.tool, args: { ...call.args, ...final.args } });
+    if (s.rules.toolsetVersion === 2) {
+      const rawError = strictArguments(ctx, spec, call, input.seat);
+      if (rawError) return rawError;
+    }
+    const canonical = canonicalAction(spec, final);
+    const e1 = handler.validate?.(ctx, d.step, input.seat, spec.operation ? canonical : { tool: final.tool, args: { ...call.args, ...final.args } });
     if (e1) return e1;
     const e2 = validateArgs(ctx, spec, final.args, input.seat);
     if (e2) return e2;
+    final = canonical;
   }
   d.submissions[input.seat] = final;
   const ack = handler.ack?.(ctx, d.step, input.seat, final);

@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { ToolSpec } from '@werewolf/protocol';
+import type { ModelRequestInfo, ToolSpec } from '@werewolf/protocol';
 import { allPresets, buildRules, createGame, projectSeat, submit, waitingSeats } from '@werewolf/engine';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildMessages, mockDecision, openaiAdapter, testConnection, type AdapterConfig } from '../src/index';
@@ -14,7 +14,7 @@ const SPEAK: ToolSpec = {
 
 describe('提示词', () => {
   const deal = ['werewolf', 'werewolf', 'werewolf', 'seer', 'witch', 'hunter', 'villager', 'villager', 'villager'];
-  const rules = buildRules('classic9', { 'sheriff.enabled': false }, { roles: deal });
+  const rules = buildRules('classic9', { 'sheriff.enabled': false }, { roles: deal, toolsetVersion: 1 });
 
   function playFirstNight() {
     let { state, events } = createGame({ id: 'p', rules, seed: 's', deal });
@@ -144,8 +144,8 @@ describe('OpenAI 兼容适配器', () => {
   const toolReply = (calls: { name: string; arguments: string }[], content: string | null = null) => ({
     choices: [{ message: { role: 'assistant', content, tool_calls: calls.map((c, i) => ({ id: `call_${i}`, type: 'function', function: c })) } }],
   });
-  const decide = (o: Partial<AdapterConfig> = {}) =>
-    openaiAdapter.decide({ seat: 1, messages: [{ role: 'user', content: 'hi' }], tools: [SPEAK], config: config(o) });
+  const decide = (o: Partial<AdapterConfig> = {}, onRequest?: (info: ModelRequestInfo) => void) =>
+    openaiAdapter.decide({ seat: 1, messages: [{ role: 'user', content: 'hi' }], tools: [SPEAK], config: config(o), onRequest });
 
   it('请求带工具 Schema 和 tool_choice=required，返回恰好一个合法工具调用', async () => {
     handler = () => ({ json: toolReply([{ name: 'speak', arguments: '{"content":"我是好人"}' }]) });
@@ -178,7 +178,7 @@ describe('OpenAI 兼容适配器', () => {
     expect(two.error).toContain('2 个工具');
     expect(two.toolCallIds).toEqual(['call_0', 'call_1']);
     handler = () => ({ json: toolReply([{ name: 'wolf_kill', arguments: '{"target":3}' }]) });
-    expect((await decide()).error).toContain('不在当前合法列表');
+    expect((await decide()).error).toContain('不在本座位的固定工具目录');
   });
 
   it('服务不支持 tool_choice=required 时自动降级为 auto', async () => {
@@ -186,9 +186,12 @@ describe('OpenAI 兼容适配器', () => {
       body.tool_choice === 'required'
         ? { status: 400, json: { error: { message: 'tool_choice "required" is not supported' } } }
         : { json: toolReply([{ name: 'speak', arguments: '{"content":"ok"}' }]) };
-    const r = await decide({ model: 'no-required' });
+    const snapshots: ModelRequestInfo[] = [];
+    const r = await decide({ model: 'no-required' }, (info) => snapshots.push(info));
     expect(r.ok).toBe(true);
     expect(bodies.at(-1)!.tool_choice).toBe('auto');
+    expect(snapshots.map((s) => s.toolChoice)).toEqual(['required', 'auto']);
+    expect(snapshots.at(-1)!.tools).toEqual(bodies.at(-1)!.tools);
   });
 
   it('JSON 模式：要求返回唯一 JSON 对象并转换成工具调用', async () => {

@@ -1,4 +1,4 @@
-import { eventPurpose, gameRecordEvents, type GameEvent, type Seat } from '@werewolf/protocol';
+import { actionMenu, eventPurpose, gameRecordEvents, type GameEvent, type Seat, type ToolSpec } from '@werewolf/protocol';
 import { migrateTranscript, type TranscriptMessage } from '@werewolf/llm';
 
 /** 旁听轮次调用了工具时，原样退回。不执行。 */
@@ -33,6 +33,7 @@ export interface TurnHint {
 
 /** 这一步要不要单独补一句法官提示。发言的结尾已经写在上一条里时不必再补。 */
 export interface ActionCue {
+  allowedTools?: Record<number, ToolSpec[]>;
   id: string;
   afterSeq?: number;
   step: string;
@@ -99,7 +100,7 @@ export function turnSuffix(kind: string, yours: boolean, wolf = false): string {
     return yours ? '接下来是你的发言轮次，可以调用狼队密谈工具。' : '不是你的发言轮次，不要调用工具。';
   }
   if (kind === 'campaign' || kind === 'sheriff_pk') {
-    return yours ? '接下来是你的发言轮次，可以调用speak工具。' : '不是你的发言轮次，不可以调用。';
+    return yours ? '接下来是你的发言轮次，请选择本轮允许的一个工具调用。' : '不是你的发言轮次，不可以调用。';
   }
   if (kind === 'discussion' || kind === 'pk' || kind === 'lastwords' || kind === 'speech') {
     return yours ? '接下来是你的发言轮次，可以使用工具。' : '不是你的发言轮次，不要调用工具。';
@@ -162,7 +163,7 @@ export function eventToMessage(
       latestTalk &&
       hint.nextSeat === me &&
       ((wolf && hint.nextStep === 'wolf.discuss') || (!wolf && hint.nextStep === 'speech'));
-    const tail = turnSuffix(wolf ? 'wolf' : speechKind(e), yours, wolf);
+    const tail = yours && hint.cue ? cueTail(hint.cue, me) : turnSuffix(wolf ? 'wolf' : speechKind(e), yours, wolf);
     return { role: 'user', name: String(speaker), content: `${speechMark(e, speaker)}：${content}\n${tail}` };
   }
   const invite = inviteKind(e);
@@ -170,7 +171,7 @@ export function eventToMessage(
     const first = firstSeat(e);
     const yours = latestTalk && first === me && hint.nextStep === 'speech' && hint.nextSeat === me;
     const who = latestTalk && first && hint.nextStep === 'speech' && hint.nextSeat === first ? `有请${first}号玩家发言。` : '';
-    return { role: 'user', name: 'judge', content: `法官：${e.text}${who}\n${turnSuffix(invite, yours)}` };
+    return { role: 'user', name: 'judge', content: `法官：${e.text}${who}\n${yours && hint.cue ? cueTail(hint.cue, me) : turnSuffix(invite, yours)}` };
   }
   const opened = openAction(e, me, hint);
   if (opened) return opened;
@@ -195,9 +196,9 @@ function openAction(e: GameEvent, me: Seat, hint: TurnHint): TranscriptMessage |
   if (!cue) return null;
   if (e.payload.decisionId ? e.payload.decisionId !== cue.id : e.seq !== cue.afterSeq) return null;
   const match =
-    (e.type === 'witch.knife' && cue.tool === 'witch_act') ||
-    (e.type === 'sheriff.start' && cue.tool === 'sheriff_signup') ||
-    (e.type === 'wolf.kill.split' && cue.tool === 'wolf_kill');
+    (e.type === 'witch.knife' && cue.step === 'night:witch') ||
+    (e.type === 'sheriff.start' && cue.step === 'sheriff.signup') ||
+    (e.type === 'wolf.kill.split' && cue.step === 'wolf.kill');
   if (!match) return null;
   const actor = cue.actors.includes(me);
   if (!actor && !(cue.broadcast && e.type === 'sheriff.start')) return null;
@@ -237,7 +238,9 @@ export function syncThread(
       const followsSpeech = previousEvent && (previousEvent.type === 'speech' || previousEvent.type === 'wolf.chat' || !!inviteKind(previousEvent));
       if (msg && e.type === 'judge' && e.payload.decisionId === turn.cue?.id && followsSpeech &&
           thread.messages.length > start && prev?.role === 'user') {
-        prev.content = `${prev.content.slice(0, prev.content.lastIndexOf('\n'))}\n${msg.content}`;
+        const tail = turn.cue ? cueTail(turn.cue, thread.seat) : '';
+        const body = tail && prev.content.endsWith(tail) ? prev.content.slice(0, -tail.length).trimEnd() : prev.content.slice(0, prev.content.lastIndexOf('\n'));
+        prev.content = `${body}\n${msg.content}`;
       } else if (msg) thread.messages.push(msg);
     }
     thread.seen = e.seq;
@@ -253,8 +256,9 @@ export function syncThread(
 export function cueTail(cue: ActionCue, seat: number): string {
   const actor = cue.actors.includes(seat);
   const wolf = cue.step === 'wolf.discuss';
-  if (cue.step === 'speech' || wolf) return turnSuffix(wolf ? 'wolf' : (cue.kind ?? 'discussion'), actor, wolf);
-  return actor ? (TOOL_TAIL[cue.tool] ?? '你现在可以使用工具。') : '不要调用工具。';
+  const suffix = cue.step === 'speech' || wolf ? turnSuffix(wolf ? 'wolf' : (cue.kind ?? 'discussion'), actor, wolf) : actor ? (TOOL_TAIL[cue.tool] ?? '你现在可以使用工具。') : '不要调用工具。';
+  const menu = actor ? actionMenu(cue.allowedTools?.[seat] ?? []) : '';
+  return menu ? `${menu}\n现在轮到你行动，请调用本轮菜单中的一个工具。` : suffix;
 }
 
 /** 已收到当前决策的行动许可与此前消息。重试反馈不会撤销同一决策的许可。 */
@@ -289,7 +293,8 @@ export function ensureCue(thread: SeatThread, cue: ActionCue | null): void {
     thread.cueFor = cue.id;
     return;
   }
-  thread.messages.push({ role: 'user', name: 'judge', content: `法官：${body}\n${tail}` });
+  const repeat = actor && thread.cueFor === cue.id && prev.includes(body);
+  thread.messages.push({ role: 'user', name: 'judge', content: `法官：${repeat ? '' : `${body}\n`}${tail}` });
   thread.cueFor = cue.id;
 }
 
@@ -297,6 +302,7 @@ export function ensureCue(thread: SeatThread, cue: ActionCue | null): void {
 export function ownLine(tool: string, args: Record<string, unknown>): string {
   if (typeof args.content === 'string' && args.content) return args.content;
   if ('target' in args) return args.target == null ? `${tool}：放弃` : `${tool}：${args.target}号`;
+  for (const field of ['targetSeat', 'recipientSeat', 'candidateSeat']) if (field in args) return `${tool}：${args[field]}号`;
   if ('explode' in args) return args.explode ? '自爆' : '不自爆';
   return tool;
 }

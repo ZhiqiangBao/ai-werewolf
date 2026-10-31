@@ -1,4 +1,5 @@
 export type Seat = number;
+export { expandActionTools, canonicalAction, simulationTools, exposeAction, actionMenu } from './action-tools';
 export { API_PROTOCOLS, API_PROTOCOL_LABELS, apiProtocol, apiBase, apiUrl, isDashscopeEndpoint } from './api';
 export type { ApiProtocol, TokenUsage } from './api';
 import type { ApiProtocol, TokenUsage } from './api';
@@ -77,6 +78,8 @@ export interface ToolSpec {
   title: string;
   description: string;
   params: ParamSpec[];
+  /** 引擎内部的确定性动作映射，不进入模型请求的 Schema。旧存档没有此字段。 */
+  operation?: { tool: string; constants: Record<string, unknown>; parameters: Record<string, string> };
 }
 
 export interface ToolCall {
@@ -137,6 +140,8 @@ export function toolToJsonSchema(tool: ToolSpec): JsonSchema {
 export type RuleValue = string | number | boolean;
 
 export interface RuleSet {
+  /** 缺省为历史 v1；新开局使用显式单动作工具 v2。随规则存档，便于精确恢复与重放。 */
+  toolsetVersion?: 1 | 2;
   presetId: string;
   presetName: string;
   playerCount: number;
@@ -426,6 +431,15 @@ export interface ActResult {
   error?: ApiError;
 }
 
+/** 发给提供方的工具配置快照；只保存白名单字段，不保存认证头或密钥。 */
+export interface ModelRequestInfo {
+  apiProtocol: ApiProtocol;
+  tools: unknown[];
+  toolChoice?: unknown;
+  /** JSON 兼容模式没有原生工具，其实际格式说明保存于此。 */
+  toolInstruction?: string;
+}
+
 export interface AuditEntry {
   apiProtocol?: ApiProtocol;
   usage?: TokenUsage;
@@ -437,6 +451,7 @@ export interface AuditEntry {
   projectionVersion: number;
   ok: boolean;
   messages?: unknown;
+  request?: ModelRequestInfo;
   response?: unknown;
   toolCall?: ToolCall;
   error?: string;

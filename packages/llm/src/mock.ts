@@ -1,4 +1,5 @@
 import type { ParamSpec, Projection, Seat, ToolCall, ToolSpec } from '@werewolf/protocol';
+import { exposeAction, simulationTools } from '@werewolf/protocol';
 import type { Adapter, DecideRequest, DecideResult } from './types';
 
 type Rand = () => number;
@@ -179,7 +180,7 @@ function randomArgs(spec: ToolSpec, r: Rand): Record<string, unknown> {
 }
 
 /** 用投影做出一次合法行动。行动必须合法，发言可以模板化。 */
-export function mockDecision(p: Projection, tools: ToolSpec[]): ToolCall {
+function legacyMockDecision(p: Projection, tools: ToolSpec[]): ToolCall {
   const k = know(p);
   const r = seeded(`${p.gameId}:${p.task?.decisionId}:${k.me}:${p.version}`);
   const has = (name: string) => tools.find((t) => t.name === name);
@@ -228,12 +229,13 @@ export function mockDecision(p: Projection, tools: ToolSpec[]): ToolCall {
     case 'vote':
     case 'sheriff_vote': {
       const options = optionsOf(spec, 'target');
-      if (r() < 0.05) return { tool: spec.name, args: { target: null } };
+      const abstain = spec.params.some((p) => p.kind === 'seat' && p.name === 'target' && p.nullable);
+      if (abstain && r() < 0.05) return { tool: spec.name, args: { target: null } };
       if (spec.name === 'sheriff_vote') {
         const preferred = k.isWolf ? options.filter((s) => k.wolves.includes(s)) : k.claimedSeers.filter((s) => options.includes(s));
         if (preferred.length && r() < 0.7) return { tool: spec.name, args: { target: pick(r, preferred) } };
       }
-      return { tool: spec.name, args: { target: voteTarget(k, options, r) } };
+      return { tool: spec.name, args: { target: voteTarget(k, options, r) ?? (abstain ? null : options[0]) } };
     }
     case 'sheriff_signup':
       return { tool: spec.name, args: { run: r() < (k.role === 'seer' ? 0.8 : 0.3) } };
@@ -273,3 +275,9 @@ export const mockAdapter: Adapter = {
     };
   },
 };
+
+export function mockDecision(p: Projection, tools: ToolSpec[]): ToolCall {
+  if (!tools.some((t) => t.operation)) return legacyMockDecision(p, tools);
+  const call = legacyMockDecision(p, simulationTools(tools));
+  return exposeAction(call, tools);
+}

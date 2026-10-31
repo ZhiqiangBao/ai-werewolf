@@ -52,7 +52,9 @@ export const openaiAdapter: Adapter = {
           }
         };
         try {
-          const result = await post(url, { ...body(), ...(useStream ? { stream: true } : {}) }, headers, signal, event);
+          const encoded = { ...body(), ...(useStream ? { stream: true } : {}) };
+          req.onRequest?.({ apiProtocol: 'chat_completions', tools: structuredClone('tools' in encoded ? encoded.tools ?? [] : []), ...('tool_choice' in encoded ? { toolChoice: encoded.tool_choice } : {}), ...(json ? { toolInstruction: jsonInstruction(tools) } : {}) });
+          const result = await post(url, encoded, headers, signal, event);
           return result ?? { usage, choices: [{ message: { content: acc.content || null, reasoning_content: acc.reasoning_content,
             tool_calls: [...acc.calls.entries()].sort(([a], [b]) => a - b).map(([, c], i) => ({ id: c.id || `call_${i}`, type: 'function', function: { name: c.name, arguments: c.arguments } })),
           } }] };

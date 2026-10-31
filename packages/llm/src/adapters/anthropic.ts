@@ -60,6 +60,7 @@ export const anthropicAdapter: Adapter = {
       const argumentsByIndex = new Map<number, string>();
       let message: any;
       let stopped = false;
+      req.onRequest?.({ apiProtocol: 'anthropic_messages', tools: structuredClone(body.tools as unknown[] ?? []), toolChoice: body.tool_choice, ...(json ? { toolInstruction: jsonInstruction(req.tools) } : {}) });
       const result = await post(apiUrl(config.baseUrl, 'anthropic_messages'), body, {
         ...(config.apiKey ? { 'x-api-key': config.apiKey } : {}), 'anthropic-version': '2023-06-01',
       }, signal, (e) => {

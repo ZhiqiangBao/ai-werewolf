@@ -55,6 +55,7 @@ describe('多协议对局、存档与重启', () => {
       manager.dispose();
       const snapshot = store.loadAll()[0];
       expect(snapshot.status).toBe('running'); expect(snapshot.paused).toBe(true);
+      expect(snapshot.state!.rules.toolsetVersion).toBe(2);
       expect(snapshot.threads!.every((t) => t.formatVersion === 2)).toBe(true);
       const before = snapshot.actions.length;
       expect(before).toBeGreaterThan(0);
@@ -72,6 +73,8 @@ describe('多协议对局、存档与重启', () => {
       expect(audit.some((a) => a.purpose === 'listen')).toBe(true);
       expect(audit.some((a) => a.purpose === 'action')).toBe(true);
       expect(audit.filter((a) => a.ok).every((a) => a.apiProtocol === protocol && a.usage?.cacheReadTokens === 50)).toBe(true);
+      expect(audit.filter((a) => a.ok).every((a) => a.request?.apiProtocol === protocol && (a.request?.tools.length ?? 0) > 0)).toBe(true);
+      expect(JSON.stringify(audit)).not.toContain('unit-test-secret');
       for (const { seat, body } of sent) {
         for (let other = 1; other <= 9; other++) if (other !== seat) {
           expect(JSON.stringify(body)).not.toContain(`opaque_seat_${other}`);

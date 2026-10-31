@@ -32,6 +32,7 @@ export function deriveNightOrder(roles: string[]): string[] {
 }
 
 export interface BuildRulesOptions {
+  toolsetVersion?: 1 | 2;
   /** 允许改动开局页不可改的选项（测试与自定义版型用）。 */
   allowFixed?: boolean;
   /** 自定义身份列表，覆盖版型自带的身份。 */
@@ -54,6 +55,7 @@ export function buildRules(
     if (v !== undefined) values[key] = v;
   }
   return {
+    toolsetVersion: opts.toolsetVersion ?? 2,
     presetId: preset.id,
     presetName: opts.name ?? preset.name,
     playerCount: roles.length,
@@ -66,6 +68,7 @@ export function buildRules(
 /** 版型校验。返回中文原因列表，空列表表示可以开局。 */
 export function validateRules(rules: RuleSet): string[] {
   const errors: string[] = [];
+  if (rules.toolsetVersion !== undefined && rules.toolsetVersion !== 1 && rules.toolsetVersion !== 2) errors.push('工具版本只支持 1 或 2');
   if (rules.roles.length !== rules.playerCount) errors.push(`人数 ${rules.playerCount} 与身份数量 ${rules.roles.length} 不一致`);
   if (rules.playerCount < 4 || rules.playerCount > 20) errors.push('人数需要在 4 到 20 之间');
   const counts = new Map<string, number>();

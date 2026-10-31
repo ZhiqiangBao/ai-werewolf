@@ -76,6 +76,12 @@ export function AuditPanel({ roomId, token }: { roomId: string; token: string })
             {e.thinkingChars !== undefined && <> · 思考 {e.thinkingChars} 字符 / 工具外正文 {e.replyChars ?? 0} 字符</>}
             {e.usage && <> · 输入 {e.usage.inputTokens} / 输出 {e.usage.outputTokens} token · 缓存读取 {e.usage.cacheReadTokens} / 写入 {e.usage.cacheWriteTokens}</>}
           </div>
+          {e.request && (
+            <details className="msg">
+              <summary className="role">实际发送的工具与参数格式</summary>
+              <pre>{JSON.stringify(e.request, null, 2)}</pre>
+            </details>
+          )}
           {Array.isArray(e.messages) &&
             (e.messages as Message[]).map((m, i) => (
               <div key={i} className="msg">

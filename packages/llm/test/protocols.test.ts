@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { apiBase, apiUrl, defaultThinkingMode, thinkingParameters, toolToJsonSchema, type ApiProtocol, type ToolSpec } from '@werewolf/protocol';
+import { apiBase, apiUrl, defaultThinkingMode, thinkingParameters, toolToJsonSchema, type ApiProtocol, type ModelRequestInfo, type ToolSpec } from '@werewolf/protocol';
 import { anthropicAdapter, anthropicInput, chatMessages, feedbackMessages, migrateTranscript, protocolBinding, remoteAdapter, responsesAdapter, responsesInput, type AdapterConfig, type TranscriptMessage } from '../src/index';
 
 const vote: ToolSpec = { name: 'vote', title: '投票', description: '投给整数座位号或 null 弃票。', params: [{ kind: 'seat', name: 'target', label: '投给', options: [1, 2, 3, 5, 12], nullable: true, nullLabel: '弃票' }] };
@@ -55,6 +55,28 @@ describe('协议边界与原生续接', () => {
     expect(apiBase('https://example.com')).toBe('https://example.com/v1');
     expect(() => apiUrl(baseUrl + '/chat/completions', 'responses')).toThrow('不匹配');
     expect(() => apiBase('https://user:secret@example.com/v1')).toThrow('无凭证');
+  });
+
+  it.each(['chat_completions', 'responses', 'anthropic_messages'] as const)('%s 审计保存实际工具 Schema，不包含密钥或内部动作映射', async (protocol) => {
+    const save: ToolSpec = { name: 'witch_save', title: '救刀口', description: '使用解药救刀口，填写 {}。', params: [], operation: { tool: 'witch_act', constants: { save: true, poisonTarget: null }, parameters: {} } };
+    handler = () => ({ json: protocol === 'responses' ? { status: 'completed', output: [{ type: 'function_call', name: 'witch_save', call_id: 'save', arguments: '{}' }] } : protocol === 'anthropic_messages' ? { content: [{ type: 'tool_use', id: 'save', name: 'witch_save', input: {} }], stop_reason: 'tool_use' } : { choices: [{ message: { tool_calls: [{ id: 'save', type: 'function', function: { name: 'witch_save', arguments: '{}' } }] } }] } });
+    let snapshot: ModelRequestInfo | undefined;
+    const result = await remoteAdapter(protocol).decide({ seat: 6, config: config(protocol), messages: history, tools: [save], onRequest: (info) => { snapshot = info; } });
+    expect(result.call).toEqual({ tool: 'witch_save', args: {} });
+    const sent = requests.at(-1)!.body;
+    expect(snapshot).toEqual({ apiProtocol: protocol, tools: sent.tools, toolChoice: sent.tool_choice });
+    expect(JSON.stringify(snapshot)).not.toContain(config(protocol).apiKey!);
+    expect(JSON.stringify(snapshot)).not.toContain('operation');
+    expect(JSON.stringify(snapshot)).not.toContain('poisonTarget');
+  });
+
+  it('JSON 兼容模式审计包含实际动作说明，无原生 tools', async () => {
+    handler = () => ({ json: { choices: [{ message: { content: '{"tool":"vote","args":{"target":5}}' } }] } });
+    let snapshot: ModelRequestInfo | undefined;
+    const result = await remoteAdapter('chat_completions').decide({ seat: 1, config: { ...config('chat_completions'), toolMode: 'json' }, messages: history, tools: [vote], onRequest: (info) => { snapshot = info; } });
+    expect(result.call?.args.target).toBe(5);
+    expect(snapshot?.tools).toEqual([]);
+    expect(snapshot?.toolInstruction).toBe(requests.at(-1)!.body.messages.at(-1).content);
   });
 
   it('Responses 完整 output（含 phase 和加密推理）在下一轮原样回传，缓存与座位独立', async () => {

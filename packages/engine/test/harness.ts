@@ -18,6 +18,7 @@ export const DEAL12 = [
 export const DEAL9 = ['werewolf', 'werewolf', 'werewolf', 'seer', 'witch', 'hunter', 'villager', 'villager', 'villager'];
 
 export interface GameOptions {
+  toolsetVersion?: 1 | 2;
   preset?: string;
   deal?: string[];
   values?: Record<string, unknown>;
@@ -40,7 +41,7 @@ export class TestGame {
 
   constructor(o: GameOptions = {}) {
     const preset = o.preset ?? (o.deal?.length === 9 ? 'classic9' : 'standard12');
-    const rules = buildRules(preset, o.values ?? {}, { allowFixed: true, ...(o.deal ? { roles: o.deal } : {}) });
+    const rules = buildRules(preset, o.values ?? {}, { toolsetVersion: o.toolsetVersion ?? 1, allowFixed: true, ...(o.deal ? { roles: o.deal } : {}) });
     this.options = { id: 'test', rules, seed: o.seed ?? 'seed-1', ...(o.deal ? { deal: o.deal } : {}) };
     const r = createGame(this.options);
     this.state = r.state;

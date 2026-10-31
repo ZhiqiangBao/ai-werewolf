@@ -41,6 +41,7 @@ export const responsesAdapter: Adapter = {
       if (!/^(?:gpt-[56]|o[134])(?:[.-]|$)/i.test(config.model)) body.temperature = config.temperature;
       let completed: any;
       const items = new Map<number, Record<string, any>>();
+      req.onRequest?.({ apiProtocol: 'responses', tools: structuredClone(body.tools as unknown[] ?? []), toolChoice: body.tool_choice, ...(json ? { toolInstruction: jsonInstruction(req.tools) } : {}) });
       const result = await post(apiUrl(config.baseUrl, 'responses'), body, config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}, signal, (e) => {
         if (e.type === 'error' || e.type === 'response.failed') throw new HttpError(200, JSON.stringify(e.error ?? e.response?.error ?? e));
         if (e.type === 'response.output_text.delta') onDelta({ reply: e.delta ?? '' });

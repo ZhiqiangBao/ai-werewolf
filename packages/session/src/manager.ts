@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { THINKING_MODES, thinkingOptions, defaultThinkingMode, apiProtocol, apiUrl } from '@werewolf/protocol';
+import { THINKING_MODES, thinkingOptions, defaultThinkingMode, apiProtocol, apiUrl, actionMenu } from '@werewolf/protocol';
 import type {
   AdapterKind,
   AuditEntry,
@@ -9,6 +9,7 @@ import type {
   GodProjection,
   Projection,
   ModelPresetView,
+  ModelRequestInfo,
   RoomBrief,
   RoomSetupInput,
   RoomSetupView,
@@ -1029,6 +1030,7 @@ export class RoomManager {
       kind: typeof d.step.kind === 'string' ? d.step.kind : null,
       actors,
       prompts: d.prompts,
+      allowedTools: d.tools,
       tool,
       broadcast: d.step.type === 'sheriff.signup' || d.step.type === 'exile.vote' || d.step.type === 'sheriff.vote',
     };
@@ -1046,14 +1048,14 @@ export class RoomManager {
   }
 
   /** 每次回复立即入座位上下文，包括失败轮次；工具调用始终有对应的工具结果。 */
-  private rememberReply(thread: SeatThread, result: DecideResult, error?: string): void {
+  private rememberReply(thread: SeatThread, result: DecideResult, error?: string, legalTools?: ToolSpec[]): void {
     if (error && result.fatal && !result.toolCallIds.length) {
       if (result.assistant?.content) thread.messages.push(result.assistant);
       thread.messages.push({ role: 'user', name: 'judge', content: `本次模型请求未完成：${error}` });
       return;
     }
     if (error) {
-      thread.messages.push(...feedbackMessages(result, error));
+      thread.messages.push(...feedbackMessages(result, `${error}${legalTools?.length ? `\n${actionMenu(legalTools)}` : ''}`));
       return;
     }
     const call = result.call;
@@ -1082,6 +1084,7 @@ export class RoomManager {
     let firstDeltaMs: number | undefined;
     let thinkingChars = 0;
     let replyChars = 0;
+    let request: ModelRequestInfo | undefined;
     try {
       let config: AdapterConfig;
       try {
@@ -1103,6 +1106,7 @@ export class RoomManager {
           signal: ctrl.signal,
           stream: cfg.adapter !== 'mock',
           toolChoice: 'auto',
+          onRequest: (info) => { request = info; },
           onDelta: (delta) => {
             firstDeltaMs ??= this.now() - started;
             thinkingChars += delta.thinking?.length ?? 0;
@@ -1125,7 +1129,7 @@ export class RoomManager {
       this.rememberReply(thread, result, error);
       this.writeAudit(live, {
         seat, model, decisionId: decision, projectionVersion: projection.version, purpose: 'listen',
-        ok: !error, messages, response: result.raw ?? result.call,
+        ok: !error, messages, request, response: result.raw ?? result.call,
         ...(result.call ? { toolCall: result.call } : {}), ...(error ? { error: redact(error, config.apiKey) } : {}),
         failureKind: result.failureKind ?? (error ? 'invalid_tool' : undefined), latencyMs: result.latencyMs,
         apiProtocol: config.apiProtocol, usage: result.usage, thinkingMode: config.thinkingMode, firstDeltaMs,
@@ -1183,6 +1187,7 @@ export class RoomManager {
         let thinkingChars = 0;
         let replyChars = 0;
         let result: DecideResult;
+        let request: ModelRequestInfo | undefined;
         try {
           result = await adapter.decide({
             seat,
@@ -1193,6 +1198,7 @@ export class RoomManager {
             cacheKey: `werewolf:${rec.id}:seat:${seat}`,
             signal: ctrl.signal,
             stream: cfg.adapter !== 'mock',
+            onRequest: (info) => { request = info; },
             onDelta: (delta) => {
               firstDeltaMs ??= this.now() - started;
               thinkingChars += delta.thinking?.length ?? 0;
@@ -1207,7 +1213,7 @@ export class RoomManager {
         }
         if (!stillWaiting()) {
           if (live.gen === gen) this.rememberReply(thread, result, '决策已经结束，这次结果作废，不再执行。');
-          this.writeAudit(live, { seat, model, decisionId: decision, projectionVersion: projection.version, purpose: 'action', attempt, deadline, failureKind: 'cancelled', ok: false, messages, error: '决策已经结束，这次结果作废', latencyMs: result.latencyMs });
+          this.writeAudit(live, { seat, model, decisionId: decision, projectionVersion: projection.version, purpose: 'action', attempt, deadline, failureKind: 'cancelled', ok: false, messages, request, apiProtocol: config.apiProtocol, error: '决策已经结束，这次结果作废', latencyMs: result.latencyMs });
           return;
         }
         let error = result.ok && result.call ? undefined : result.error ?? '没有调用工具';
@@ -1215,7 +1221,7 @@ export class RoomManager {
           const res = this.apply(live, { seat, call: clampTexts(result.call, tools), decisionId: decision });
           if (res.error) error = res.error.reason;
         }
-        this.rememberReply(thread, result, error);
+        this.rememberReply(thread, result, error, rec.state?.pending?.id === decision ? rec.state.pending.tools[seat] : undefined);
         this.writeAudit(live, {
           seat,
           model,
@@ -1225,6 +1231,7 @@ export class RoomManager {
           failureKind: result.failureKind ?? (error ? 'invalid_tool' : undefined),
           ok: !error,
           messages,
+          request,
           response: result.raw ?? result.call,
           ...(result.call ? { toolCall: result.call } : {}),
           ...(error ? { error: redact(error, config.apiKey) } : {}),

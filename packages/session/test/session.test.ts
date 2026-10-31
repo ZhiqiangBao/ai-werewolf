@@ -290,7 +290,8 @@ describe('模型调度', () => {
     expect(retry.ok).toBe(true);
     const last = (retry.messages as { role: string; content: string }[]).at(-1)!;
     expect(last.role).toBe('tool');
-    expect(last.content).toContain('工具调用错误，请调用正确工具。');
+    expect(last.content).toContain('工具调用错误：');
+    expect(last.content).toContain('本轮只能从以下工具中选择一个调用');
   });
 
   it('暂停后不再请求模型，单步只推进一次模型决策', async () => {
@@ -399,14 +400,16 @@ describe('模型调度', () => {
     const seer = roles.find((r) => r.role === 'seer')!.seat;
     const seerText = blob(seer);
     expect(seerText.indexOf('天黑请闭眼')).toBeGreaterThan(-1);
-    expect(seerText.indexOf('你现在可以使用查验工具。')).toBeGreaterThan(seerText.indexOf('天黑请闭眼'));
+    expect(seerText.indexOf('seer_inspect')).toBeGreaterThan(seerText.indexOf('天黑请闭眼'));
     const witch = roles.find((r) => r.role === 'witch')!.seat;
     const witchText = blob(witch);
-    expect(witchText).toContain('你现在可以使用用药工具。');
+    expect(witchText.includes('witch_save')).toBe(true);
+    expect(witchText.includes('witch_poison')).toBe(true);
     expect(witchText).not.toMatch(/狼人今晚选择刀[^\n]*\n不要调用工具/);
     expect(witchText).not.toMatch(/狼人今晚没有落刀。\n不要调用工具/);
     const signupText = blob(1);
-    expect(signupText).toContain('你现在可以使用上警与否工具。');
+    expect(signupText.includes('sheriff_signup')).toBe(true);
+    expect(signupText.includes('sheriff_stay_off')).toBe(true);
     expect(signupText).not.toContain('开始竞选警长。\n不要调用工具。');
     const lastOf = (row: (typeof audit)[number]) => {
       const messages = (row.messages ?? []) as { content?: string }[];
@@ -657,7 +660,7 @@ describe('警长投票播报', () => {
     expect(pk).toHaveLength(1);
     expect(pk[0]).toContain('进入竞选 PK');
     expect(pk[0]).toContain('有请4号玩家发言。');
-    expect(pk[0]).toContain('可以调用speak工具。');
+    expect(pk[0]).toContain('请选择本轮允许的一个工具调用。');
     expect(pk[0]).not.toContain('不要调用工具。');
 
     const lost = feed(

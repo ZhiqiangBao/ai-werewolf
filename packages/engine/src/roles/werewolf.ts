@@ -137,7 +137,7 @@ export const werewolf: RoleModule = {
           ],
           prompt: () =>
             (prev ? `上一轮刀口并列（${pickText(prev)}），请重新选择。` : '') +
-            '请提交刀口。空刀不计票。只有所有狼人都空刀，今晚才是空刀；否则得票最多的座位成为刀口。',
+            (ctx.rules.toolsetVersion === 2 && !allowEmpty ? '请提交刀口。本局不能选择空刀，得票最多的合法目标成为刀口。' : '请提交刀口。空刀不计票。只有所有狼人都空刀，今晚才是空刀；否则得票最多的座位成为刀口。'),
           title: `第${ctx.state.day}夜 · 落刀`,
           publicStage: '夜晚',
         });

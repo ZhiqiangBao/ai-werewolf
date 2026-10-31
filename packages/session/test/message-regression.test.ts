@@ -37,7 +37,10 @@ describe('座位消息与行动的回归场景', () => {
       manager.resumeAll();
       await manager.whenIdle(record.id);
       expect(captured).toBeDefined();
-      expect(captured!.messages).toHaveLength(2);
+      expect(captured!.messages).toHaveLength(3);
+      expect(captured!.messages[1]).toEqual(record.threads![0].messages[1]);
+      expect(captured!.messages.at(-1)?.content).toContain('本轮只能从以下工具中选择一个调用');
+      expect(captured!.messages.at(-1)?.content).not.toContain(d.prompts[actor]);
       expect(manager.view(record.id, record.hostToken).projection!.events.some((e) => e.type === 'speech' && e.payload.seat === actor)).toBe(true);
       expect(manager.view(record.id, record.hostToken).room.paused).toBe(false);
     } finally { manager.dispose(); }
@@ -86,7 +89,7 @@ describe('座位消息与行动的回归场景', () => {
       expect(history).toContain('LATEST_PRIOR_SPEECH');
       expect(history.indexOf('FIRST_PRIOR_SPEECH')).toBeLessThan(history.indexOf('LATEST_PRIOR_SPEECH'));
       expect(action.messages.at(-1)?.content).toContain('LATEST_PRIOR_SPEECH');
-      expect(action.messages.at(-1)?.content).toContain('接下来是你的发言轮次');
+      expect(action.messages.at(-1)?.content).toContain('现在轮到你行动，请调用本轮菜单中的一个工具');
       expect(action.config.timeoutSec).toBe(180);
       expect(manager.view(record.id, record.hostToken).projection?.events.some((e) => e.type === 'action.fallback')).toBe(false);
     } finally { manager.dispose(); }

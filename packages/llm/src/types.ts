@@ -1,4 +1,4 @@
-import type { ApiProtocol, Projection, Seat, ThinkingMode, TokenUsage, ToolCall, ToolMode, ToolSpec } from '@werewolf/protocol';
+import type { ApiProtocol, ModelRequestInfo, Projection, Seat, ThinkingMode, TokenUsage, ToolCall, ToolMode, ToolSpec } from '@werewolf/protocol';
 import type { TranscriptMessage } from './transcript';
 export type { ChatMessage, TranscriptMessage, TranscriptCall, NativeTurn } from './transcript';
 
@@ -39,6 +39,8 @@ export interface DecideRequest {
   /** 优先走流式接口，边生成边把思考和正文交出来。 */
   stream?: boolean;
   onDelta?: (delta: { thinking?: string; reply?: string }) => void;
+  /** 保存实际编码后的工具配置供审计，绝不包含认证头。兼容回退时更新为最终配置。 */
+  onRequest?: (request: ModelRequestInfo) => void;
 }
 
 export interface DecideResult {
