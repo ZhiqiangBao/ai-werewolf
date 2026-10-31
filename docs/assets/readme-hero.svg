@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-labelledby="title description">
+  <title id="title">AI Werewolf</title>
+  <desc id="description">A violet night sky and twelve numbered seats surrounding a geometric wolf, representing a game between humans and models.</desc>
+  <defs>
+    <linearGradient id="night" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#101126"/>
+      <stop offset="1" stop-color="#221338"/>
+    </linearGradient>
+    <radialGradient id="aura">
+      <stop stop-color="#8b5cf6" stop-opacity=".34"/>
+      <stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="wolf" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#ddd6fe"/>
+      <stop offset=".5" stop-color="#a78bfa"/>
+      <stop offset="1" stop-color="#6d4ad4"/>
+    </linearGradient>
+    <linearGradient id="edge">
+      <stop stop-color="#c4b5fd" stop-opacity=".25"/>
+      <stop offset="1" stop-color="#67e8d1" stop-opacity=".08"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="1198" height="398" rx="24" fill="url(#night)" stroke="url(#edge)"/>
+  <ellipse cx="950" cy="200" rx="260" ry="230" fill="url(#aura)"/>
+  <ellipse cx="190" cy="410" rx="390" ry="150" fill="url(#aura)" opacity=".45"/>
+  <g fill="#c4b5fd" opacity=".5">
+    <circle cx="62" cy="50" r="2"/><circle cx="254" cy="65" r="1.5"/>
+    <circle cx="482" cy="41" r="2"/><circle cx="669" cy="85" r="1.5"/>
+    <circle cx="746" cy="47" r="2"/><circle cx="1151" cy="173" r="1.5"/>
+    <circle cx="1120" cy="350" r="2"/><circle cx="748" cy="323" r="1.5"/>
+    <circle cx="615" cy="351" r="2"/><circle cx="432" cy="326" r="1.5"/>
+  </g>
+  <path d="M668 85 706 115 746 47" fill="none" stroke="#a78bfa" stroke-opacity=".15"/>
+  <circle cx="706" cy="115" r="2" fill="#c4b5fd" opacity=".45"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="64" y="113" fill="#8ee4d1" font-size="13" font-weight="700" letter-spacing="4">HUMANS × MODELS</text>
+    <text x="60" y="186" fill="#f6f3ff" font-size="66" font-weight="800" letter-spacing="-2">AI WEREWOLF</text>
+    <text x="64" y="232" fill="#c4b5df" font-size="19" letter-spacing="1">Twelve seats. Independent minds. One rule engine.</text>
+    <g font-size="12" font-weight="700" letter-spacing="1">
+      <rect x="64" y="269" width="151" height="33" rx="16" fill="#a78bfa" fill-opacity=".11" stroke="#c4b5fd" stroke-opacity=".24"/>
+      <text x="139" y="290" text-anchor="middle" fill="#ddd6fe">PRIVATE CONTEXT</text>
+      <rect x="227" y="269" width="144" height="33" rx="16" fill="#a78bfa" fill-opacity=".11" stroke="#c4b5fd" stroke-opacity=".24"/>
+      <text x="299" y="290" text-anchor="middle" fill="#ddd6fe">ROLE-BASED TOOLS</text>
+      <rect x="383" y="269" width="141" height="33" rx="16" fill="#5eead4" fill-opacity=".08" stroke="#5eead4" stroke-opacity=".2"/>
+      <text x="454" y="290" text-anchor="middle" fill="#a7f3e4">LIVE SPECTATING</text>
+    </g>
+    <text x="64" y="354" fill="#807198" font-size="11" letter-spacing="3">TRUST THE RULES. QUESTION EVERY CLAIM.</text>
+  </g>
+  <g transform="translate(950 200)">
+    <circle r="146" fill="none" stroke="#a78bfa" stroke-opacity=".1"/>
+    <circle r="122" fill="#181426" fill-opacity=".65" stroke="#c4b5fd" stroke-opacity=".2"/>
+    <circle r="94" fill="none" stroke="#a78bfa" stroke-opacity=".15" stroke-dasharray="3 8"/>
+    <path d="M0-122 106 61-106 61Z" fill="none" stroke="#a78bfa" stroke-opacity=".12"/>
+    <path d="M61-106 61 106-122 0Z" fill="none" stroke="#a78bfa" stroke-opacity=".09"/>
+    <path d="M-31 13-48-43-19-28 0-40 19-28 48-43 31 13 0 48Z" fill="url(#wolf)"/>
+    <path d="M0-40-19-28-31 13 0 48Z" fill="#f0eaff" fill-opacity=".17"/>
+    <path d="M-48-43-19-28-29-17Z M48-43 19-28 29-17Z" fill="#211630"/>
+    <path d="M-27-4-9 1-14 6-23 3Z M27-4 9 1 14 6 23 3Z" fill="#1b1530"/>
+    <path d="M-8 20 8 20 0 27Z" fill="#271b43"/>
+    <path d="M0 27 0 41" stroke="#271b43" stroke-width="2"/>
+    <text y="77" text-anchor="middle" fill="#b6a6d3" font-family="Arial, Helvetica, sans-serif" font-size="9" letter-spacing="3">THE NIGHT BEGINS</text>
+    <g fill="#211934" stroke="#ba9df2" stroke-opacity=".55">
+      <circle cx="0" cy="-122" r="17"/><circle cx="61" cy="-106" r="17"/>
+      <circle cx="106" cy="-61" r="17"/><circle cx="122" cy="0" r="17"/>
+      <circle cx="106" cy="61" r="17"/><circle cx="61" cy="106" r="17"/>
+      <circle cx="0" cy="122" r="17"/><circle cx="-61" cy="106" r="17"/>
+      <circle cx="-106" cy="61" r="17"/><circle cx="-122" cy="0" r="17"/>
+      <circle cx="-106" cy="-61" r="17"/><circle cx="-61" cy="-106" r="17"/>
+    </g>
+    <g fill="#ddd6fe" font-family="Arial, Helvetica, sans-serif" font-size="11" text-anchor="middle" dominant-baseline="central">
+      <text x="0" y="-122">01</text><text x="61" y="-106">02</text>
+      <text x="106" y="-61">03</text><text x="122" y="0">04</text>
+      <text x="106" y="61">05</text><text x="61" y="106">06</text>
+      <text x="0" y="122">07</text><text x="-61" y="106">08</text>
+      <text x="-106" y="61">09</text><text x="-122" y="0">10</text>
+      <text x="-106" y="-61">11</text><text x="-61" y="-106">12</text>
+    </g>
+    <g fill="#5eead4">
+      <circle cx="61" cy="-126" r="3"/><circle cx="126" cy="61" r="3"/>
+      <circle cx="-126" cy="-61" r="3"/>
+    </g>
+  </g>
+</svg>
