@@ -139,9 +139,7 @@ describe('协议边界与原生续接', () => {
     expect(sent.body.messages[1].content).toEqual(blocks());
     expect(sent.body.messages.at(-1).content[0]).toMatchObject({ type: 'tool_result', tool_use_id: 'toolu_0', content: '已采纳。' });
     expect(sent.body.messages.at(-1).content[1]).toMatchObject({ type: 'text', text: '[3]\n3号发言：先听。' });
-    expect(sent.body.system.at(-1).cache_control).toEqual({ type: 'ephemeral' });
-    expect(sent.body.tools.at(-1).cache_control).toEqual({ type: 'ephemeral' });
-    expect(sent.body.messages.at(-1).content.at(-1).cache_control).toEqual({ type: 'ephemeral' });
+    expect(JSON.stringify(sent.body)).not.toContain('cache_control');
     expect(sent.body.tool_choice.type).toBe('auto');
   });
 
