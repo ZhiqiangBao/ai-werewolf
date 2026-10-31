@@ -5,19 +5,51 @@ import { seatParam } from '../tools';
 import type { StepHandler } from '../types';
 import { speechSteps } from './day';
 import { pkOrder, randomDirection, ringOrder } from './order';
-import { describeTally, tally, tallyPayload, type Ballot } from './tally';
+import { describeTally, tally, tallyPayload, type Ballot, type Tally } from './tally';
 
-function elect(ctx: Ctx, seat: Seat, note?: string): void {
+function grantSheriff(ctx: Ctx, seat: Seat): void {
   const s = ctx.state;
   s.sheriff = seat;
   s.election.status = 'done';
   s.history.badge.push(`第${s.day}天 ${seatLabel(seat)}当选警长`);
+}
+
+function elect(ctx: Ctx, seat: Seat, note?: string): void {
+  grantSheriff(ctx, seat);
   ctx.pub('sheriff.elected', `${note ? `${note}` : ''}${seatLabel(seat)}当选警长。`, { seat });
 }
 
-function noSheriff(ctx: Ctx, text: string): void {
+function closeElection(ctx: Ctx): void {
   ctx.state.election.status = 'done';
+}
+
+function noSheriff(ctx: Ctx, text: string): void {
+  closeElection(ctx);
   ctx.pub('sheriff.none', text, {});
+}
+
+type SheriffVerdict =
+  | { outcome: 'elected'; conclusion: string; seat: Seat }
+  | { outcome: 'pk'; conclusion: string; seats: Seat[]; order: Seat[] }
+  | { outcome: 'lost'; conclusion: string; seats?: Seat[] };
+
+/** 票已经点完。先判定，再决定播什么。不在判定前单独播票型。 */
+function judgeSheriffVote(ctx: Ctx, round: number, t: Tally): SheriffVerdict {
+  if (t.top.length === 1) {
+    const seat = t.top[0];
+    return { outcome: 'elected', seat, conclusion: `${seatLabel(seat)}当选警长。` };
+  }
+  if (t.top.length > 1 && round === 1) {
+    const order = pkOrder(ctx, t.top);
+    return {
+      outcome: 'pk',
+      seats: t.top,
+      order,
+      conclusion: `${seatList(t.top)}平票，进入竞选 PK。发言顺序：${orderList(order)}。`,
+    };
+  }
+  const again = t.top.length > 1 ? `${seatList(t.top)}再次平票，` : '';
+  return { outcome: 'lost', seats: t.top.length > 1 ? t.top : undefined, conclusion: `${again}警徽流失，本局没有警长。` };
 }
 
 function startCampaign(ctx: Ctx): void {
@@ -113,10 +145,13 @@ export const sheriffSteps: Record<string, StepHandler> = {
       if (!pool.length) return noSheriff(ctx, '候选人全部退水，本局没有警长。');
       if (pool.length === 1) return elect(ctx, pool[0], '其余候选人已退水：');
       const withdrawnVote = ctx.opt<boolean>('sheriff.withdrawnCanVote');
-      const voters = ctx
-        .alive()
-        .filter((x) => !el.candidates.includes(x) || (withdrawnVote && el.withdrawn.includes(x)));
-      if (!voters.length) return noSheriff(ctx, '没有可以投票的警下玩家，本局没有警长。');
+      const voters =
+        round === 1
+          ? ctx.alive().filter((x) => !el.candidates.includes(x) || (withdrawnVote && el.withdrawn.includes(x)))
+          : ctx.alive().filter((x) => !pool.includes(x));
+      if (!voters.length) {
+        return noSheriff(ctx, round === 1 ? '没有可以投票的警下玩家，本局没有警长。' : '没有可以投票的玩家，本局没有警长。');
+      }
       const allowAbstain = ctx.opt<boolean>('vote.allowAbstain');
       ctx.ask({
         step,
@@ -126,13 +161,20 @@ export const sheriffSteps: Record<string, StepHandler> = {
           {
             name: 'sheriff_vote',
             title: round === 1 ? '警长投票' : '警长 PK 投票',
-            description: '同时秘密投票选警长，每人 1 票，票齐后公开。',
+            description:
+              round === 1
+                ? '同时秘密投票选警长，每人 1 票，票齐后公开。'
+                : '在平票的候选人中再投一次。除仍在平票台上的玩家外，其余存活玩家都可以投票。每人 1 票，票齐后公开。',
             params: [seatParam('target', '投给', pool, allowAbstain ? '弃票' : undefined)],
           },
         ],
-        prompt: () => `请在候选人 ${seatList(pool)} 中投票选出警长。`,
+        prompt: () =>
+          round === 1
+            ? `请在候选人 ${seatList(pool)} 中投票选出警长。`
+            : `请在平票的 ${seatList(pool)} 中再投一次。除平票台上的玩家外，其余存活玩家都可以投票。`,
         title: `第${s.day}天 · ${round === 1 ? '警长投票' : '警长 PK 投票'}`,
         publicStage: round === 1 ? '警长投票中' : '警长 PK 投票中',
+        hear: 'public',
       });
     },
     ack: (_c, _s, _seat, call) =>
@@ -147,26 +189,23 @@ export const sheriffSteps: Record<string, StepHandler> = {
         })
         .sort((a, b) => a.voter - b.voter);
       const t = tally(ballots);
-      ctx.pub(
-        'vote.result',
-        `${round === 1 ? '警长投票' : '警长 PK 投票'}结果：${describeTally(t, null)}。`,
-        tallyPayload('sheriff', round, t, null),
-      );
-      if (!t.top.length) return noSheriff(ctx, '无人投票，本局没有警长。');
-      if (t.top.length === 1) return elect(ctx, t.top[0]);
-      if (round === 1) {
-        const order = pkOrder(ctx, t.top);
-        ctx.pub('sheriff.pk', `${seatList(t.top)}平票，进入竞选 PK。发言顺序：${orderList(order)}。`, {
-          seats: t.top,
-          order,
-        });
+      const verdict = judgeSheriffVote(ctx, round, t);
+      if (verdict.outcome === 'elected') grantSheriff(ctx, verdict.seat);
+      else if (verdict.outcome === 'pk') {
         ctx.pushFront(
-          ...order.flatMap((seat) => speechSteps(ctx, seat, 'sheriff_pk')),
-          { type: 'sheriff.vote', round: 2, tied: t.top, cancelOnExplode: true },
+          ...verdict.order.flatMap((seat) => speechSteps(ctx, seat, 'sheriff_pk')),
+          { type: 'sheriff.vote', round: 2, tied: verdict.seats, cancelOnExplode: true },
         );
-        return;
-      }
-      noSheriff(ctx, `${seatList(t.top)}再次平票，本局没有警长。`);
+      } else closeElection(ctx);
+      const label = round === 1 ? '警长投票' : '警长 PK 投票';
+      ctx.pub('vote.result', `${label}结果：${describeTally(t, null)}。${verdict.conclusion}`, {
+        ...tallyPayload('sheriff', round, t, null),
+        outcome: verdict.outcome,
+        conclusion: verdict.conclusion,
+        ...(verdict.outcome === 'elected' ? { seat: verdict.seat } : {}),
+        ...(verdict.outcome === 'pk' ? { seats: verdict.seats, order: verdict.order } : {}),
+        ...(verdict.outcome === 'lost' && verdict.seats ? { seats: verdict.seats } : {}),
+      });
     },
     fallback: () => ({ tool: 'sheriff_vote', args: { target: null } }),
   },

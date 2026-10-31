@@ -21,6 +21,8 @@ export interface SubmitInput {
   decisionId?: string;
   /** 超时或多次非法后的托管提交：由引擎生成确定性的托管行动。 */
   auto?: boolean;
+  /** 只写给行动者的托管原因，不改变正常公开结果。 */
+  autoReason?: 'timeout' | 'invalid_tool' | 'request_failed';
 }
 
 export interface EngineResult {
@@ -150,8 +152,10 @@ function apply(ctx: Ctx, input: SubmitInput): RuleError | null {
   let final: ToolCall;
   if (input.auto) {
     final = handler.fallback ? handler.fallback(ctx, d.step, input.seat) : { tool: d.tools[input.seat][0].name, args: {} };
-    ctx.priv([input.seat], 'action.fallback', `你没有在时限内完成有效行动，系统已托管：${FALLBACK_TEXT[final.tool] ?? final.tool}。`, {
+    const reason = input.autoReason === 'invalid_tool' ? '连续工具调用失败' : input.autoReason === 'request_failed' ? '模型请求失败' : '你没有在时限内完成有效行动';
+    ctx.priv([input.seat], 'action.fallback', `${reason}，系统已托管：${FALLBACK_TEXT[final.tool] ?? final.tool}。`, {
       call: final,
+      ...(input.autoReason ? { reason: input.autoReason } : {}),
     });
   } else {
     const tools = d.tools[input.seat];

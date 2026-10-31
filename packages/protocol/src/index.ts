@@ -1,4 +1,7 @@
 export type Seat = number;
+export { THINKING_MODES, thinkingOptions, thinkingParameters } from './thinking';
+export type { ThinkingMode, ThinkingOption } from './thinking';
+import type { ThinkingMode } from './thinking';
 
 export type GamePhase = 'setup' | 'night' | 'day' | 'end';
 
@@ -306,6 +309,8 @@ export interface SeatConfigView {
   persona: string;
   toolMode: ToolMode;
   timeoutSec: number;
+  /** 统一的思考档位；接口不支持的档位不能选用。 */
+  thinkingMode?: ThinkingMode;
   /** 选用的模型名单条目。旧房间可能还没有。 */
   modelId?: string | null;
 }
@@ -423,4 +428,8 @@ export interface AuditEntry {
   toolCall?: ToolCall;
   error?: string;
   latencyMs?: number;
+  purpose?: 'listen' | 'action';
+  attempt?: number;
+  deadline?: number;
+  failureKind?: 'timeout' | 'cancelled' | 'http' | 'network' | 'invalid_tool';
 }

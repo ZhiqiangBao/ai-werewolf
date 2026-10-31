@@ -1,4 +1,5 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { THINKING_MODES, thinkingOptions } from '@werewolf/protocol';
 import type {
   AdapterKind,
   AuditEntry,
@@ -50,6 +51,7 @@ import {
   type Adapter,
   type AdapterConfig,
   type ChatMessage,
+  type DecideResult,
 } from '@werewolf/llm';
 import {
   ensureCue,
@@ -105,7 +107,7 @@ export interface ManagerOptions {
   sleep?: (ms: number) => Promise<void>;
   /** 测试时替换适配器。 */
   adapters?: Partial<Record<AdapterKind, Adapter>>;
-  /** 真人超时检查间隔，0 表示不启动定时器。 */
+  /** 行动超时检查间隔，0 表示不启动定时器。 */
   tickMs?: number;
   /** 页面里添加的模型。不传则只留在内存里。 */
   modelsPath?: string;
@@ -157,6 +159,7 @@ function defaultSeat(seat: Seat): SeatRecord {
     persona: '',
     toolMode: 'tools',
     timeoutSec: 90,
+    thinkingMode: 'default',
   };
 }
 
@@ -339,8 +342,9 @@ export class RoomManager {
   }
 
   private applySeat(rec: RoomRecord, s: SeatConfigInput): void {
-    const seat = rec.seats.find((x) => x.seat === s.seat);
-    if (!seat) throw new ApiFailure(400, 'BAD_REQUEST', `没有 ${s.seat} 号座位`);
+    const current = rec.seats.find((x) => x.seat === s.seat);
+    if (!current) throw new ApiFailure(400, 'BAD_REQUEST', `没有 ${s.seat} 号座位`);
+    const seat = { ...current };
     if (s.controller !== undefined) {
       if (s.controller !== 'human' && s.controller !== 'ai') throw new ApiFailure(400, 'BAD_REQUEST', '控制者只能是 human 或 ai');
       seat.controller = s.controller;
@@ -358,6 +362,10 @@ export class RoomManager {
     if (s.model !== undefined) seat.model = text(s.model, 120);
     if (s.temperature !== undefined) seat.temperature = clamp(s.temperature, 0, 2, 0.7);
     if (s.timeoutSec !== undefined) seat.timeoutSec = Math.round(clamp(s.timeoutSec, 90, 300, 90));
+    if (s.thinkingMode !== undefined) {
+      if (!THINKING_MODES.includes(s.thinkingMode)) throw new ApiFailure(400, 'BAD_REQUEST', '无效的思考强度');
+      seat.thinkingMode = s.thinkingMode;
+    }
     if (s.style !== undefined) seat.style = STYLES.some((x) => x.id === s.style) ? s.style : STYLES[0].id;
     if (s.persona !== undefined) seat.persona = text(s.persona, 300);
     if (s.apiKey === null || s.apiKey === '') {
@@ -386,6 +394,12 @@ export class RoomManager {
     } else if (s.modelId === null) {
       seat.modelId = null;
     }
+    const option = thinkingOptions(seat.baseUrl, seat.model).find((o) => o.value === (seat.thinkingMode ?? 'default'));
+    if (!option?.supported) {
+      if (s.thinkingMode !== undefined) throw new ApiFailure(400, 'BAD_REQUEST', option?.hint ?? '无效的思考强度');
+      seat.thinkingMode = 'default';
+    }
+    Object.assign(current, seat);
   }
 
   private seatView(s: SeatRecord): SeatConfigView {
@@ -399,6 +413,8 @@ export class RoomManager {
       if (s.controller !== 'ai' || s.adapter !== 'openai_compatible') continue;
       if (!s.baseUrl) errors.push(`${s.seat}号：没有填写接口地址`);
       if (!s.model) errors.push(`${s.seat}号：没有填写模型名`);
+      const thinking = thinkingOptions(s.baseUrl, s.model).find((o) => o.value === (s.thinkingMode ?? 'default'));
+      if (!thinking?.supported) errors.push(`${s.seat}号：${thinking?.hint ?? '无效的思考强度'}`);
     }
     return errors;
   }
@@ -619,14 +635,18 @@ export class RoomManager {
     return [];
   }
 
+  /** 模型和座位页面看到同一份投影，包括这一步还剩多少时间。 */
+  private attachDeadline(rec: RoomRecord, seat: Seat, projection: Projection): Projection {
+    const deadline = projection.task && !projection.task.submitted ? rec.deadlines[`${projection.task.decisionId}:${seat}`] : undefined;
+    if (projection.task && deadline) projection.task.deadline = deadline;
+    return projection;
+  }
+
   private project(rec: RoomRecord, viewer: Viewer): Projection | GodProjection {
     const state = rec.state!;
     if (viewer.role === 'spectator') return projectSpectator(state, rec.events);
     const p = viewer.role === 'host' ? projectGod(state, rec.events) : projectSeat(state, rec.events, viewer.seat);
-    if (viewer.role === 'seat') {
-      const deadline = p.task && !p.task.submitted ? rec.deadlines[`${p.task.decisionId}:${viewer.seat}`] : undefined;
-      if (p.task && deadline) p.task.deadline = deadline;
-    }
+    if (viewer.role === 'seat') this.attachDeadline(rec, viewer.seat, p);
     const thoughts = this.visibleThoughts(rec, viewer);
     if (thoughts.length) p.thoughts = thoughts;
     return p;
@@ -667,7 +687,8 @@ export class RoomManager {
     this.armDeadlines(live, false);
     const current = live.rec.state?.pending?.id;
     for (const [key, ctrl] of live.inflight) {
-      if (!current || !key.startsWith(`${current}:`)) {
+      // 旁听属于这条消息，不属于当时碰巧正在等待的行动；换下一位不能取消别人的收听。
+      if (!key.includes(':hear:') && (!current || !key.startsWith(`${current}:`))) {
         ctrl.abort();
         live.inflight.delete(key);
       }
@@ -760,23 +781,40 @@ export class RoomManager {
     return rec.seats[seat - 1]?.controller === 'human';
   }
 
-  /** 为当前决策里还没提交的座位设置截止时间。真人时限为 0 时不限时。reset 时全部重新计时。 */
+  /** 真人从这一步开始计时。模型要等法官这句话进了自己的上下文，才开始计时。 */
   private armDeadlines(live: Live, reset: boolean): void {
     const rec = live.rec;
     const d = rec.state?.pending;
     const next: Record<string, number> = {};
     if (d && rec.status === 'running') {
       for (const seat of waitingSeats(rec.state!)) {
-        const human = this.isHuman(rec, seat);
-        if (human && rec.humanTimeoutSec <= 0) continue;
         const key = `${d.id}:${seat}`;
-        const limit = human
-          ? actionLimitSec(d.step.type, rec.humanTimeoutSec)
-          : aiTimeoutSec(d.step.type, rec.seats[seat - 1].timeoutSec);
-        next[key] = !reset && rec.deadlines[key] ? rec.deadlines[key] : this.now() + limit * 1000;
+        const human = this.isHuman(rec, seat);
+        if (human) {
+          if (rec.humanTimeoutSec <= 0) continue;
+          const limit = actionLimitSec(d.step.type, rec.humanTimeoutSec);
+          next[key] = !reset && rec.deadlines[key] ? rec.deadlines[key] : this.now() + limit * 1000;
+          continue;
+        }
+        if (!rec.deadlines[key] || !readyToAct(this.threadFor(live, seat), this.actionCue(rec))) continue;
+        const limit = aiTimeoutSec(d.step.type, rec.seats[seat - 1].timeoutSec);
+        next[key] = reset ? this.now() + limit * 1000 : rec.deadlines[key];
       }
     }
     rec.deadlines = next;
+  }
+
+  /** 这个模型座位的上下文里已经有法官的问话。从现在开始算这一步的时限。 */
+  private markAsked(live: Live, seat: Seat): void {
+    const rec = live.rec;
+    const d = rec.state?.pending;
+    if (!d || rec.status !== 'running' || this.isHuman(rec, seat)) return;
+    if (!waitingSeats(rec.state!).includes(seat)) return;
+    if (!readyToAct(this.threadFor(live, seat), this.actionCue(rec))) return;
+    const key = `${d.id}:${seat}`;
+    if (rec.deadlines[key]) return;
+    const limit = aiTimeoutSec(d.step.type, rec.seats[seat - 1].timeoutSec);
+    rec.deadlines[key] = this.now() + limit * 1000;
   }
 
   /** 到点还没提交的座位按该步骤的托管行动结算。上警托管就是不上警。暂停期间不计时。 */
@@ -786,11 +824,12 @@ export class RoomManager {
       const d = rec.state?.pending;
       if (rec.status !== 'running' || rec.paused || !d) continue;
       const expired = waitingSeats(rec.state!).find((seat) => {
+        if (!this.isHuman(rec, seat) && !readyToAct(this.threadFor(live, seat), this.actionCue(rec))) return false;
         const dl = rec.deadlines[`${d.id}:${seat}`];
         return dl !== undefined && this.now() >= dl;
       });
       if (expired === undefined) continue;
-      this.apply(live, { seat: expired, call: AUTO, auto: true, decisionId: d.id });
+      this.apply(live, { seat: expired, call: AUTO, auto: true, autoReason: 'timeout', decisionId: d.id });
       void this.pump(live);
     }
   }
@@ -804,6 +843,7 @@ export class RoomManager {
       temperature: s.temperature,
       toolMode: s.toolMode,
       timeoutSec: s.timeoutSec,
+      thinkingMode: s.thinkingMode ?? 'default',
     };
   }
 
@@ -913,6 +953,15 @@ export class RoomManager {
     }
     if (next !== Number.POSITIVE_INFINITY) {
       const cue = rec.status === 'running' ? this.actionCue(rec) : null;
+      // 同一段发言及其行动邀请一起送出。更早的积压发言仍逐条旁听。
+      const first = rec.events.find((e) => e.seq === next)!;
+      const canJoin = first.type === 'speech' || first.type === 'wolf.chat' ||
+        ['sheriff.order', 'speech.order', 'sheriff.pk', 'vote.pk', 'vote.result'].includes(first.type);
+      if (canJoin && cue?.afterSeq && next < cue.afterSeq) {
+        const rest = rec.events.filter((e) => e.seq > next && e.seq <= cue.afterSeq!);
+        if (rest.every((e) => e.payload.announced === true || (Array.isArray(e.audience) && !e.audience.length) ||
+          (e.type === 'judge' && e.payload.decisionId === cue.id))) next = cue.afterSeq;
+      }
       const wave: { seat: Seat; action: boolean }[] = [];
       for (const s of ai) {
         const thread = this.threadFor(live, s.seat);
@@ -920,7 +969,8 @@ export class RoomManager {
         const before = thread.messages.length;
         this.syncThread(live, s.seat, next);
         if (thread.messages.slice(before).some((m) => m.role !== 'system')) {
-          wave.push({ seat: s.seat, action: readyToAct(thread.messages, cue, s.seat) });
+          const action = readyToAct(thread, cue);
+          wave.push({ seat: s.seat, action });
         }
       }
       rec.heardSeq = next;
@@ -934,7 +984,10 @@ export class RoomManager {
       const thread = this.syncThread(live, s.seat);
       const before = thread.messages.length;
       ensureCue(thread, cue);
-      if (thread.messages.length > before) wave.push({ seat: s.seat, action: readyToAct(thread.messages, cue, s.seat) });
+      const action = readyToAct(thread, cue);
+      if (action || thread.messages.length > before) {
+        wave.push({ seat: s.seat, action });
+      }
     }
     if (wave.length) this.scheduleSave(live);
     return wave.length ? wave : null;
@@ -952,10 +1005,12 @@ export class RoomManager {
   private actionCue(rec: RoomRecord): ActionCue | null {
     const d = rec.state?.pending;
     if (!d) return null;
-    const actors = d.actors.filter((seat) => d.tools[seat]?.length);
+    const actors = waitingSeats(rec.state!).filter((seat) => d.tools[seat]?.length);
     const tool = actors.map((seat) => d.tools[seat]?.[0]?.name).find(Boolean) ?? '';
     return {
       id: d.id,
+      // 老存档没有边界时，先收齐已有事件，再补本轮问话。
+      afterSeq: d.openedAtSeq ?? rec.events.at(-1)?.seq ?? 0,
       step: d.step.type,
       kind: typeof d.step.kind === 'string' ? d.step.kind : null,
       actors,
@@ -983,20 +1038,41 @@ export class RoomManager {
   }
 
   /** 还没提交的座位到点或放弃时，按引擎的托管行动补上。上警就是不上警。 */
-  private fallbackIfWaiting(live: Live, seat: Seat, decision: string): void {
+  private fallbackIfWaiting(live: Live, seat: Seat, decision: string, reason: SubmitInput['autoReason']): void {
     const rec = live.rec;
     const d = rec.state?.pending;
     if (rec.status !== 'running' || !d || d.id !== decision) return;
     if (!waitingSeats(rec.state!).includes(seat)) return;
-    this.apply(live, { seat, call: AUTO, auto: true, decisionId: decision });
+    if (!rec.deadlines[`${decision}:${seat}`]) return;
+    if (!readyToAct(this.threadFor(live, seat), this.actionCue(rec))) return;
+    this.apply(live, { seat, call: AUTO, auto: true, autoReason: reason, decisionId: decision });
   }
 
-  /** 收听刚写入的消息。调用了工具就提交给引擎：接受就执行，拒绝就留下仅该座位可见的记录。 */
+  /** 每次回复立即入座位上下文，包括失败轮次；工具调用始终有对应的工具结果。 */
+  private rememberReply(thread: SeatThread, result: DecideResult, error?: string): void {
+    if (error && result.fatal && !result.toolCallIds.length) {
+      if (result.assistant?.content) thread.messages.push(result.assistant);
+      thread.messages.push({ role: 'user', name: 'judge', content: `本次模型请求未完成：${error}` });
+      return;
+    }
+    if (error) {
+      thread.messages.push(...feedbackMessages(result, error));
+      return;
+    }
+    const call = result.call;
+    const reply = result.assistant ?? { role: 'assistant' as const, content: call ? ownLine(call.tool, call.args) : result.reply ?? '' };
+    if (reply.content || (reply.role === 'assistant' && reply.tool_calls?.length)) thread.messages.push(reply);
+    if (reply.role === 'assistant' && reply.tool_calls?.length) {
+      for (const c of reply.tool_calls) thread.messages.push({ role: 'tool', tool_call_id: c.id, content: call ? ownLine(call.tool, call.args) : '已收到。' });
+    }
+  }
+
+  /** 旁听失败只影响这次旁听，不消耗当前行动，也不触发托管。 */
   private async receive(live: Live, seat: Seat, decision: string): Promise<void> {
     const rec = live.rec;
     const cfg = rec.seats[seat - 1];
     const adapter = this.adapters[cfg.adapter] ?? getAdapter(cfg.adapter);
-    const projection = projectSeat(rec.state!, rec.events, seat);
+    const projection = this.attachDeadline(rec, seat, projectSeat(rec.state!, rec.events, seat));
     const tools = seatTools(rec.state!, seat);
     const thread = this.threadFor(live, seat);
     const key = `${decision}:hear:${seat}:${thread.seen}`;
@@ -1004,18 +1080,17 @@ export class RoomManager {
     live.inflight.set(key, ctrl);
     const gen = live.gen;
     const model = cfg.adapter === 'mock' ? 'mock' : cfg.model;
-    const base = thread.messages.length;
-    let messages: ChatMessage[] = [...thread.messages];
+    const messages: ChatMessage[] = [...thread.messages];
     try {
       let config: AdapterConfig;
       try {
         config = { ...this.adapterConfig(cfg), timeoutSec: aiTimeoutSec('', cfg.timeoutSec) };
       } catch {
-        this.writeAudit(live, { seat, model, decisionId: decision, projectionVersion: projection.version, ok: false, error: '密钥无法解密（主密钥可能已更换）' });
+        this.writeAudit(live, { seat, model, decisionId: decision, projectionVersion: projection.version, purpose: 'listen', ok: false, error: '密钥无法解密（主密钥可能已更换）' });
         return;
       }
       if (live.gen !== gen || ctrl.signal.aborted) return;
-      let result;
+      let result: DecideResult;
       try {
         result = await adapter.decide({
           seat,
@@ -1024,84 +1099,29 @@ export class RoomManager {
           tools,
           config,
           signal: ctrl.signal,
-          stream: false,
+          stream: cfg.adapter !== 'mock',
           toolChoice: 'auto',
         });
       } catch (e) {
         if (live.gen !== gen || ctrl.signal.aborted) return;
-        throw e;
+        result = { ok: false, fatal: true, error: redact((e as Error).message, config.apiKey), failureKind: 'network', toolCallIds: [], latencyMs: 0 };
       }
       if (live.gen !== gen) return;
-      if (result.fatal) {
-        this.fallbackIfWaiting(live, seat, decision);
-        this.writeAudit(live, {
-          seat,
-          model,
-          decisionId: decision,
-          projectionVersion: projection.version,
-          ok: false,
-          messages,
-          ...(result.raw ? { response: result.raw } : {}),
-          ...(result.error ? { error: result.error } : {}),
-          latencyMs: result.latencyMs,
-        });
-        return;
+      let error = result.ok ? undefined : result.error ?? '旁听请求失败';
+      if (result.ok && result.call) {
+        const call = clampTexts(result.call, tools);
+        const legal = this.legalTaskTool(rec, seat, decision, call.tool);
+        if (legal && !readyToAct(thread, this.actionCue(rec))) error = '不是工具调用轮次，请勿调用。法官还没有把这一步问到上下文里。';
+        else if (!legal && this.rejectionStreak(rec, seat) >= MAX_ATTEMPTS) error = '不是工具调用轮次，请勿调用。';
+        else error = this.apply(live, { seat, call, ...(decision === 'end' ? {} : { decisionId: decision }) }).error?.reason;
       }
-      if (result.call) {
-          const call = clampTexts(result.call, tools);
-          const legal = this.legalTaskTool(rec, seat, decision, call.tool);
-          if (!legal && this.rejectionStreak(rec, seat) >= MAX_ATTEMPTS) {
-            this.fallbackIfWaiting(live, seat, decision);
-            this.writeAudit(live, {
-              seat,
-              model,
-              decisionId: decision,
-              projectionVersion: projection.version,
-              ok: false,
-              messages,
-              response: result.raw ?? call,
-              toolCall: call,
-              error: '连续拒绝已达上限',
-              latencyMs: result.latencyMs,
-            });
-            return;
-          }
-          const res = this.apply(live, { seat, call, ...(decision === 'end' ? {} : { decisionId: decision }) });
-          if (!res.error) {
-            const reply: ChatMessage = result.assistant ?? { role: 'assistant', content: ownLine(call.tool, call.args) };
-            thread.messages.push(...messages.slice(base), reply);
-            if (reply.role === 'assistant' && reply.tool_calls?.length) {
-              const note = ownLine(call.tool, call.args);
-              for (const item of reply.tool_calls) thread.messages.push({ role: 'tool', tool_call_id: item.id, content: note });
-            }
-          }
-          this.writeAudit(live, {
-            seat,
-            model,
-            decisionId: decision,
-            projectionVersion: projection.version,
-            ok: !res.error,
-            messages,
-            response: result.raw ?? call,
-            toolCall: call,
-            ...(res.error ? { error: res.error.reason } : {}),
-            latencyMs: result.latencyMs,
-          });
-          return;
-        }
-        const text = (result.reply || (typeof result.assistant?.content === 'string' ? result.assistant.content : '')).trim();
-        if (text) thread.messages.push(...messages.slice(base), { role: 'assistant', content: text });
-        this.writeAudit(live, {
-          seat,
-          model,
-          decisionId: decision,
-          projectionVersion: projection.version,
-          ok: !result.fatal,
-          messages,
-          ...(result.raw ? { response: result.raw } : {}),
-          ...(result.fatal ? { error: result.error } : {}),
-          latencyMs: result.latencyMs,
-        });
+      this.rememberReply(thread, result, error);
+      this.writeAudit(live, {
+        seat, model, decisionId: decision, projectionVersion: projection.version, purpose: 'listen',
+        ok: !error, messages, response: result.raw ?? result.call,
+        ...(result.call ? { toolCall: result.call } : {}), ...(error ? { error: redact(error, config.apiKey) } : {}),
+        failureKind: result.failureKind ?? (error ? 'invalid_tool' : undefined), latencyMs: result.latencyMs,
+      });
     } finally {
       live.inflight.delete(key);
     }
@@ -1111,7 +1131,13 @@ export class RoomManager {
     const rec = live.rec;
     const cfg = rec.seats[seat - 1];
     const adapter = this.adapters[cfg.adapter] ?? getAdapter(cfg.adapter);
-    const projection = projectSeat(rec.state!, rec.events, seat);
+    const thread = this.threadFor(live, seat);
+    if (rec.state?.pending?.id !== decision || !readyToAct(thread, this.actionCue(rec))) return;
+    // 此刻才真正发出行动请求，排队、旁听和 AI 展示间隔均不占用行动时限。
+    this.markAsked(live, seat);
+    this.scheduleSave(live);
+    this.notify(live);
+    const projection = this.attachDeadline(rec, seat, projectSeat(rec.state!, rec.events, seat));
     const legal = projection.task?.tools ?? [];
     if (!legal.length) return;
     const tools = seatTools(rec.state!, seat);
@@ -1125,31 +1151,35 @@ export class RoomManager {
     let last: { thinking?: string; reply?: string } | undefined;
     try {
       const limit = aiTimeoutSec(rec.state?.pending?.step.type ?? '', cfg.timeoutSec);
-      const thread = this.threadFor(live, seat);
-      const base = thread.messages.length;
-      let messages: ChatMessage[] = [...thread.messages];
       let config: AdapterConfig;
       try {
         config = { ...this.adapterConfig(cfg), timeoutSec: limit };
       } catch {
         this.writeAudit(live, { seat, model, decisionId: decision, projectionVersion: projection.version, ok: false, error: '密钥无法解密（主密钥可能已更换），已托管' });
-        if (stillWaiting()) this.apply(live, { seat, call: AUTO, auto: true, decisionId: decision });
+        this.fallbackIfWaiting(live, seat, decision, 'request_failed');
         return;
       }
       const onDelta = (delta: { thinking?: string; reply?: string }) => {
-        if (live.gen !== gen || rec.status !== 'running') return;
+        if (!stillWaiting() || ctrl.signal.aborted) return;
         this.pushThought(live, seat, decision, delta);
       };
       if (cfg.adapter !== 'mock') this.pushThought(live, seat, decision, {});
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-        let result;
+        const deadline = rec.deadlines[`${decision}:${seat}`];
+        if (!stillWaiting()) return;
+        if (deadline !== undefined && this.now() >= deadline) {
+          this.fallbackIfWaiting(live, seat, decision, 'timeout');
+          return;
+        }
+        const messages = [...thread.messages];
+        let result: DecideResult;
         try {
           result = await adapter.decide({
             seat,
             projection,
             messages,
             tools,
-            config,
+            config: { ...config, timeoutSec: deadline === undefined ? limit : Math.max(0.001, Math.min(limit, (deadline - this.now()) / 1000)) },
             signal: ctrl.signal,
             stream: cfg.adapter !== 'mock',
             onDelta,
@@ -1157,30 +1187,26 @@ export class RoomManager {
           last = result;
         } catch (e) {
           if (live.gen !== gen || ctrl.signal.aborted || rec.status !== 'running') return;
-          throw e;
+          result = { ok: false, fatal: true, error: redact((e as Error).message, config.apiKey), failureKind: 'network', toolCallIds: [], latencyMs: 0 };
         }
         if (!stillWaiting()) {
-          this.writeAudit(live, { seat, model, decisionId: decision, projectionVersion: projection.version, ok: false, messages, error: '决策已经结束，这次结果作废', latencyMs: result.latencyMs });
+          if (live.gen === gen) this.rememberReply(thread, result, '决策已经结束，这次结果作废，不再执行。');
+          this.writeAudit(live, { seat, model, decisionId: decision, projectionVersion: projection.version, purpose: 'action', attempt, deadline, failureKind: 'cancelled', ok: false, messages, error: '决策已经结束，这次结果作废', latencyMs: result.latencyMs });
           return;
         }
-        let error = result.ok ? undefined : result.error;
+        let error = result.ok && result.call ? undefined : result.error ?? '没有调用工具';
         if (result.ok && result.call) {
           const res = this.apply(live, { seat, call: clampTexts(result.call, tools), decisionId: decision });
           if (res.error) error = res.error.reason;
-          else {
-            const reply: ChatMessage = result.assistant ?? { role: 'assistant', content: ownLine(result.call.tool, result.call.args) };
-            thread.messages.push(...messages.slice(base), reply);
-            if (reply.role === 'assistant' && reply.tool_calls?.length) {
-              const note = ownLine(result.call.tool, result.call.args);
-              for (const call of reply.tool_calls) thread.messages.push({ role: 'tool', tool_call_id: call.id, content: note });
-            }
-          }
         }
+        this.rememberReply(thread, result, error);
         this.writeAudit(live, {
           seat,
           model,
           decisionId: decision,
           projectionVersion: projection.version,
+          purpose: 'action', attempt, deadline,
+          failureKind: result.failureKind ?? (error ? 'invalid_tool' : undefined),
           ok: !error,
           messages,
           response: result.raw ?? result.call,
@@ -1188,10 +1214,13 @@ export class RoomManager {
           ...(error ? { error: redact(error, config.apiKey) } : {}),
           latencyMs: result.latencyMs,
         });
-        if (!error || result.fatal) break;
-        messages = [...messages, ...feedbackMessages(result, error)];
+        if (!error) return;
+        if (result.fatal) {
+          this.fallbackIfWaiting(live, seat, decision, result.failureKind === 'timeout' || /^超过/.test(result.error ?? '') ? 'timeout' : 'request_failed');
+          return;
+        }
       }
-      if (stillWaiting()) this.apply(live, { seat, call: AUTO, auto: true, decisionId: decision });
+      this.fallbackIfWaiting(live, seat, decision, 'invalid_tool');
     } finally {
       this.finishThought(live, seat, decision, last);
       live.inflight.delete(key);

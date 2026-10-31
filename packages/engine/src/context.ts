@@ -13,6 +13,11 @@ export interface AskOptions {
   simultaneous?: boolean;
   publicActor?: Seat;
   speechWindow?: boolean;
+  /**
+   * 把这句法官的话写成事件。能看见的座位会把它接进自己的上下文。
+   * public：全场都听见。actors：只给行动者，其他人的上下文里没有这句。
+   */
+  hear?: 'public' | 'actors';
 }
 
 export interface KillInfo {
@@ -171,6 +176,32 @@ export class Ctx {
       submissions: {},
       acks: {},
     };
+    this.sayAsk(o.hear ?? 'actors', o.step.type, actors, prompts);
+    this.state.pending.openedAtSeq = this.state.seq;
+  }
+
+  /** 法官这句问话进对局记录。能看见的座位随后把它读进上下文，不是另写一套。 */
+  private sayAsk(hear: 'public' | 'actors', step: string, actors: Seat[], prompts: Record<number, string>): void {
+    const first = prompts[actors[0]];
+    const same = actors.every((s) => prompts[s] === first);
+    const payload = { step, decisionId: this.state.pending!.id };
+    // 这些通知本来就是同一次问话，直接补全原事件，不再先通知、再追问。
+    const trigger = { 'sheriff.signup': 'sheriff.start', 'night:witch': 'witch.knife', 'wolf.kill': 'wolf.kill.split' }[step];
+    const previous = this.events.at(-1);
+    if (same && previous && trigger && previous.type === trigger) {
+      previous.text = step === 'sheriff.signup' || first.startsWith(previous.text) ? first : `${previous.text}${first}`;
+      Object.assign(previous.payload, payload);
+      return;
+    }
+    if (hear === 'public' && same) {
+      this.pub('judge', first, payload);
+      return;
+    }
+    if (same) {
+      this.priv(actors, 'judge', first, payload);
+      return;
+    }
+    for (const s of actors) this.priv([s], 'judge', prompts[s], payload);
   }
 
   /** 标记出局并登记死亡记录。职责（开枪、警徽、遗言）由 deaths.batch 步骤统一处理。 */

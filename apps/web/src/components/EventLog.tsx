@@ -57,7 +57,7 @@ export function EventLog({ events, seats, mode, mySeat }: Props) {
     return () => el.removeEventListener('scroll', onScroll);
   }, []);
 
-  const shown = onlyPublic ? events.filter((e) => e.audience === 'public') : events;
+  const shown = events.filter((e) => e.payload.announced !== true && (!onlyPublic || e.audience === 'public'));
   let lastKey = '';
 
   return (

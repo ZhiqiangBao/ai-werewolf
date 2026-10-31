@@ -1,4 +1,4 @@
-import type { Projection, Seat, ToolCall, ToolMode, ToolSpec } from '@werewolf/protocol';
+import type { Projection, Seat, ThinkingMode, ToolCall, ToolMode, ToolSpec } from '@werewolf/protocol';
 
 export interface ToolCallMessage {
   id: string;
@@ -20,6 +20,7 @@ export interface AdapterConfig {
   temperature: number;
   toolMode: ToolMode;
   timeoutSec: number;
+  thinkingMode?: ThinkingMode;
 }
 
 export interface DecideRequest {
@@ -46,6 +47,7 @@ export interface DecideResult {
   error?: string;
   /** 超时、请求被取消或接口报错：把错误发回模型也无济于事，不再重试，直接托管。 */
   fatal?: boolean;
+  failureKind?: 'timeout' | 'cancelled' | 'http' | 'network' | 'invalid_tool';
   /** 模型这次的回复，重试时连同反馈一起追加到消息末尾。 */
   assistant?: ChatMessage;
   toolCallIds: string[];

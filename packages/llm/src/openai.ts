@@ -1,4 +1,4 @@
-import { toolToJsonSchema, type ToolCall, type ToolSpec } from '@werewolf/protocol';
+import { thinkingParameters, toolToJsonSchema, type ToolCall, type ToolSpec } from '@werewolf/protocol';
 import type { Adapter, AdapterConfig, ChatMessage, DecideRequest, DecideResult, ToolCallMessage } from './types';
 
 /** 记住不支持 tool_choice=required、response_format 或流式输出的服务，之后直接降级。 */
@@ -142,6 +142,7 @@ async function postStream(
   }
 
   const acc = { content: '', reasoning: '', calls: new Map<number, PartialCall>() };
+  let usage: unknown;
   const reader = res.body?.getReader();
   if (!reader) throw new HttpError(res.status, '流式响应没有正文');
   const decoder = new TextDecoder();
@@ -157,6 +158,7 @@ async function postStream(
     } catch {
       return false;
     }
+    if (obj?.usage) usage = obj.usage;
     const delta = obj?.choices?.[0]?.delta ?? obj?.choices?.[0]?.message;
     if (!delta || typeof delta !== 'object') return false;
     const reasoning = textOf(delta.reasoning_content) || textOf(delta.reasoning) || textOf(delta.thinking);
@@ -213,6 +215,7 @@ async function postStream(
       function: { name: call.name, arguments: call.arguments },
     }));
   return {
+    ...(usage ? { usage } : {}),
     choices: [
       {
         message: {
@@ -318,10 +321,20 @@ export const openaiAdapter: Adapter = {
     const url = chatUrl(config.baseUrl);
     const memo = `${url}|${config.model}`;
     const json = config.toolMode === 'json';
+    // HTTP 重试、流式降级和 required 降级共用一次总时限，不能每次重新计时。
+    const budget = AbortSignal.timeout(Math.max(1, Math.ceil(config.timeoutSec * 1000)));
+    const signal = req.signal ? AbortSignal.any([req.signal, budget]) : budget;
+    const partial = { thinking: '', reply: '' };
+    const onDelta: DecideRequest['onDelta'] = (delta) => {
+      partial.thinking += delta.thinking ?? '';
+      partial.reply += delta.reply ?? '';
+      req.onDelta?.(delta);
+    };
 
     const listen = req.toolChoice === 'auto';
     const body = (): Record<string, unknown> => {
-      const b: Record<string, unknown> = { model: config.model, temperature: config.temperature };
+      const b: Record<string, unknown> = { model: config.model, temperature: config.temperature,
+        ...thinkingParameters(config.baseUrl, config.model, config.thinkingMode) };
       if (json && !listen) {
         b.messages = [...req.messages, jsonInstruction(tools)];
         if (!noJsonFormat.has(memo)) b.response_format = { type: 'json_object' };
@@ -337,16 +350,16 @@ export const openaiAdapter: Adapter = {
       const payload = body();
       if (allowStream && req.stream && !noStream.has(memo)) {
         try {
-          return await postStream(url, payload, config, req.signal, req.onDelta);
+          return await postStream(url, payload, config, signal, onDelta);
         } catch (e) {
           if (e instanceof StreamUnsupported) {
             noStream.add(memo);
-            return post(url, payload, config, req.signal);
+            return post(url, payload, config, signal);
           }
           throw e;
         }
       }
-      return post(url, payload, config, req.signal);
+      return post(url, payload, config, signal);
     };
 
     let data: any;
@@ -355,15 +368,21 @@ export const openaiAdapter: Adapter = {
         data = await load(true);
       } catch (e) {
         if (!(e instanceof HttpError) || e.status !== 400) throw e;
-        if (!json && /tool_choice/i.test(e.body) && !noRequired.has(memo)) noRequired.add(memo);
+        if (!json && !listen && /tool_choice|grammar.*(?:compil|validation)|sandbox grammar/i.test(e.body) && !noRequired.has(memo)) noRequired.add(memo);
         else if (json && /response_format|json_object/i.test(e.body) && !noJsonFormat.has(memo)) noJsonFormat.add(memo);
         else throw e;
         data = await load(false);
       }
     } catch (e) {
-      if (e instanceof TimeoutError) return fail(started, e.message, { fatal: true });
-      if (e instanceof HttpError) return fail(started, redact(`接口返回 ${e.status}：${e.body.slice(0, 300)}`, config.apiKey), { fatal: true });
-      return fail(started, redact(`请求失败：${(e as Error).message}`, config.apiKey), { fatal: true });
+      const notes: Partial<DecideResult> = {
+        fatal: true, ...partial,
+        ...(partial.reply ? { assistant: { role: 'assistant', content: partial.reply } } : {}),
+        ...(partial.thinking || partial.reply ? { raw: { partial: true, ...partial } } : {}),
+      };
+      if (req.signal?.aborted) return fail(started, '请求已取消', { ...notes, failureKind: 'cancelled' });
+      if (budget.aborted || e instanceof TimeoutError) return fail(started, `超过 ${config.timeoutSec} 秒没有完成回复`, { ...notes, failureKind: 'timeout' });
+      if (e instanceof HttpError) return fail(started, redact(`接口返回 ${e.status}：${e.body.slice(0, 300)}`, config.apiKey), { ...notes, failureKind: 'http' });
+      return fail(started, redact(`请求失败：${(e as Error).message}`, config.apiKey), { ...notes, failureKind: 'network' });
     }
 
     const msg = data?.choices?.[0]?.message;

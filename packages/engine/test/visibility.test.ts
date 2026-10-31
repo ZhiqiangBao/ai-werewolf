@@ -46,7 +46,7 @@ describe('信息隔离', () => {
     g.until((x) => x.hasTool('witch_act'), (_s, tools) =>
       tools.some((t) => t.name === 'wolf_kill') ? { tool: 'wolf_kill', args: { target: 9 } } : undefined,
     );
-    expect(g.view(6).events.some((e) => e.type === 'witch.knife' && e.text === '狼人今晚选择刀 9号。')).toBe(true);
+    expect(g.view(6).events.some((e) => e.type === 'witch.knife' && e.text.startsWith('狼人今晚选择刀 9号。'))).toBe(true);
     g.ok(6, 'witch_act', { save: true, poisonTarget: null });
     g.toNight();
 

@@ -78,6 +78,7 @@ export const deathSteps: Record<string, StepHandler> = {
         title: `第${s.day}天 · 警徽`,
         publicStage: `${seatLabel(sheriff)}处理警徽`,
         publicActor: sheriff,
+        hear: 'actors',
       });
     },
     decide(ctx, _step, subs) {

@@ -73,6 +73,8 @@ export interface Step {
 
 export interface Decision {
   id: string;
+  /** 问话产生时的事件边界。座位收到此前全部可见消息后才能开始行动。旧存档可能没有。 */
+  openedAtSeq?: number;
   step: Step;
   actors: Seat[];
   tools: Record<number, ToolSpec[]>;

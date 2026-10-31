@@ -1,5 +1,5 @@
 import type { AuditEntry, GameEvent, RuleSet, RuleValue, SeatConfigView, Thought } from '@werewolf/protocol';
-import type { ChatMessage } from '@werewolf/llm';
+import type { SeatThread } from './agent';
 import type { ActionRecord, GameState } from '@werewolf/engine';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -29,12 +29,12 @@ export interface RoomRecord {
   state: GameState | null;
   events: GameEvent[];
   actions: ActionRecord[];
-  /** `${decisionId}:${seat}` → 真人行动截止时间（毫秒）。 */
+  /** `${decisionId}:${seat}` → 已开始计时的行动截止时间（毫秒）。 */
   deadlines: Record<string, number>;
   /** 模型思考和工具外正文。只供显示，不进入对局事件。旧房间可能没有。 */
   thoughts?: Thought[];
   /** 每个座位自己的对话。旁听回应只写在这里。旧房间可能没有。 */
-  threads?: { seat: number; seen: number; messages: ChatMessage[] }[];
+  threads?: SeatThread[];
   /** 已经向其他座位广播过的最后一条发言序号。 */
   heardSeq?: number;
 }
@@ -144,7 +144,7 @@ export class FileStore implements RoomStore {
       if (!Number.isInteger(t.seat) || t.seat < 1 || t.seat > 99) continue;
       const name = `s${t.seat}.json`;
       keep.add(name);
-      writeAtomic(join(dir, name), JSON.stringify({ seat: t.seat, seen: t.seen, messages: t.messages }, null, 2));
+      writeAtomic(join(dir, name), JSON.stringify(t, null, 2));
     }
     for (const f of readdirSync(dir)) {
       if (/^s\d+\.json$/.test(f) && !keep.has(f)) {

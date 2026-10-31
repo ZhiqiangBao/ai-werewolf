@@ -1,6 +1,7 @@
-import type { GodProjection, Projection, Seat } from '@werewolf/protocol';
-import { mockAdapter, mockDecision, type Adapter, type DecideRequest } from '@werewolf/llm';
+import type { GodProjection, GameEvent, Projection, Seat } from '@werewolf/protocol';
+import { mockAdapter, mockDecision, type Adapter, type ChatMessage, type DecideRequest } from '@werewolf/llm';
 import { afterEach, describe, expect, it } from 'vitest';
+import { syncThread } from '../src/agent';
 import { MemoryStore, RoomManager, SecretBox, type ManagerOptions } from '../src/index';
 import { actionLimitSec } from '../src/manager';
 
@@ -242,7 +243,9 @@ describe('模型调度', () => {
     m.updateSetup(roomId, hostToken, { presetId: 'classic9', aiPacingMs: 0 });
     m.start(roomId, hostToken);
     await m.whenIdle(roomId);
-    expect(got).toEqual({ speech: 180, vote: 90, other: 90 });
+    expect(got.speech).toBeCloseTo(180, 1);
+    expect(got.vote).toBeCloseTo(90, 1);
+    expect(got.other).toBeCloseTo(90, 1);
   });
 
   it('五次非法输出后托管，审计记录每次失败并把错误发回模型', async () => {
@@ -584,12 +587,119 @@ describe('模型调度', () => {
 
   it('复制房间保留配置、换掉全部凭证', () => {
     const { m, roomId, hostToken } = setup();
-    m.updateSetup(roomId, hostToken, { presetId: 'classic9', seats: [{ seat: 4, controller: 'human', name: '小王' } as never] });
+    m.updateSetup(roomId, hostToken, { presetId: 'classic9', seats: [{ seat: 4, controller: 'human', name: '小王', thinkingMode: 'off' } as never] });
     const copy = m.cloneRoom(roomId, hostToken);
     const a = m.getSetup(roomId, hostToken);
     const b = m.getSetup(copy.roomId, copy.hostToken);
     expect(b.presetId).toBe('classic9');
     expect(b.seats[3]).toMatchObject({ controller: 'human', name: '小王' });
+    expect(b.seats[3].thinkingMode).toBe('off');
     expect(b.tokens.seats[0].token).not.toBe(a.tokens.seats[0].token);
+  });
+
+  it('思考强度自动保存，复制后保留；换到不支持的模型会回到默认', () => {
+    const { m, store, roomId, hostToken } = setup();
+    const baseUrl = 'https://token-plan.maas.qianwenaiapi.com/v1';
+    for (const thinkingMode of ['low', 'medium', 'high'] as const) {
+      const view = m.updateSetup(roomId, hostToken, { seats: [{ seat: 1, model: 'qwen3.8-flash', baseUrl, thinkingMode }] });
+      expect(view.seats[0].thinkingMode).toBe(thinkingMode);
+    }
+    m.dispose();
+    expect(store.loadAll()[0].seats[0].thinkingMode).toBe('high');
+    const clone = m.cloneRoom(roomId, hostToken);
+    expect(m.getSetup(clone.roomId, clone.hostToken).seats[0].thinkingMode).toBe('high');
+    m.updateSetup(roomId, hostToken, { seats: [{ seat: 1, thinkingMode: 'low' }] });
+    const changed = m.updateSetup(roomId, hostToken, { seats: [{ seat: 1, model: 'deepseek-v4-pro' }] });
+    expect(changed.seats[0].thinkingMode).toBe('default');
+    expect(() => m.updateSetup(roomId, hostToken, { seats: [{ seat: 1, thinkingMode: 'low' }] })).toThrow('没有独立的轻度档');
+    expect(m.getSetup(roomId, hostToken).seats[0].thinkingMode).toBe('default');
+  });
+});
+
+describe('警长投票播报', () => {
+  const system: ChatMessage = { role: 'system', content: '规则' };
+
+  function feed(seat: number, event: GameEvent, hint: { nextSeat: number | null; nextStep: string | null }) {
+    const thread = { seat, seen: 0, messages: [] as ChatMessage[] };
+    syncThread(thread, [event], system, hint);
+    return thread.messages.filter((m) => m.role === 'user').map((m) => m.content ?? '');
+  }
+
+  function vote(text: string, payload: Record<string, unknown>): GameEvent {
+    return { seq: 1, day: 1, phase: 'day', audience: 'public', type: 'vote.result', text, payload };
+  }
+
+  it('当选、平票、警徽流失各只有一条法官消息', () => {
+    const elected = feed(
+      2,
+      vote('警长 PK 投票结果：3号 3 票（4号、6号、10号）；5号 2 票（11号、12号）。3号当选警长。', {
+        kind: 'sheriff',
+        outcome: 'elected',
+      }),
+      { nextSeat: null, nextStep: null },
+    );
+    expect(elected).toHaveLength(1);
+    expect(elected[0]).toContain('3 票');
+    expect(elected[0]).toContain('3号当选警长。');
+    expect(elected[0]).toContain('不要调用工具。');
+
+    const pk = feed(
+      4,
+      vote('警长投票结果：9号 5 票（1号）；10号 5 票（2号）。9号、10号平票，进入竞选 PK。发言顺序：4号、9号。', {
+        kind: 'sheriff',
+        outcome: 'pk',
+        order: [4, 9],
+      }),
+      { nextSeat: 4, nextStep: 'speech' },
+    );
+    expect(pk).toHaveLength(1);
+    expect(pk[0]).toContain('进入竞选 PK');
+    expect(pk[0]).toContain('有请4号玩家发言。');
+    expect(pk[0]).toContain('可以调用speak工具。');
+    expect(pk[0]).not.toContain('不要调用工具。');
+
+    const lost = feed(
+      1,
+      vote('警长 PK 投票结果：3号 3 票（4号）；5号 3 票（6号）。3号、5号再次平票，警徽流失，本局没有警长。', {
+        kind: 'sheriff',
+        outcome: 'lost',
+      }),
+      { nextSeat: null, nextStep: null },
+    );
+    expect(lost).toHaveLength(1);
+    expect(lost[0]).toContain('3 票');
+    expect(lost[0]).toContain('警徽流失，本局没有警长。');
+    expect(lost[0]).toContain('不要调用工具。');
+  });
+
+  it('法官的问话进入行动者上下文，并允许他使用工具', () => {
+    const event: GameEvent = {
+      seq: 1,
+      day: 1,
+      phase: 'day',
+      audience: 'public',
+      type: 'judge',
+      text: '请投票放逐一名玩家。票齐之前看不到别人的票。',
+      payload: { step: 'exile.vote' },
+    };
+    const cue = {
+      id: 'd1',
+      step: 'exile.vote',
+      kind: null,
+      actors: [1],
+      prompts: { 1: event.text },
+      tool: 'vote',
+      broadcast: true,
+    };
+    const voter = { seat: 1, seen: 0, messages: [] as ChatMessage[] };
+    syncThread(voter, [event], system, { nextSeat: null, nextStep: 'exile.vote', cue });
+    expect(voter.messages.filter((m) => m.role === 'user')).toHaveLength(1);
+    expect(voter.messages.at(-1)?.content).toContain('请投票放逐一名玩家');
+    expect(voter.messages.at(-1)?.content).toContain('你现在可以使用投票工具。');
+
+    const other = { seat: 2, seen: 0, messages: [] as ChatMessage[] };
+    syncThread(other, [event], system, { nextSeat: null, nextStep: 'exile.vote', cue });
+    expect(other.messages.at(-1)?.content).toContain('请投票放逐一名玩家');
+    expect(other.messages.at(-1)?.content).toContain('不要调用工具。');
   });
 });

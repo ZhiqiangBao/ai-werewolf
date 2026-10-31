@@ -8,6 +8,7 @@ interface Payload {
   rows: { target: number; weight: number; voters: number[] }[];
   ballots: { voter: number; target: number | null; weight: number }[];
   abstain: number[];
+  conclusion?: string;
 }
 
 /** 票型图：谁投给了谁，警长的票标出 1.5。 */
@@ -42,6 +43,7 @@ export function VoteChart({ event }: { event: GameEvent }) {
       ))}
       {!p.rows.length && <div className="muted small">无人投票</div>}
       {p.abstain.length > 0 && <div className="muted small">弃票：{p.abstain.map(seatName).join('、')}</div>}
+      {p.conclusion && <div className="conclusion">{p.conclusion}</div>}
     </div>
   );
 }

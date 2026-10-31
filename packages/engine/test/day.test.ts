@@ -63,13 +63,13 @@ describe('放逐投票', () => {
     g.night({ kill: null });
     g.toVote();
     g.vote({ 1: 9, 2: 9, 3: 10, 4: 10 });
-    expect(lastPublic(g, 'vote.pk')?.payload.seats).toEqual([9, 10]);
+    expect(lastPublic(g, 'vote.result')?.payload).toMatchObject({ outcome: 'pk', seats: [9, 10] });
     g.toVote();
     expect(g.waiting()).not.toContain(9);
     expect(g.waiting()).not.toContain(10);
     expect(g.toolsOf(1)[0].params[0]).toMatchObject({ options: [9, 10] });
     g.vote({ 1: 9, 2: 9, 3: 10, 4: 10 });
-    expect(lastPublic(g, 'vote.none')?.text).toContain('平安日');
+    expect(lastPublic(g, 'vote.result')?.text).toContain('平安日');
     expect(g.state.phase).toBe('night');
   });
 
@@ -157,19 +157,74 @@ describe('警长（DAY-05 ~ DAY-08）', () => {
     tie.night({ kill: null });
     const split = { 1: 9, 2: 9, 3: 9, 4: 9, 5: 9, 6: 10, 7: 10, 8: 10, 11: 10, 12: 10 };
     election(tie, [9, 10], split);
-    expect(lastPublic(tie, 'sheriff.pk')).toBeDefined();
+    const pk = lastPublic(tie, 'vote.result');
+    expect(pk?.text).toContain('平票，进入竞选 PK');
+    expect(pk?.payload.seats).toEqual([9, 10]);
+    expect(pk?.payload.outcome).toBe('pk');
+    expect(tie.events.some((e) => e.type === 'sheriff.pk')).toBe(false);
     tie.until((x) => x.hasTool('sheriff_vote'));
     for (const s of tie.waiting()) tie.ok(s, 'sheriff_vote', { target: split[s as keyof typeof split] ?? null });
-    expect(lastPublic(tie, 'sheriff.none')?.text).toContain('再次平票');
+    const lost = lastPublic(tie, 'vote.result');
+    expect(lost?.text).toContain('再次平票，警徽流失，本局没有警长。');
+    expect(lost?.payload.outcome).toBe('lost');
+    expect(tie.events.some((e) => e.type === 'sheriff.none')).toBe(false);
     expect(tie.state.sheriff).toBeNull();
+  });
+
+  it('放逐投票和警长选方向，都是先把法官的问话交给该听的人', () => {
+    const vote = new TestGame({ deal: DEAL12, values: noSheriff });
+    vote.night({ kill: null });
+    vote.toVote();
+    expect(lastPublic(vote, 'judge')?.text).toContain('请投票放逐一名玩家');
+
+    const g = new TestGame({ deal: DEAL12 });
+    g.night({ kill: null });
+    election(g, [9, 10], everyone(9, [9, 10]));
+    g.until((x) => x.hasTool('set_speak_direction'));
+    const ask = [...g.events].reverse().find((e) => e.type === 'judge' && e.payload.step === 'day.discussion');
+    expect(ask?.text).toContain('请选择发言方向');
+    expect(ask?.audience).toEqual([9]);
+    expect(g.view(1).events.some((e) => e.text.includes('请选择发言方向'))).toBe(false);
+    expect(g.view(9).events.some((e) => e.text.includes('请选择发言方向'))).toBe(true);
+  });
+
+  it('警长票型与判定一次播出：当选不再另发一条', () => {
+    const g = new TestGame({ deal: DEAL12 });
+    g.night({ kill: null });
+    election(g, [9, 10], everyone(9, [9, 10]));
+    const result = lastPublic(g, 'vote.result');
+    expect(result?.text).toMatch(/警长投票结果：.+9号当选警长。/);
+    expect(result?.payload.outcome).toBe('elected');
+    expect(g.events.some((e) => e.type === 'sheriff.elected')).toBe(false);
+    expect(g.state.sheriff).toBe(9);
+  });
+
+  it('警长第一轮平票后，除平票台上的人以外都能投票', () => {
+    const g = new TestGame({ deal: DEAL12 });
+    g.night({ kill: null });
+    election(g, [9, 10, 11], { 1: 9, 2: 9, 3: 9, 4: 9, 5: 10, 6: 10, 7: 10, 8: 10, 12: null });
+    const pk = lastPublic(g, 'vote.result');
+    expect(pk?.payload.seats).toEqual([9, 10]);
+    expect(pk?.text).toContain('进入竞选 PK');
+    expect(g.events.some((e) => e.type === 'sheriff.pk')).toBe(false);
+    g.until((x) => x.hasTool('sheriff_vote'));
+    expect(g.waiting()).not.toContain(9);
+    expect(g.waiting()).not.toContain(10);
+    expect(g.waiting()).toContain(11);
+    expect(g.waiting()).toContain(1);
+    expect(g.waiting()).toContain(12);
   });
 
   it('默认先竞选再公布死讯：首夜出局者可以当选，随后处理警徽并发表遗言', () => {
     const g = new TestGame({ deal: DEAL12 });
     g.night({ kill: 9 });
     election(g, [9, 10], everyone(9, [9, 10]));
-    const types = g.events.filter((e) => e.audience === 'public').map((e) => e.type);
-    expect(types.indexOf('sheriff.elected')).toBeLessThan(types.indexOf('dawn'));
+    const publicEvents = g.events.filter((e) => e.audience === 'public');
+    const electedAt = publicEvents.findIndex((e) => e.type === 'vote.result' && e.text.includes('当选警长'));
+    const dawnAt = publicEvents.findIndex((e) => e.type === 'dawn');
+    expect(electedAt).toBeGreaterThanOrEqual(0);
+    expect(electedAt).toBeLessThan(dawnAt);
+    expect(publicEvents.some((e) => e.type === 'sheriff.elected')).toBe(false);
     expect(g.hasTool('badge_dispose')).toBe(true);
     g.ok(9, 'badge_dispose', { target: 10 });
     expect(g.state.sheriff).toBe(10);

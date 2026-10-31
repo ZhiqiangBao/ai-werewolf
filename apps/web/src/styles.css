@@ -385,6 +385,25 @@ label.field {
   box-shadow: 0 1px 3px rgba(60, 44, 140, 0.2);
 }
 
+.thinking-field {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.thinking-levels {
+  display: flex;
+  flex-wrap: wrap;
+  width: fit-content;
+}
+
+.thinking-levels button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* 玻璃卡片：半透明白 + 模糊，透出背景的昼夜氛围 */
 .panel {
   background: var(--glass);
@@ -1452,6 +1471,13 @@ details.panel > summary {
   font-weight: 700;
   color: var(--accent-ink);
   margin-bottom: 8px;
+}
+
+.votes .conclusion {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-ink);
 }
 
 .vote-row {

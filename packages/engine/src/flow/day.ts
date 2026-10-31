@@ -131,6 +131,7 @@ export const daySteps: Record<string, StepHandler> = {
           title: `第${s.day}天 · 发言方向`,
           publicStage: `警长${seatLabel(sh)}选择发言方向`,
           publicActor: sh,
+          hear: 'actors',
         });
         return;
       }
@@ -229,6 +230,7 @@ export const daySteps: Record<string, StepHandler> = {
             : `请在 PK 的 ${seatList(candidates ?? [])} 中投票放逐一名玩家。`,
         title: `第${s.day}天 · ${round === 1 ? '放逐投票' : 'PK 投票'}`,
         publicStage: round === 1 ? '放逐投票中' : 'PK 投票中',
+        hear: 'public',
       });
     },
     ack: (_ctx, _step, _seat, call) =>
@@ -246,29 +248,35 @@ export const daySteps: Record<string, StepHandler> = {
         })
         .sort((a, b) => a.voter - b.voter);
       const t = tally(ballots);
-      ctx.pub(
+      const result = ctx.pub(
         'vote.result',
         `${round === 1 ? '放逐投票' : 'PK 投票'}结果：${describeTally(t, s.sheriff)}。`,
         tallyPayload('exile', round, t, s.sheriff),
       );
       if (!t.top.length) {
-        ctx.pub('vote.none', '无人得票，今天无人出局（平安日）。', {});
+        const conclusion = '无人得票，今天无人出局（平安日）。';
+        result.text += conclusion;
+        Object.assign(result.payload, { outcome: 'none', conclusion });
         return;
       }
       if (t.top.length === 1) {
-        ctx.pushFront({ type: 'exile.apply', seat: t.top[0], cancelOnExplode: true });
+        ctx.pushFront({ type: 'exile.apply', seat: t.top[0], resultSeq: result.seq, cancelOnExplode: true });
         return;
       }
       if (round === 1) {
         const order = pkOrder(ctx, t.top);
-        ctx.pub('vote.pk', `${seatList(t.top)}平票，进入 PK。PK 发言顺序：${orderList(order)}。`, { seats: t.top, order });
+        const conclusion = `${seatList(t.top)}平票，进入 PK。PK 发言顺序：${orderList(order)}。`;
+        result.text += conclusion;
+        Object.assign(result.payload, { outcome: 'pk', conclusion, seats: t.top, order });
         ctx.pushFront(
           ...order.flatMap((seat) => speechSteps(ctx, seat, 'pk')),
           { type: 'exile.vote', round: 2, candidates: t.top, cancelOnExplode: true },
         );
         return;
       }
-      ctx.pub('vote.none', `${seatList(t.top)}再次平票，今天无人出局（平安日）。`, {});
+      const conclusion = `${seatList(t.top)}再次平票，今天无人出局（平安日）。`;
+      result.text += conclusion;
+      Object.assign(result.payload, { outcome: 'none', conclusion });
     },
     fallback: () => ({ tool: 'vote', args: { target: null } }),
   },
@@ -276,10 +284,27 @@ export const daySteps: Record<string, StepHandler> = {
   'exile.apply': {
     run(ctx, step) {
       const seat = step.seat as Seat;
-      if (ctx.roleOf(seat).beforeExile?.(ctx, seat)) return;
+      const result = ctx.events.find((e) => e.seq === step.resultSeq && e.type === 'vote.result');
+      const before = ctx.events.length;
+      const spared = ctx.roleOf(seat).beforeExile?.(ctx, seat);
+      if (spared) {
+        if (result) {
+          const announcements = ctx.events.slice(before).filter((e) => e.audience === 'public');
+          const conclusion = announcements.map((e) => e.text).join('') || `${seatLabel(seat)}未被放逐。`;
+          result.text += conclusion;
+          Object.assign(result.payload, { outcome: 'revealed', conclusion, seat });
+          for (const e of announcements) e.payload.announced = true;
+        }
+        return;
+      }
       const batch = ctx.newBatch();
       ctx.kill(seat, { via: 'exile', causes: ['exile'], batch });
-      ctx.pub('exile', `${seatLabel(seat)}被投票放逐。`, { seat });
+      const conclusion = `${seatLabel(seat)}被投票放逐。`;
+      ctx.pub('exile', conclusion, { seat, ...(result ? { announced: true } : {}) });
+      if (result) {
+        result.text += conclusion;
+        Object.assign(result.payload, { outcome: 'exile', conclusion, seat });
+      }
       ctx.pushFront({ type: 'deaths.batch', batch, mode: 'standard' });
     },
   },

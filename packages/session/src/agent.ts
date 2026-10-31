@@ -24,6 +24,7 @@ export interface TurnHint {
 /** 这一步要不要单独补一句法官提示。发言的结尾已经写在上一条里时不必再补。 */
 export interface ActionCue {
   id: string;
+  afterSeq?: number;
   step: string;
   kind: string | null;
   actors: number[];
@@ -58,6 +59,14 @@ const INVITE: Record<string, string> = {
   'speech.order': 'discussion',
   'vote.pk': 'pk',
 };
+
+/** 这条公开消息后面就是发言。警长票型若判定为 PK，和发言邀请是同一条。 */
+function inviteKind(e: GameEvent): string | null {
+  const named = INVITE[e.type];
+  if (named) return named;
+  if (e.type === 'vote.result' && e.payload.outcome === 'pk') return e.payload.kind === 'sheriff' ? 'sheriff_pk' : 'pk';
+  return null;
+}
 
 function speechKind(e: GameEvent): string {
   return typeof e.payload.kind === 'string' ? e.payload.kind : 'discussion';
@@ -130,6 +139,7 @@ export function eventToMessage(
   hint: TurnHint,
   latestTalk: boolean,
 ): ChatMessage | null {
+  if (e.payload.announced === true) return null;
   const content = e.payload.content;
   const speaker = e.payload.seat;
   if ((e.type === 'speech' || e.type === 'wolf.chat') && typeof content === 'string' && typeof speaker === 'number') {
@@ -145,7 +155,7 @@ export function eventToMessage(
     const tail = turnSuffix(wolf ? 'wolf' : speechKind(e), yours, wolf);
     return { role: 'user', name: String(speaker), content: `${speechMark(e, speaker)}：${content}\n${tail}` };
   }
-  const invite = INVITE[e.type];
+  const invite = inviteKind(e);
   if (invite) {
     const first = firstSeat(e);
     const yours = latestTalk && first === me && hint.nextStep === 'speech' && hint.nextSeat === me;
@@ -154,6 +164,15 @@ export function eventToMessage(
   }
   const opened = openAction(e, me, hint);
   if (opened) return opened;
+  if (e.type === 'judge') {
+    const cue = hint.cue;
+    if (cue && e.payload.step === cue.step && (!e.payload.decisionId || e.payload.decisionId === cue.id)) {
+      const actor = cue.actors.includes(me);
+      const prompt = (actor ? cue.prompts[me] : e.text) || e.text;
+      return { role: 'user', name: 'judge', content: `法官：${prompt}\n${cueTail(cue, me)}` };
+    }
+    return { role: 'user', name: 'judge', content: `法官：${e.text}\n不要调用工具。` };
+  }
   return { role: 'user', name: 'judge', content: `法官：${e.text}\n不要调用工具。` };
 }
 
@@ -181,6 +200,10 @@ export function syncThread(
   maxSeq = Number.POSITIVE_INFINITY,
 ): void {
   if (!thread.messages.length) thread.messages.push(system);
+  const start = thread.messages.length;
+  // 当前决策的行动许可不能倒灌到尚未送完的历史消息里。
+  const complete = !hint.cue?.afterSeq || maxSeq >= hint.cue.afterSeq;
+  const turn = complete ? hint : { nextSeat: null, nextStep: null, cue: null };
   const pending = events.filter((e) => e.seq > thread.seen && e.seq <= maxSeq);
   let lastTalk = -1;
   let lastNew = -1;
@@ -191,11 +214,21 @@ export function syncThread(
   for (const e of pending) {
     if (visible(e, thread.seat)) {
       const talk = e.seq === lastTalk;
-      const invite = INVITE[e.type] ? e.seq === lastNew && lastTalk < 0 : false;
-      const msg = eventToMessage(e, thread.seat, thread.messages, hint, talk || invite);
-      if (msg) thread.messages.push(msg);
+      const invite = inviteKind(e) ? e.seq === lastNew && lastTalk < 0 : false;
+      const msg = eventToMessage(e, thread.seat, thread.messages, turn, talk || invite);
+      const prev = thread.messages.at(-1);
+      // 发言与紧随其后的邀请一次送达，不在两句之间让模型空回一轮。
+      const previousEvent = pending.findLast((p) => p.seq < e.seq && visible(p, thread.seat));
+      const followsSpeech = previousEvent && (previousEvent.type === 'speech' || previousEvent.type === 'wolf.chat' || !!inviteKind(previousEvent));
+      if (msg && e.type === 'judge' && e.payload.decisionId === turn.cue?.id && followsSpeech &&
+          thread.messages.length > start && prev?.role === 'user') {
+        prev.content = `${prev.content.slice(0, prev.content.lastIndexOf('\n'))}\n${msg.content}`;
+      } else if (msg) thread.messages.push(msg);
     }
     thread.seen = e.seq;
+  }
+  if (complete && turn.cue?.actors.includes(thread.seat) && lastUser(thread.messages).endsWith(cueTail(turn.cue, thread.seat))) {
+    thread.cueFor = turn.cue.id;
   }
 }
 
@@ -207,9 +240,10 @@ export function cueTail(cue: ActionCue, seat: number): string {
   return actor ? (TOOL_TAIL[cue.tool] ?? '你现在可以使用工具。') : '不要调用工具。';
 }
 
-/** 最后一条已经允许这个座位使用工具。这次调用就是他的行动。 */
-export function readyToAct(messages: ChatMessage[], cue: ActionCue | null, seat: number): boolean {
-  return !!cue && cue.actors.includes(seat) && lastUser(messages).endsWith(cueTail(cue, seat));
+/** 已收到当前决策的行动许可与此前消息。重试反馈不会撤销同一决策的许可。 */
+export function readyToAct(thread: SeatThread, cue: ActionCue | null): boolean {
+  return !!cue && cue.actors.includes(thread.seat) && thread.cueFor === cue.id &&
+    thread.seen >= (cue.afterSeq ?? 0);
 }
 
 /**
@@ -218,6 +252,7 @@ export function readyToAct(messages: ChatMessage[], cue: ActionCue | null, seat:
  */
 export function ensureCue(thread: SeatThread, cue: ActionCue | null): void {
   if (!cue || thread.cueFor === cue.id) return;
+  if (thread.seen < (cue.afterSeq ?? 0)) return;
   const actor = cue.actors.includes(thread.seat);
   const spoken = cue.step === 'speech' || cue.step === 'wolf.discuss';
   const tail = cueTail(cue, thread.seat);

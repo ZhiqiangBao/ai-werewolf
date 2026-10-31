@@ -49,6 +49,9 @@ describe('提示词', () => {
     expect(sys).toContain('后面按座位写明的发言');
     expect(sys).not.toContain('日志');
     expect(sys).not.toContain('这段对话');
+    expect(sys).toContain('法官允许你行动时');
+    expect(sys).toContain('法官说不要调用工具时');
+    expect(sys).not.toContain('每次回复必须调用');
     expect(buildMessages(projectSeat(state, events, 4), '说话冷静。', { skillSec: 45 })[0].content as string).toContain('技能限时 45 秒');
     const user = seer[1].content as string;
     expect(user.indexOf('【公共日志】')).toBeLessThan(user.indexOf('【私密记录】'));
@@ -199,6 +202,50 @@ describe('OpenAI 兼容适配器', () => {
     const r = await decide({ timeoutSec: 1 });
     expect(r.ok).toBe(false);
     expect(r.fatal).toBe(true);
+    expect(bodies.length - before).toBe(1);
+    expect(r.failureKind).toBe('timeout');
+  });
+
+  it('required 工具语法编译超时时保留工具 Schema 并降级 auto', async () => {
+    handler = (body) => body.tool_choice === 'required'
+      ? { status: 400, json: { error: { message: 'grammar validation or compilation failed: sandbox grammar compile timed out' } } }
+      : { json: toolReply([{ name: 'speak', arguments: '{"content":"正常发言"}' }]) };
+    const r = await decide({ model: 'grammar-fallback' });
+    expect(r.call?.tool).toBe('speak');
+    expect(bodies.at(-1)!.tool_choice).toBe('auto');
+    expect(bodies.at(-1)!.tools[0].function.name).toBe('speak');
+  });
+
+  it('关闭思考只改变请求选项，消息和工具 Schema 保持不变', async () => {
+    handler = () => ({ json: toolReply([{ name: 'speak', arguments: '{"content":"快一些"}' }]) });
+    const r = await decide({ model: 'qwen-fast-test', thinkingMode: 'off' });
+    expect(r.ok).toBe(true);
+    const body = bodies.at(-1)!;
+    expect(body.enable_thinking).toBe(false);
+    expect(body.messages).toEqual([{ role: 'user', content: 'hi' }]);
+    expect(body.tools[0].function.name).toBe('speak');
+    await decide({ model: 'deepseek-fast-test', thinkingMode: 'off' });
+    expect(bodies.at(-1)!.thinking).toEqual({ type: 'disabled' });
+  });
+
+  it('强度参数随请求发送，保持上下文和工具不变', async () => {
+    handler = () => ({ json: toolReply([{ name: 'speak', arguments: '{"content":"正常发言"}' }]) });
+    expect((await decide({ model: 'qwen3.8-flash', thinkingMode: 'medium' })).ok).toBe(true);
+    expect(bodies.at(-1)!).toMatchObject({ enable_thinking: true, reasoning_effort: 'medium', messages: [{ role: 'user', content: 'hi' }] });
+    expect(bodies.at(-1)!.thinking_budget).toBeUndefined();
+    expect(bodies.at(-1)!.tools[0].function.name).toBe('speak');
+    expect((await decide({ model: 'qwen3.7-plus', thinkingMode: 'low' })).ok).toBe(true);
+    expect(bodies.at(-1)!).toMatchObject({ enable_thinking: true, thinking_budget: 1024 });
+    expect(bodies.at(-1)!.reasoning_effort).toBeUndefined();
+  });
+
+  it('HTTP 重试共用一次总时限', async () => {
+    handler = () => ({ status: 503, delayMs: 300, json: { error: { message: 'busy' } } });
+    const before = bodies.length;
+    const start = Date.now();
+    const r = await decide({ timeoutSec: 1 });
+    expect(r.failureKind).toBe('timeout');
+    expect(Date.now() - start).toBeLessThan(1800);
     expect(bodies.length - before).toBe(1);
   });
 

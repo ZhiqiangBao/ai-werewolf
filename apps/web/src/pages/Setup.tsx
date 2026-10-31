@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { thinkingOptions } from '@werewolf/protocol';
 import type {
   Catalog,
   ModelPresetView,
@@ -312,6 +313,12 @@ function choiceFor(models: ModelPresetView[]) {
   };
 }
 
+function keepThinking(seat: SeatConfigView, next: Omit<SeatConfigInput, 'seat'>): Omit<SeatConfigInput, 'seat'> {
+  const mode = seat.thinkingMode ?? 'default';
+  const supported = thinkingOptions(next.baseUrl ?? seat.baseUrl, next.model ?? seat.model).some((o) => o.value === mode && o.supported);
+  return { ...next, thinkingMode: supported ? mode : 'default' };
+}
+
 function ModelsPanel({ models, onChange }: { models: ModelPresetView[]; onChange: () => void }) {
   const [name, setName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
@@ -408,7 +415,7 @@ function SeatsPanel({ setup, catalog, models, roomId, token, patchSeat, patch, f
   const applyAll = (id: string) => {
     const picked = choice(id);
     if (!picked) return;
-    patch({ seats: ai.map((s) => ({ seat: s.seat, ...picked })) }, 0);
+    patch({ seats: ai.map((s) => ({ seat: s.seat, ...keepThinking(s, picked) })) }, 0);
   };
   return (
     <div className="panel">
@@ -548,8 +555,10 @@ function SeatRow({
   const value = selectedId(s, models);
   const pick = (id: string) => {
     const next = choiceFor(models)(id);
-    if (next) patchSeat(s.seat, next, 0);
+    if (next) patchSeat(s.seat, keepThinking(s, next), 0);
   };
+  const thinking = thinkingOptions(s.baseUrl, s.model);
+  const thinkingHint = thinking.find((o) => o.value === (s.thinkingMode ?? 'default'))?.hint;
   return (
     <div className="seat-row">
       <div className="seat-no" style={seatStyle(s.seat)}>
@@ -621,9 +630,23 @@ function SeatRow({
                 </select>
               </label>
               <label className="field">
-                单次超时（秒）
+                技能与旁听超时（秒）
                 <input type="number" min={90} max={300} value={s.timeoutSec} onChange={(e) => patchSeat(s.seat, { timeoutSec: Number(e.target.value) })} />
               </label>
+              <div className="field thinking-field">
+                <span id={`thinking-label-${s.seat}`}>思考强度</span>
+                <div className="seg thinking-levels" role="group" aria-labelledby={`thinking-label-${s.seat}`}>
+                  {thinking.map((o) => (
+                    <button key={o.value} type="button" className={(s.thinkingMode ?? 'default') === o.value ? 'on' : ''}
+                      aria-pressed={(s.thinkingMode ?? 'default') === o.value} disabled={!o.supported} title={o.hint}
+                      onClick={() => patchSeat(s.seat, { thinkingMode: o.value }, 0)}>
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+                <span className="tiny dim">{thinkingHint}</span>
+              </div>
+              <span className="tiny dim" style={{ gridColumn: '1 / -1' }}>发言限时 180 秒，投票限时 90 秒。思考越深入通常等待越久，仍须在行动时限内完成。</span>
             </>
           )}
           <label className="field">
