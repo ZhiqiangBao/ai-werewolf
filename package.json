@@ -8,9 +8,17 @@
     "start": "tsx apps/server/src/main.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "simulate": "tsx packages/engine/scripts/simulate.ts"
+    "simulate": "tsx packages/engine/scripts/simulate.ts",
+    "video:export": "tsx packages/session/scripts/export-video.ts",
+    "video:tts": "tsx scripts/video/synthesize.ts",
+    "video:timeline": "tsx scripts/video/timeline.ts",
+    "video:render": "tsx scripts/video/render.ts",
+    "video:verify": "tsx scripts/video/verify.ts",
+    "video:make": "tsx scripts/video/workflow.ts",
+    "video:compress": "tsx scripts/video/compress.ts"
   },
   "devDependencies": {
+    "@napi-rs/canvas": "0.1.100",
     "@types/node": "^26.6.6",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",

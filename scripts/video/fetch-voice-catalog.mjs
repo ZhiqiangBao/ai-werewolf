@@ -1,0 +1,10 @@
+import { readFile, writeFile } from 'node:fs/promises';
+const html = await readFile('data/video/voice-catalog.html', 'utf8');
+const links = [...html.matchAll(/href="([^"]+)"/g)].map((x) => x[1]);
+const url = links.find((x) => x.includes('3.0-tts-plus') && x.endsWith('.xlsx'));
+if (!url?.startsWith('https://help-static-aliyun-doc.aliyuncs.com/')) throw Error('Official catalog link missing');
+const response = await fetch(url, { signal: AbortSignal.timeout(30000) });
+if (!response.ok) throw Error(`Catalog HTTP ${response.status}`);
+const bytes = Buffer.from(await response.arrayBuffer());
+await writeFile('data/video/voice-catalog.xlsx', bytes);
+console.log(`Official voice catalog saved: ${bytes.length} bytes`);

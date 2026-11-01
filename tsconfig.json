@@ -20,5 +20,5 @@
       "@werewolf/session": ["./packages/session/src/index.ts"]
     }
   },
-  "include": ["packages/*/src/**/*", "packages/*/test/**/*", "packages/*/scripts/**/*", "apps/*/src/**/*", "apps/web/test/**/*"]
+  "include": ["packages/*/src/**/*", "packages/*/test/**/*", "packages/*/scripts/**/*", "apps/*/src/**/*", "apps/web/test/**/*", "scripts/video/**/*.ts"]
 }

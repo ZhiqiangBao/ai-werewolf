@@ -1,0 +1,10 @@
+import { mkdir, copyFile, readdir, writeFile } from 'node:fs/promises';
+const root = new URL('../../', import.meta.url), skill = new URL('skills/werewolf-video/', root);
+const files = ['audio.ts', 'audio-cache.ts', 'compress.ts', 'editorial.ts', 'encoding.ts', 'geometry.ts', 'hosting.ts', 'integrity.ts', 'metrics.ts', 'narration.ts', 'palette.ts', 'prepare.ts', 'preview.ts', 'project.ts', 'qwen.ts', 'render.ts', 'replay.ts', 'rule-cards.ts', 'rule-strip.ts', 'sample.ts', 'scene.ts', 'synthesize.ts', 'timeline.ts', 'tts.ts', 'tts-types.ts', 'verify-sample.ts', 'verify.ts', 'voices.json', 'workflow.ts'];
+await mkdir(new URL('assets/pipeline/', skill), { recursive: true });
+await mkdir(new URL('assets/art/moon-village/', skill), { recursive: true });
+for (const name of files) await copyFile(new URL(`scripts/video/${name}`, root), new URL(`assets/pipeline/${name}`, skill));
+const art = new URL('apps/web/public/art/moon-village/', root);
+for (const name of await readdir(art)) if (name.endsWith('.webp')) await copyFile(new URL(name, art), new URL(`assets/art/moon-village/${name}`, skill));
+await writeFile(new URL('assets/bundle.json', skill), JSON.stringify({ format: 'werewolf-video-skill-bundle', version: 3, pipelineFiles: files.length, artFiles: 10, source: 'scripts/video/', features: ['preproduction-review', 'truthful-action-hosting', 'source-integrity', 'tts-provider-adapter', 'exact-request-audio-cache', 'all-role-rule-scroll', 'compact-vote-card', 'native-compact-export', 'strict-gpu-encoding'], generatedAt: new Date().toISOString() }, null, 2));
+console.log(JSON.stringify({ skill: decodeURIComponent(skill.pathname), pipelineFiles: files.length, artFiles: 10 }));
