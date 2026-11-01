@@ -45,8 +45,9 @@ export function buildRuleCard(rules: RuleSet): string {
   L.push('· 先处理同批次出局技能及其引发的死亡连锁，再判定胜负；若双方获胜条件同时满足，优先判定好人阵营获胜。');
 
   L.push('二、夜晚');
+  L.push('· 对局时间顺序：第1夜（第一晚）→ 第1天（第一个白天）→ 第2夜 → 第2天 → ……，直至对局结束；先过第N夜，再进入第N天。夜间说「本夜／今晚」指正在进行的这一夜；第N天说「昨夜」指第N夜，说「今晚／下一夜」指第N+1夜。');
   L.push(
-    `· 先夜后日。夜间顺序：${rules.nightOrder.map((id) => phaseNames.get(id) ?? id).join(' → ')}。没有可行动者时跳过。`,
+    `· 夜间行动顺序：${rules.nightOrder.map((id) => phaseNames.get(id) ?? id).join(' → ')}。没有可行动者时跳过。`,
   );
   L.push('· 各阶段依次提交行动，全部夜间行动完成后统一结算攻击和保护；狼刀或毒药不会在行动阶段即时取消目标当夜尚未完成的行动。');
   for (const mod of new Set(rules.nightOrder.map((id) => phaseOwner.get(id)))) {
