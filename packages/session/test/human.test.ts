@@ -105,6 +105,34 @@ describe('真人玩家接入、候场和凭证', () => {
 });
 
 describe('真人行动复用引擎', () => {
+  it('朗读按各凭证的投影编号读取已接受公开发言，不读取私密记录或自由文本', () => {
+    const { m, id, host, tok, setup, ready } = room(true); ready();
+    expect(() => m.speechText(id, host, 1)).toThrow('还没有开始');
+    m.start(id, host);
+    for (let i = 0; i < 300; i++) {
+      const views = setup.tokens.seats.map((s) => ({ seat: s.seat, p: m.view(id, s.token).projection as Projection }));
+      const speaker = views.find((v) => v.p.task && !v.p.task.submitted && v.p.task.tools.some((t) => t.name === 'speak'));
+      if (speaker) {
+        expect(m.act(id, tok(speaker.seat), { decisionId: speaker.p.task!.decisionId, tool: 'speak', args: { content: '公开朗读原文。' } }).ok).toBe(true);
+        for (const token of [host, tok(speaker.seat), setup.tokens.spectator]) {
+          const p = m.view(id, token).projection!;
+          const event = p.events.find((e) => e.type === 'speech' && e.audience === 'public')!;
+          expect(m.speechText(id, token, event.seq)).toBe(`${speaker.seat}号发言。公开朗读原文。`);
+        }
+        const p = m.view(id, host).projection!;
+        const privateEvent = p.events.find((e) => e.audience !== 'public')!;
+        expect(() => m.speechText(id, host, privateEvent.seq)).toThrow('不是可朗读');
+        expect(() => m.speechText(id, host, p.events.find((e) => e.type === 'game.start')!.seq)).toThrow('不是可朗读');
+        expect(() => m.speechText(id, 'invalid-token', 1)).toThrow();
+        for (const invalid of ['1', 1.5, 0, null, '自由文本']) expect(() => m.speechText(id, host, invalid)).toThrow('请选择');
+        return;
+      }
+      const actor = views.find((v) => v.p.task && !v.p.task.submitted)!;
+      const call = mockDecision(actor.p, actor.p.task!.tools);
+      expect(m.act(id, tok(actor.seat), { decisionId: actor.p.task!.decisionId, ...call }).ok).toBe(true);
+    }
+    throw Error('没有到达公开发言窗口');
+  });
   it('插入自爆也绑定当前发言窗口，旧页面不能打断下一段发言', async () => {
     const { m, id, host, tok, setup, ready } = room(true); ready(); m.start(id, host);
     for (let i = 0; i < 300; i++) {

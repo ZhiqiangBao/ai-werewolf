@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { GameEvent, SeatInfo } from '@werewolf/protocol';
 import { gameRecordEvents } from '@werewolf/protocol';
 import { audienceText, phaseLabel, seatName, seatStyle } from '../util';
@@ -13,6 +13,8 @@ interface Props {
   seats: SeatInfo[];
   mode: LogMode;
   mySeat?: number;
+  onRead?: (event: GameEvent) => void;
+  controls?: ReactNode;
 }
 
 const SPEECH_KIND: Record<string, string> = {
@@ -25,7 +27,7 @@ const SPEECH_KIND: Record<string, string> = {
 
 const DEATH_TYPES = new Set(['exile', 'explode', 'hunter.shot', 'idiot.flip']);
 
-export function EventLog({ events, seats, mode, mySeat }: Props) {
+export function EventLog({ events, seats, mode, mySeat, onRead, controls }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [away, setAway] = useState(false);
@@ -63,7 +65,7 @@ export function EventLog({ events, seats, mode, mySeat }: Props) {
   let lastKey = '';
 
   return (
-    <div className="panel">
+    <div className="panel event-log">
       <h3>
         对局记录
         <span className="spacer" />
@@ -74,8 +76,9 @@ export function EventLog({ events, seats, mode, mySeat }: Props) {
           </label>
         )}
       </h3>
+      {controls}
       <div className="log-wrap">
-        <div className="log" ref={box}>
+        <div className="log" ref={box} role="region" aria-label="发言与对局记录" tabIndex={0}>
           {!shown.length && <div className="muted small">还没有记录。</div>}
           {shown.map((e) => {
             const key = `${e.day}:${e.phase}`;
@@ -90,7 +93,7 @@ export function EventLog({ events, seats, mode, mySeat }: Props) {
             return (
               <Fragment key={e.seq}>
                 {divider}
-                {e.type !== 'phase' && <EventItem e={e} nameOf={nameOf} scope={scopeLabel(e)} />}
+                {e.type !== 'phase' && <EventItem e={e} nameOf={nameOf} scope={scopeLabel(e)} onRead={onRead} />}
               </Fragment>
             );
           })}
@@ -111,7 +114,7 @@ export function EventLog({ events, seats, mode, mySeat }: Props) {
   );
 }
 
-function EventItem({ e, nameOf, scope }: { e: GameEvent; nameOf: (s: number) => string; scope: string | null }) {
+function EventItem({ e, nameOf, scope, onRead }: { e: GameEvent; nameOf: (s: number) => string; scope: string | null; onRead?: (event: GameEvent) => void }) {
   const p = e.payload;
   const meta = scope ? <span className="meta">{scope}</span> : null;
 
@@ -126,6 +129,7 @@ function EventItem({ e, nameOf, scope }: { e: GameEvent; nameOf: (s: number) => 
           <div className="who">
             {nameOf(seat)} · {kind}
             {meta}
+            {!wolf && e.audience === 'public' && onRead && <button className="btn sm ghost speech-read" aria-label={`朗读${seat}号${kind}`} onClick={() => onRead(e)}>朗读</button>}
           </div>
           <div className="bubble">{p.content as string}</div>
         </div>

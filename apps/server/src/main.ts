@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ControlAction } from '@werewolf/protocol';
-import { ApiFailure, FileStore, RoomManager, SecretBox } from '@werewolf/session';
+import { ApiFailure, FileStore, RoomManager, SecretBox, SpeechService } from '@werewolf/session';
 
 const ROOT = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
 const WEB = join(ROOT, 'apps', 'web');
@@ -15,6 +15,7 @@ const HOST = process.env.HOST ?? '127.0.0.1';
 
 const secrets = SecretBox.fromEnvOrFile(DATA);
 const manager = new RoomManager({ store: new FileStore(DATA), secrets, modelsPath: join(DATA, 'models.json') });
+const speech = new SpeechService(join(DATA, 'speech'));
 
 function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -101,6 +102,18 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL): Promise
       return send(res, 200, manager.act(roomId, token, await readBody(req)));
     case 'POST participate':
       return send(res, 200, manager.participate(roomId, token, await readBody(req)));
+    case 'POST speech': {
+      const body = await readBody(req);
+      const text = manager.speechText(roomId, token, body.eventSeq);
+      try {
+        const audio = await speech.render(text);
+        res.writeHead(200, { 'Content-Type': 'audio/wav', 'Content-Length': audio.length, 'Cache-Control': 'private, no-store' });
+        res.end(audio);
+      } catch {
+        return send(res, 503, { code: 'SPEECH_UNAVAILABLE', message: 'Token Plan 朗读暂时不可用，请检查语音配置、额度或稍后重试。' });
+      }
+      return;
+    }
     case 'GET stream':
       return stream(req, res, roomId, token);
     case 'GET audit':

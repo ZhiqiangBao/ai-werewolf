@@ -38,7 +38,7 @@ export function AuditPanel({ roomId, token }: { roomId: string; token: string })
   const list = (entries ?? []).filter((e) => !seat || e.seat === seat).reverse();
 
   return (
-    <div>
+    <div className="audit-panel" role="region" aria-label="模型调用记录" tabIndex={0}>
       <div className="row" style={{ marginBottom: 10 }}>
         <select value={seat} onChange={(e) => setSeat(Number(e.target.value))} style={{ width: 120 }}>
           <option value={0}>全部座位</option>

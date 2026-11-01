@@ -12,6 +12,7 @@ import { SeatRing } from '../components/SeatRing';
 import { TaskPanel } from '../components/TaskPanel';
 import { ThoughtFeed } from '../components/ThoughtFeed';
 import { HumanLobby, HumanStatus } from '../components/HumanPlayers';
+import { SpeechControls, useSpeechPlayback } from '../components/SpeechPlayback';
 import { downloadVideoScript } from '../video';
 import { phaseLabel, seatName } from '../util';
 import { LinksPanel, Setup } from './Setup';
@@ -92,6 +93,7 @@ function HostGame({ roomId, token, room, projection: p, refresh }: { roomId: str
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const running = room.status === 'running';
+  const speech = useSpeechPlayback(roomId, token, p);
 
   useEffect(() => {
     api.getSetup(roomId, token).then(setSetup, () => {});
@@ -203,7 +205,7 @@ function HostGame({ roomId, token, room, projection: p, refresh }: { roomId: str
           </div>
           <div className="game-right">
             <ThoughtFeed thoughts={p.thoughts} seats={p.seats} events={p.events} />
-            <EventLog events={p.events} seats={p.seats} mode="god" />
+            <EventLog events={p.events} seats={p.seats} mode="god" onRead={speech.read} controls={<SpeechControls player={speech} />} />
           </div>
         </div>
       </div>
@@ -218,6 +220,7 @@ function HostGame({ roomId, token, room, projection: p, refresh }: { roomId: str
 export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
   const { data, error, refresh } = useView(roomId, token);
   const catalog = useCatalog();
+  const speech = useSpeechPlayback(roomId, token, data?.projection ?? null);
   if (!data) return <Loading error={error} />;
   const { room } = data;
   if (room.viewer !== 'seat' || !room.seat) return <Loading error="这个链接不是座位链接。" />;
@@ -275,7 +278,7 @@ export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
           </div>
           <div className="game-right">
             <ThoughtFeed thoughts={p.thoughts} seats={p.seats} events={p.events} />
-            <EventLog events={p.events} seats={p.seats} mode="seat" mySeat={room.seat} />
+            <EventLog events={p.events} seats={p.seats} mode="seat" mySeat={room.seat} onRead={speech.read} controls={<SpeechControls player={speech} />} />
           </div>
         </div>
       </div>
@@ -290,6 +293,7 @@ export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
 export function WatchPage({ roomId, token }: { roomId: string; token: string }) {
   const { data, error } = useView(roomId, token);
   const catalog = useCatalog();
+  const speech = useSpeechPlayback(roomId, token, data?.projection ?? null);
   if (!data) return <Loading error={error} />;
   const { room } = data;
   if (!data.projection) {
@@ -321,7 +325,7 @@ export function WatchPage({ roomId, token }: { roomId: string; token: string }) 
             <RuleCard text={p.ruleCard} />
           </div>
           <div className="game-right">
-            <EventLog events={p.events} seats={p.seats} mode="spectator" />
+            <EventLog events={p.events} seats={p.seats} mode="spectator" onRead={speech.read} controls={<SpeechControls player={speech} />} />
           </div>
         </div>
       </div>

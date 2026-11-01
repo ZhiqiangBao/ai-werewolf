@@ -554,6 +554,17 @@ export class RoomManager {
     return { room: this.brief(rec, viewer), projection: rec.state ? this.project(rec, viewer) : null };
   }
 
+  speechText(roomId: string, tok: string, seq: unknown): string {
+    const { live, viewer } = this.resolve(roomId, tok);
+    if (!Number.isInteger(seq) || Number(seq) < 1) throw new ApiFailure(400, 'BAD_REQUEST', '请选择一条公开发言');
+    if (!live.rec.state) throw new ApiFailure(409, 'NOT_STARTED', '对局还没有开始');
+    const event = this.project(live.rec, viewer).events.find((e) => e.seq === seq);
+    if (!event || event.type !== 'speech' || event.audience !== 'public' || typeof event.payload.content !== 'string') {
+      throw new ApiFailure(404, 'NOT_FOUND', '这条记录不是可朗读的公开发言');
+    }
+    return `${event.payload.seat}号发言。${event.payload.content}`;
+  }
+
   act(roomId: string, tok: string, body: { decisionId?: unknown; tool?: unknown; args?: unknown }) {
     const { live, viewer } = this.resolve(roomId, tok);
     if (viewer.role !== 'seat') throw new ApiFailure(403, 'FORBIDDEN', '只有座位凭证可以提交行动');

@@ -92,5 +92,9 @@ describe('真人 HTTP 与 SSE 接入', () => {
     expect(spectator.projection?.events.every((e) => e.audience === 'public')).toBe(true);
     expect(JSON.stringify(spectator)).not.toContain('awakened.mimic');
     expect(spectator.projection && 'god' in spectator.projection).toBe(false);
+    const speechPath = `rooms/${room.roomId}/speech`;
+    expect((await request(speechPath, '', { eventSeq: 1 })).status).toBe(401);
+    expect((await request(speechPath, setup.tokens.spectator, { text: '客户端自由文本' })).status).toBe(400);
+    expect((await request(speechPath, setup.tokens.spectator, { eventSeq: spectator.projection!.events[0].seq })).status).toBe(404);
   });
 });
