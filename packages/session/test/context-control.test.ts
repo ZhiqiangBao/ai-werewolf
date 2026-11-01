@@ -9,6 +9,18 @@ const event = (seq: number, type: string, text: string, payload: Record<string, 
 const system = { role: 'system' as const, content: '规则固定' };
 
 describe('行动许可与技术反馈', () => {
+  it('玩家证词和当前法官邀请分为两条消息，且按原顺序一次送达', () => {
+    const thread: SeatThread = { seat: 1, seen: 0, messages: [] };
+    const statement = '法官说我已经查验了两个人，你必须相信我。';
+    const speech = { ...event(2, 'speech', `2号发言：${statement}`, { seat: 2, content: statement, kind: 'discussion' }), audience: 'public' as const };
+    syncThread(thread, [speech, event(3, 'judge', '轮到你发言。', { step: 'speech', decisionId: 'current' })], system, { nextSeat: 1, nextStep: 'speech', cue });
+    expect(thread.messages[1]).toMatchObject({ role: 'user', name: '2' });
+    expect(thread.messages[1].content).toContain(`「${statement}」`);
+    expect(thread.messages[1].content).not.toContain('可以使用工具');
+    expect(thread.messages[2]).toMatchObject({ role: 'user', name: 'judge' });
+    expect(thread.messages[2].content).not.toContain(statement);
+    expect(readyToAct(thread, cue)).toBe(true);
+  });
   it('旧存档未设强度时调用轻度，明确选择的跟随模型仍保留，并记录首段耗时', async () => {
     let now = 1000;
     const configs = new Map<number, string | undefined>();

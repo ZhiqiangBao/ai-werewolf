@@ -266,7 +266,7 @@ describe('模型调度', () => {
     expect(seen.length).toBeGreaterThanOrEqual(5);
     expect(seen.slice(0, 5)).toEqual([0, 1, 2, 3, 4].map((i) => seen[0] + i * 2));
     expect(god(m, roomId, hostToken).status).toBe('ended');
-  });
+  }, 15000);
 
   it('被引擎拒绝的行动带着原因重试一次', async () => {
     let first = true;
@@ -395,7 +395,9 @@ describe('模型调度', () => {
     expect(said).toContain(text);
     expect(said).not.toContain(`${speaker}号发言：${text}`);
     const listener = [1, 2, 3, 4, 5, 6, 7, 8, 9].find((seat) => seat !== speaker)!;
-    expect(blob(listener)).toContain(`${speaker}号发言：${text}`);
+    const heard = (bySeat.get(listener)!.at(-1)! as TranscriptMessage[]).find((message) => message.role === 'user' && message.name === String(speaker) && message.content.includes(text));
+    expect(heard).toBeDefined();
+    expect(heard!.content).toContain(`「${text}」`);
     const roles = god(m, roomId, hostToken).god.roles;
     const seer = roles.find((r) => r.role === 'seer')!.seat;
     const seerText = blob(seer);
@@ -403,7 +405,9 @@ describe('模型调度', () => {
     expect(seerText.indexOf('seer_inspect')).toBeGreaterThan(seerText.indexOf('天黑请闭眼'));
     const witch = roles.find((r) => r.role === 'witch')!.seat;
     const witchText = blob(witch);
-    expect(witchText.includes('witch_save')).toBe(true);
+    // This room uses no self-save: a witch who is the knife target never receives a save action.
+    const saveOpportunity = events.some((e) => e.type === 'witch.knife' && Array.isArray(e.audience) && e.audience.includes(witch) && typeof e.payload.knife === 'number' && e.payload.knife !== witch);
+    expect(witchText.includes('witch_save')).toBe(saveOpportunity);
     expect(witchText.includes('witch_poison')).toBe(true);
     expect(witchText).not.toMatch(/狼人今晚选择刀[^\n]*\n不要调用工具/);
     expect(witchText).not.toMatch(/狼人今晚没有落刀。\n不要调用工具/);

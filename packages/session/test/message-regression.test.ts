@@ -88,7 +88,9 @@ describe('座位消息与行动的回归场景', () => {
       expect(history).toContain('FIRST_PRIOR_SPEECH');
       expect(history).toContain('LATEST_PRIOR_SPEECH');
       expect(history.indexOf('FIRST_PRIOR_SPEECH')).toBeLessThan(history.indexOf('LATEST_PRIOR_SPEECH'));
-      expect(action.messages.at(-1)?.content).toContain('LATEST_PRIOR_SPEECH');
+      expect(action.messages.at(-2)?.content).toContain('「LATEST_PRIOR_SPEECH」');
+      expect(action.messages.at(-1)).toMatchObject({ role: 'user', name: 'judge' });
+      expect(action.messages.at(-1)?.content).not.toContain('LATEST_PRIOR_SPEECH');
       expect(action.messages.at(-1)?.content).toContain('现在轮到你行动，请调用本轮菜单中的一个工具');
       expect(action.config.timeoutSec).toBe(180);
       expect(manager.view(record.id, record.hostToken).projection?.events.some((e) => e.type === 'action.fallback')).toBe(false);

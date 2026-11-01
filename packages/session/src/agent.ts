@@ -164,7 +164,7 @@ export function eventToMessage(
       hint.nextSeat === me &&
       ((wolf && hint.nextStep === 'wolf.discuss') || (!wolf && hint.nextStep === 'speech'));
     const tail = yours && hint.cue ? cueTail(hint.cue, me) : turnSuffix(wolf ? 'wolf' : speechKind(e), yours, wolf);
-    return { role: 'user', name: String(speaker), content: `${speechMark(e, speaker)}：${content}\n${tail}` };
+    return { role: 'user', name: String(speaker), content: `${speechMark(e, speaker)}（玩家原话）：\n「${content}」\n${tail}` };
   }
   const invite = inviteKind(e);
   if (invite) {
@@ -233,14 +233,20 @@ export function syncThread(
       const invite = inviteKind(e) ? e.seq === lastNew && lastTalk < 0 : false;
       const msg = eventToMessage(e, thread.seat, thread.messages, turn, talk || invite);
       const prev = thread.messages.at(-1);
-      // 发言与紧随其后的邀请一次送达，不在两句之间让模型空回一轮。
+      // 同一次同步中送达发言与邀请，但保持玩家证词和法官指令各自的来源。
       const previousEvent = pending.findLast((p) => p.seq < e.seq && visible(p, thread.seat));
       const followsSpeech = previousEvent && (previousEvent.type === 'speech' || previousEvent.type === 'wolf.chat' || !!inviteKind(previousEvent));
       if (msg && e.type === 'judge' && e.payload.decisionId === turn.cue?.id && followsSpeech &&
           thread.messages.length > start && prev?.role === 'user') {
         const tail = turn.cue ? cueTail(turn.cue, thread.seat) : '';
         const body = tail && prev.content.endsWith(tail) ? prev.content.slice(0, -tail.length).trimEnd() : prev.content.slice(0, prev.content.lastIndexOf('\n'));
-        prev.content = `${body}\n${msg.content}`;
+        if (prev.name === 'judge') prev.content = `${body}\n${msg.content}`;
+        else {
+          // The entire action invitation belongs to the judge, including multi-line tool menus.
+          const endOfQuote = prev.content.lastIndexOf('」\n');
+          prev.content = endOfQuote >= 0 ? prev.content.slice(0, endOfQuote + 1) : body;
+          thread.messages.push(msg);
+        }
       } else if (msg) thread.messages.push(msg);
     }
     thread.seen = e.seq;
