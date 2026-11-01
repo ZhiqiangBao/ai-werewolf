@@ -446,6 +446,12 @@ data/
 
 </details>
 
+## 🤝 贡献与协作
+
+项目由 [ZhiqiangBao](https://github.com/ZhiqiangBao) 发起与维护，**[Codex（OpenAI）](https://github.com/apps/chatgpt-codex-connector)** 与 **[Cursor](https://cursor.com)** 参与辅助开发。
+
+Codex 参与完成的改动通过提交中的共同作者署名（`Co-authored-by`）记录，让协作贡献可以从提交历史中追溯。
+
 ---
 
 <div align="center">
