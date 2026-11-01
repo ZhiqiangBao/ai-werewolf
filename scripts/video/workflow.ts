@@ -70,6 +70,7 @@ try {
       }
     }
     else await run(`scripts/video/${stage === 'tts' ? 'synthesize' : stage}.ts`);
+    if (stage === 'verify') await run('scripts/video/publish-copy.ts', ['--if-exists']);
     if (stage === 'render' && stopMonitor) { await stopMonitor(); stopMonitor = undefined; }
     report.completed.push(stage); await writeFile(`${dir}/workflow-status.json`, JSON.stringify(report, null, 2));
     if (stage === last) break;

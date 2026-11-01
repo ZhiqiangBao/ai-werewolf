@@ -27,7 +27,7 @@ for (const file of await readdir(artSource, { withFileTypes: true })) {
 }
 let packageUpdated = false;
 pkg.scripts ??= {}; pkg.devDependencies ??= {};
-for (const [name, script] of Object.entries({ 'video:make': 'tsx scripts/video/workflow.ts', 'video:compress': 'tsx scripts/video/compress.ts', 'video:audit-audio': 'tsx scripts/video/audit-audio.ts', 'video:repair-audio': 'tsx scripts/video/repair-audio.ts' })) {
+for (const [name, script] of Object.entries({ 'video:make': 'tsx scripts/video/workflow.ts', 'video:compress': 'tsx scripts/video/compress.ts', 'video:audit-audio': 'tsx scripts/video/audit-audio.ts', 'video:repair-audio': 'tsx scripts/video/repair-audio.ts', 'video:publish-copy': 'tsx scripts/video/publish-copy.ts' })) {
   if (!pkg.scripts[name]) { pkg.scripts[name] = script; packageUpdated = true; }
 }
 if (!pkg.devDependencies['@napi-rs/canvas'] && !pkg.dependencies?.['@napi-rs/canvas']) { pkg.devDependencies['@napi-rs/canvas'] = '0.1.100'; packageUpdated = true; }

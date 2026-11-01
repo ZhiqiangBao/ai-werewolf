@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { projectDir, loadScript, loadVoices, dataDir } from './project';
 import { draftNarration } from './narration';
+import { syncPublishCopy } from './publish-copy';
 const script = await loadScript(); await mkdir(projectDir, { recursive: true });
 const narrationFile = `${projectDir}/narration.json`, voiceFile = `${projectDir}/voices.json`;
 if (!existsSync(narrationFile)) {
@@ -20,6 +21,7 @@ if (!existsSync(voiceFile)) {
 const narration = JSON.parse(await readFile(narrationFile, 'utf8'));
 const voices = JSON.parse(await readFile(voiceFile, 'utf8'));
 const raw = JSON.parse(await readFile(`${dataDir}/rooms/${script.roomId}.json`, 'utf8'));
+await syncPublishCopy(projectDir, raw, script);
 const editorialContextFile = `${projectDir}/editorial-context.json`;
 await writeFile(editorialContextFile, JSON.stringify({ roomId: script.roomId, presetName: script.presetName, ruleCard: script.ruleCard,
   cast: script.cast,
@@ -33,7 +35,8 @@ const summary = { roomId: script.roomId, preset: script.presetName, playerCount:
   narrationFile, voiceFile, editorialContextFile, omittedJudgeEntries: Object.values(narration.edits).filter((e: any) => e.omit).length,
   cast: script.cast.map((c) => {
     const notes = raw.seats?.find((s: any) => s.seat === c.seat);
-    return { seat: c.seat, name: c.name, roleName: c.roleName, style: notes?.style ?? '', persona: notes?.persona ?? '', voice: voices.profiles[c.voiceKey]?.voice, instruction: voices.profiles[c.voiceKey]?.instruction };
+    return { seat: c.seat, name: c.name, roleName: c.roleName, controller: notes?.controller ?? 'unknown', model: notes?.controller === 'human' ? null : notes?.model ?? null,
+      style: notes?.style ?? '', persona: notes?.persona ?? '', voice: voices.profiles[c.voiceKey]?.voice, instruction: voices.profiles[c.voiceKey]?.instruction };
   }),
   judgeCues: voices.judgeCues ?? {},
   editorialState: narration.review?.status === 'reviewed' ? 'reviewed' : 'prepared-unreviewed',

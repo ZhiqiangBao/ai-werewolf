@@ -148,6 +148,10 @@ export async function rebuildAudioVideo(directory: string) {
       child.on('error', fail); child.on('close', (code) => code === 0 ? ok() : fail(Error(`Audio repair rebuild ${stage} exited ${code}`)));
     });
   }
+  await new Promise<void>((ok, fail) => {
+    const child = spawn(process.execPath, [join(root, 'node_modules/tsx/dist/cli.mjs'), 'scripts/video/publish-copy.ts', '--if-exists'], { cwd: root, env, windowsHide: true, stdio: 'inherit' });
+    child.on('error', fail); child.on('close', (code) => code === 0 ? ok() : fail(Error(`Publication update exited ${code}`)));
+  });
 }
 
 if (process.argv[1]?.replace(/\\/g, '/').endsWith('/repair-audio.ts')) {

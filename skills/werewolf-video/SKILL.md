@@ -68,4 +68,6 @@ node node_modules/tsx/dist/cli.mjs scripts/video/workflow.ts --room=ID --resume
 
 最终标题与简介保存为对应制作目录的 `output/publish-copy.md`，与成片放在一起，分别使用“标题”“简介”标题。聊天中修改文案后同步更新这个文件；交付时链接该定稿文件，不只把文案留在聊天或制作目录根部。备选标题与讨论草稿另存，不混入最终发布文案。
 
+简介默认包含完整逐席表（座位、昵称、实际配置的模型标识或“真人”）及本局完整规则卡。真人席位即使留有模型字段也标真人；不输出密钥、端点或邀请凭证。用 `video:publish-copy` 从本局存档和 `script.ruleCard` 同步这两部分，保留已经定稿的标题和介绍文字；准备和整片验证阶段也会自动更新已有文案文件。
+
 为节省其他模型的上下文，优先读取 `plan.json`、`workflow-status.json`、`verification.json`。不要把原始房间文件、完整时间轴和音频元数据全部打印进上下文。发布和上传不是默认制作步骤。
