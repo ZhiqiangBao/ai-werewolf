@@ -50,11 +50,11 @@ export const werewolf: RoleModule = {
   ruleCard(rules) {
     const v = rules.values;
     const lines = [
-      `狼人：${v['wolf.knowTeammates'] ? '互知队友' : '不知道队友'}。每晚先按座位号各密谈一句，再同时提交刀口。` +
+      `普通狼人：${v['wolf.knowTeammates'] ? '互知队友' : '不知道队友'}。每晚先按座位号各密谈一句，再同时提交刀口；密谈和落刀结果仅向当夜参与行动的存活普通狼人发送。` +
         `${v['wolf.allowEmpty'] ? '可以空刀，空刀不计票。只有所有存活狼人都空刀，当晚才没有刀口。' : ''}${v['wolf.allowTeammateTarget'] ? '可以刀狼队友或自己。' : '不能刀狼队友。'}` +
         '有人落刀时，得票最多的座位成为刀口' +
         (Number(v['wolf.killRounds']) > 1
-          ? '；得票并列时公开各狼的选择并重投一次，仍然并列则座位号较小的目标成为刀口。'
+          ? '；得票并列时仅向参与本轮落刀的普通狼人公布各自选择并重投一次，仍然并列则座位号较小的目标成为刀口。'
           : '；得票并列时，座位号较小的目标成为刀口。') +
         '只剩一名狼人时，他的提交直接生效。',
     ];
@@ -201,7 +201,7 @@ function wolfTools(seats: Seat[], v: RuleSet['values']): ToolSpec[] {
     {
       name: 'wolf_kill',
       title: '落刀',
-      description: `狼人夜间落刀时使用。target 是今晚的刀口。${v['wolf.allowEmpty'] === true ? '传 null 表示空刀，空刀不计票。' : '本局不能空刀。'}${v['wolf.allowTeammateTarget'] === true ? '可以刀狼队友或自己。' : '不能刀狼队友或自己。'}只能选择存活目标。例：{"target":3} 表示刀3号（须符合本局限制）。所有存活狼人同时提交；按法官公布的合刀规则结算，不在密谈工具里直接落刀。其他阶段不要调用。`,
+      description: `普通狼人夜间落刀时使用。target 是你提交的狼刀目标，最终刀口按合刀规则决定。${v['wolf.allowEmpty'] === true ? '传 null 表示空刀，空刀不计票。' : '本局不能空刀。'}${v['wolf.allowTeammateTarget'] === true ? '可以刀狼队友或自己。' : '不能刀狼队友或自己。'}只能选择存活目标。例：{"target":3} 表示提交刀3号（须符合本局限制）。所有参与落刀的存活普通狼人同时提交；按法官公布的合刀规则结算，不在密谈工具里直接落刀。其他阶段不要调用。`,
       params: [seatParam('target', '刀口', seats, v['wolf.allowEmpty'] === true ? '空刀' : undefined)],
     },
   ];

@@ -39,7 +39,7 @@ export const hunter: RoleModule = {
     return [
       `猎人：${can.join('、')}出局时可以开枪带走一名存活玩家，也可以放弃。` +
         (v['hunter.shootOnPoison'] ? '' : '死因里包含毒药时不能开枪。') +
-        `开枪会公开猎人身份；${v['hunter.declineReveals'] ? '放弃开枪也会公开身份。' : '放弃开枪不公开身份。'}`,
+        `符合发动条件时，法官私下询问本人；开枪结果和猎人表现公开。${v['hunter.declineReveals'] ? '放弃开枪也会公开身份。' : '放弃开枪不公开身份。'}`,
     ];
   },
 

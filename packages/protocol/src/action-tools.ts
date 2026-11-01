@@ -20,8 +20,8 @@ export function expandActionTools(tools: ToolSpec[], rules: RuleSet): ToolSpec[]
       const poison = tool.params.find((p) => p.name === 'poisonTarget');
       const canPoison = poison?.kind === 'seat' && poison.options.length > 0;
       return [
-        ...(canSave ? [operation(tool, 'witch_save', '使用解药救刀口', '明确选择使用解药，救法官告知的当夜刀口；目标由法官确定，不需要填写座位号。只消耗解药，不使用毒药。仅在法官本轮列为可用时调用，填写 {}。', { save: true, poisonTarget: null })] : []),
-        ...(canPoison ? [operation(tool, 'witch_poison', '使用毒药', '明确选择用毒药杀死目标玩家。targetSeat 填其他存活玩家的整数座位号；这是毒人，不是救人。只消耗毒药，不使用解药。例：{"targetSeat":3}；目标以本轮法官菜单为准。', { save: false }, { targetSeat: 'poisonTarget' })] : []),
+        ...(canSave ? [operation(tool, 'witch_save', '使用解药救刀口', '对法官告知的当夜刀口使用解药；目标由法官确定，不需要填写座位号。只消耗解药，不使用毒药，最终效果按夜间规则结算。仅在法官本轮列为可用时调用，填写 {}。', { save: true, poisonTarget: null })] : []),
+        ...(canPoison ? [operation(tool, 'witch_poison', '使用毒药', '对目标玩家使用毒药。targetSeat 填其他存活玩家的整数座位号；这是毒人，不是救人。只消耗毒药，不使用解药，最终效果按夜间规则结算。例：{"targetSeat":3}；目标以本轮法官菜单为准。', { save: false }, { targetSeat: 'poisonTarget' })] : []),
         operation(tool, 'witch_skip', '本夜不用药', '明确选择今晚既不用解药，也不用毒药，保留剩余药品。没有参数，填写 {}。', { save: false, poisonTarget: null }),
         ...(canSave && canPoison && rules.values['witch.bothPotionsSameNight'] === true ? [operation(tool, 'witch_save_and_poison', '同时救刀口并用毒药', '仅本局允许同夜双药且两瓶药可用时调用：解药救法官告知的刀口，同时对 targetSeat 使用毒药。一次消耗两瓶药。例：{"targetSeat":3}；目标以本轮法官菜单为准。', { save: true }, { targetSeat: 'poisonTarget' })] : []),
       ];
@@ -39,10 +39,10 @@ export function expandActionTools(tools: ToolSpec[], rules: RuleSet): ToolSpec[]
       vote: ['vote', '投票放逐', 'targetSeat', 'vote_abstain', '放逐弃票', '放逐一名玩家；PK 时必须选本轮 PK 名单中的目标'],
       sheriff_vote: ['sheriff_vote', '投票选警长', 'candidateSeat', 'sheriff_abstain', '警长竞选弃票', '从本轮候选人中选出警长'],
       badge_dispose: ['badge_transfer', '移交警徽', 'recipientSeat', 'badge_tear', '撕毁警徽', '将警徽交给一名其他存活玩家，不分阵营'],
-      guard_protect: ['guard_protect', '守护玩家', 'targetSeat', 'guard_skip', '本夜空守', '守护一名存活玩家免受狼刀；自守和连续守护限制见本轮提示'],
+      guard_protect: ['guard_protect', '守护玩家', 'targetSeat', 'guard_skip', '本夜空守', '选择本夜守护的存活玩家，保护效果按夜间规则结算；自守和连续守护限制见本轮提示'],
       hunter_shoot: ['hunter_shoot', '开枪带走玩家', 'targetSeat', 'hunter_hold_fire', '放弃开枪', '开枪带走一名其他存活玩家并公开猎人身份'],
       wolf_kill: ['wolf_kill', '提交狼刀目标', 'targetSeat', 'wolf_empty_kill', '提交空刀', '提交一名存活玩家作为今晚狼刀目标；是否可以自刀以本局规则为准'],
-      seer_inspect: ['seer_inspect', '查验阵营', 'targetSeat', '', '', '查验一名其他存活玩家的阵营，结果仅自己可见，可以重复查验'],
+      seer_inspect: ['seer_inspect', '查验阵营', 'targetSeat', '', '', '查验一名其他存活玩家，返回好人或狼人的查验结果，不返回具体身份；结果仅自己可见，可以重复查验'],
     };
     const kind = targets[tool.name];
     if (!kind) return [tool];

@@ -2,6 +2,7 @@ import type { Seat, ToolSpec } from '@werewolf/protocol';
 import { expandActionTools } from '@werewolf/protocol';
 import { seatParam, textParam } from './tools';
 import { getRole } from './registry';
+import { weightLabel } from './text';
 import type { GameState } from './types';
 
 /**
@@ -35,7 +36,7 @@ function voteTool(seats: Seat[], abstain: boolean, self: boolean, normal: number
     name: 'vote',
     title: '放逐投票',
     description:
-      `放逐投票或 PK 投票时使用。target 是要放逐的座位号。${abstain ? '传 null 表示弃票。' : '本局不能弃票。'}${self ? '可以投自己。' : '不能投自己。'}只能投存活玩家。普通票记 ${normal} 票，警长票记 ${sheriff} 票。PK 时只可投法官列出的 PK 目标。例：{"target":3}，表示投3号；以当前合法目标为准。其他阶段不要调用。`,
+      `放逐投票或 PK 投票时使用。target 是要放逐的座位号。${abstain ? '传 null 表示弃票。' : '本局不能弃票。'}${self ? '可以投自己。' : '不能投自己。'}只能投存活玩家。普通票记 ${weightLabel(normal)} 票，警长票记 ${weightLabel(sheriff)} 票。PK 时只可投法官列出的 PK 目标。例：{"target":3}，表示投3号；以当前合法目标为准。其他阶段不要调用。`,
     params: [seatParam('target', '放逐目标', seats, abstain ? '弃票' : undefined)],
   };
 }
@@ -57,7 +58,7 @@ function sheriffTools(seats: Seat[], abstain: boolean, normal: number): ToolSpec
     {
       name: 'sheriff_vote',
       title: '警长投票',
-      description: `警长投票或警长 PK 投票时使用。target 是候选人座位号。${abstain ? '传 null 表示弃票。' : '本局不能弃票。'}每人 ${normal} 票。只允许法官当前通知有投票权的玩家提交，目标以候选名单为准。例：{"target":3} 表示选3号当警长，不能用 vote 代替。其他阶段不要调用。`,
+      description: `警长投票或警长 PK 投票时使用。target 是候选人座位号。${abstain ? '传 null 表示弃票。' : '本局不能弃票。'}每人 ${weightLabel(normal)} 票。只允许法官当前通知有投票权的玩家提交，目标以候选名单为准。例：{"target":3} 表示选3号当警长，不能用 vote 代替。其他阶段不要调用。`,
       params: [seatParam('target', '投给', seats, abstain ? '弃票' : undefined)],
     },
     {

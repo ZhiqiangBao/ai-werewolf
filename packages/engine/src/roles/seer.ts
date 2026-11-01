@@ -21,7 +21,7 @@ export const seer: RoleModule = {
   summary: '每晚查验一名其他存活玩家，结果只区分好人或狼人。',
   nightPhase: { id: 'seer', order: 30 },
 
-  ruleCard: () => [`预言家：每晚查验一名其他存活玩家，结果只区分好人或狼人。${INSPECTION_PRIVACY_RULE}`],
+  ruleCard: () => [`预言家：每晚查验一名其他存活玩家，结果只区分好人或狼人，不返回具体身份。${INSPECTION_PRIVACY_RULE}`],
 
   setup(ctx, seats) {
     for (const s of seats) ctx.player(s).data.checks = [];

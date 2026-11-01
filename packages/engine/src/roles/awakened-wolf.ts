@@ -29,7 +29,7 @@ const emptyKill = () => action('awakened_empty_kill', '继承狼刀空刀', '本
 const poisonTool = (seats: Seat[]) => action('awakened_poison', '使用模仿毒药', '仅模仿女巫技能已启用且毒药尚在时可用。消耗自己独立的一瓶毒药，没有解药。targetSeat 为其他存活玩家真实整数座位号，例：{"targetSeat":3}。', seats);
 const guardTool = (seats: Seat[]) => action('awakened_guard', '使用增强守护', '仅模仿守卫技能已启用时可用。targetSeat 为存活玩家真实整数座位号，例：{"targetSeat":3}。可自守，不能连续两晚守同一人；同时抵挡普通狼刀、额外爪击和毒药，不保护白天。', seats);
 const clawTool = (seats: Seat[]) => action('awakened_claw', '使用一次额外爪击', '仅模仿狼人技能已启用、已继承刀权且一次性爪击尚在时可用。targetSeat 为存活玩家真实整数座位号，例：{"targetSeat":3}。消耗爪击；按狼刀结算，可被守护挡住，与普通刀分开提交。', seats);
-const mimicTool = (seats: Seat[]) => action('awakened_mimic', '模仿一名玩家', '整局只能成功模仿一次。targetSeat 为其他存活玩家真实整数座位号，例：{"targetSeat":3}。立即获知并呈现目标真实身份；当夜结束才获得独立技能，夜间主动技能从下一夜可用。阵营仍是狼人，不与小狼互认。', seats);
+const mimicTool = (seats: Seat[]) => action('awakened_mimic', '模仿一名玩家', '整局只能成功模仿一次。targetSeat 为其他存活玩家真实整数座位号，例：{"targetSeat":3}。本人立即获知目标真实身份；此后具体身份查验对你返回该模仿身份，你的真实身份和阵营不变。当夜结束才获得独立技能，夜间主动技能从下一夜可用，不与普通狼人互认。', seats);
 const waitTool = () => action('awakened_wait', '本夜暂不模仿', '本夜不模仿，保留整局唯一模仿机会。以后夜晚可再决定。填写 {}。');
 
 function skillFor(role: string): Skill {
