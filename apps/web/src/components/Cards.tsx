@@ -1,11 +1,13 @@
 import type { Catalog, GameResult, MeInfo } from '@werewolf/protocol';
 import { roleTone, seatName } from '../util';
+import { RoleIcon } from './Icons';
 
 export function IdentityCard({ me, catalog }: { me: MeInfo; catalog: Catalog | null }) {
   const tone = roleTone(catalog, me.role);
   return (
     <div className={`panel identity ${tone}`}>
       <div className="row">
+        <span className="identity-symbol"><RoleIcon role={me.role} size={31} /></span>
         <div>
           <div className="small muted">
             {seatName(me.seat)}

@@ -5,6 +5,21 @@ const noSheriff = { 'sheriff.enabled': false };
 const secretTypes = /^(wolf\.|witch\.|guard\.|seer\.)/;
 
 describe('信息隔离', () => {
+  it('结构化知情记录只向本人分发，阵营查验不含具体神职', () => {
+    const g = new TestGame({ deal: DEAL12, values: noSheriff });
+    g.night({ kill: null, inspect: 8 });
+    expect(g.view(5).me?.knownIdentities).toEqual([{ seat: 8, kind: 'alignment', alignment: 'good', source: 'inspection' }]);
+    expect(g.view(1).me?.knownIdentities).toEqual([2, 3, 4].map((seat) => ({ seat, kind: 'alignment', alignment: 'wolf', source: 'teammate' })));
+    expect(g.view(9).me?.knownIdentities).toEqual([]);
+    expect(g.spectator().me).toBeUndefined();
+    expect(JSON.stringify(g.view(5).me?.knownIdentities)).not.toMatch(/guard|守卫|witch|女巫/);
+  });
+
+  it('关闭狼人互认时不发送队友身份记录', () => {
+    const g = new TestGame({ deal: DEAL12, values: { ...noSheriff, 'wolf.knowTeammates': false } });
+    expect(g.view(1).me?.knownIdentities).toEqual([]);
+    expect(g.view(1).me?.teammates).toBeUndefined();
+  });
   it('预言家看不到刀口、女巫和守卫的行动（VIS-01）', () => {
     const g = new TestGame({ deal: DEAL12, values: noSheriff });
     g.night({ guard: 10, kill: 9, inspect: 1, poison: 11 });

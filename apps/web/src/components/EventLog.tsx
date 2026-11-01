@@ -4,6 +4,7 @@ import { gameRecordEvents } from '@werewolf/protocol';
 import { audienceText, phaseLabel, seatName, seatStyle } from '../util';
 import { PhaseIcon } from './Icons';
 import { VoteChart } from './VoteChart';
+import { Avatar } from './Avatar';
 
 export type LogMode = 'seat' | 'spectator' | 'god';
 
@@ -120,7 +121,7 @@ function EventItem({ e, nameOf, scope }: { e: GameEvent; nameOf: (s: number) => 
     const kind = wolf ? '狼队密谈' : (SPEECH_KIND[p.kind as string] ?? '发言');
     return (
       <div className={`speech ${wolf ? 'wolfchat' : (p.kind as string)}`} style={seatStyle(seat)}>
-        <div className="avatar">{seat}</div>
+        <span className="log-avatar"><Avatar seat={seat} size={34} /><b>{seat}</b></span>
         <div>
           <div className="who">
             {nameOf(seat)} · {kind}

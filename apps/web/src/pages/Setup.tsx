@@ -13,6 +13,7 @@ import type {
 import { api } from '../api';
 import { useCatalog } from '../hooks';
 import { RuleCard } from '../components/Cards';
+import { Avatar } from '../components/Avatar';
 import { copyText, link, seatName, seatStyle } from '../util';
 
 function mergeInput(a: RoomSetupInput, b: RoomSetupInput): RoomSetupInput {
@@ -141,11 +142,14 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
 
   return (
     <div className="wrap">
+      <header className="page-heading">
+        <div><span className="eyebrow">PREPARE YOUR COUNCIL</span><h1>准备你的圆桌</h1><p>选一个故事，让不同的声音入席。</p></div>
+        <span className="tag gold">{saving ? '正在保存…' : '配置已自动保存'}</span>
+      </header>
+      <div className="setup-steps"><span><b>01</b>选择版型</span><span><b>02</b>安排座位</span><span><b>03</b>开启故事</span></div>
       <div className="setup-grid">
-        <div style={{ display: 'grid', gap: 16 }}>
+        <div className="setup-main">
           <PresetPicker catalog={catalog} value={setup.presetId} onChange={(id) => void changePreset(id)} />
-          <OptionsPanel catalog={catalog} roles={preset?.roles ?? []} values={setup.ruleValues} onChange={(k, v) => patch({ ruleValues: { [k]: v } }, 200)} />
-          <ModelsPanel models={models} onChange={loadModels} />
           <SeatsPanel
             setup={setup}
             catalog={catalog}
@@ -156,9 +160,14 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
             patch={patch}
             flush={flush}
           />
+          <details className="panel setup-advanced">
+            <summary>规则与模型设置<small>按需要调整</small></summary>
+            <OptionsPanel catalog={catalog} roles={preset?.roles ?? []} values={setup.ruleValues} onChange={(k, v) => patch({ ruleValues: { [k]: v } }, 200)} />
+            <ModelsPanel models={models} onChange={loadModels} />
+          </details>
         </div>
 
-        <div style={{ display: 'grid', gap: 16, position: 'sticky', top: 70 }}>
+        <div className="setup-sidebar">
           <div className="panel">
             <h3>
               开局
@@ -575,14 +584,15 @@ function SeatRow({
   return (
     <div className="seat-row">
       <div className="seat-no" style={seatStyle(s.seat)}>
-        {s.seat}
+        <Avatar seat={s.seat} size={34} /><b>{s.seat}</b>
       </div>
       <input
         type="text"
         value={s.name === seatName(s.seat) ? '' : s.name}
         maxLength={12}
-        placeholder={seatName(s.seat)}
-        title="座位名字，可以不填"
+        placeholder="自定义昵称"
+        aria-label={`${s.seat}号的昵称`}
+        title="自定义昵称，可在开局前修改"
         onChange={(e) => patchSeat(s.seat, { name: e.target.value })}
       />
       <div className="seg">

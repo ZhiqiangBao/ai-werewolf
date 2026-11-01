@@ -74,6 +74,10 @@ export function projectSeat(state: GameState, events: GameEvent[], seat: Seat): 
     factionName: factionName(mod.faction),
     alive: p.alive,
     ...(teammates ? { teammates } : {}),
+    knownIdentities: [
+      ...(teammates ?? []).map((teammate) => ({ seat: teammate, kind: 'alignment' as const, alignment: 'wolf' as const, source: 'teammate' as const })),
+      ...(mod.knowledge?.(ctx, seat) ?? []),
+    ],
     appendix: buildAppendix(state, seat),
   };
   const d = state.pending;

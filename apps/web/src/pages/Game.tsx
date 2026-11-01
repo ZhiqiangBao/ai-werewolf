@@ -7,6 +7,7 @@ import { IdentityCard, ResultBanner, RuleCard } from '../components/Cards';
 import { EventLog } from '../components/EventLog';
 import { GodPanel } from '../components/GodPanel';
 import { Logo, PhaseIcon } from '../components/Icons';
+import { AvatarStylePicker } from '../components/AvatarStylePicker';
 import { SeatRing } from '../components/SeatRing';
 import { TaskPanel } from '../components/TaskPanel';
 import { ThoughtFeed } from '../components/ThoughtFeed';
@@ -16,7 +17,7 @@ import { LinksPanel, Setup } from './Setup';
 
 function TopBar({ room, projection, who, children }: { room: RoomBrief; projection: Projection | null; who: string; children?: ReactNode }) {
   const phase = projection?.status === 'ended' ? 'end' : (projection?.phase ?? 'setup');
-  // 页面背景随昼夜变化：样式表里用 body[data-phase] 切换暮色/晨光
+  // 场景与公共控件随昼夜切换。
   useEffect(() => {
     document.body.dataset.phase = phase;
     return () => {
@@ -27,7 +28,7 @@ function TopBar({ room, projection, who, children }: { room: RoomBrief; projecti
     <div className="topbar">
       <a className="brand" href="#/">
         <Logo />
-        AI 狼人杀
+        <span>AI 狼人杀<small>THE MOONLIT VILLAGE</small></span>
       </a>
       <span className="muted small room-meta">
         {room.presetName} · 房间 {room.roomId}
@@ -40,6 +41,7 @@ function TopBar({ room, projection, who, children }: { room: RoomBrief; projecti
       )}
       {room.paused && room.status === 'running' && <span className="tag gold">已暂停</span>}
       <span className="spacer" />
+      <AvatarStylePicker />
       {children}
       <span className="tag">{who}</span>
     </div>
@@ -151,7 +153,7 @@ function HostGame({ roomId, token, room, projection: p, refresh }: { roomId: str
           </button>
         )}
       </TopBar>
-      <div className="wrap">
+      <div className="wrap game-wrap">
         {error && (
           <div className="error-box" style={{ marginBottom: 12 }}>
             {error}
@@ -250,14 +252,14 @@ export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
   return (
     <>
       <TopBar room={room} projection={p} who={who} />
-      <div className="wrap">
+      <div className="wrap game-wrap">
         <div className="game">
           <div className="game-left">
             {p.result && <ResultBanner result={p.result} />}
-            <TaskPanel projection={p} human={human} paused={room.paused} onAct={act} />
             <div className="panel">
               <SeatRing projection={p} room={room} catalog={catalog} />
             </div>
+            <TaskPanel projection={p} human={human} paused={room.paused} onAct={act} />
             {p.me && <IdentityCard me={p.me} catalog={catalog} />}
             <RuleCard text={p.ruleCard} />
           </div>
@@ -298,7 +300,7 @@ export function WatchPage({ roomId, token }: { roomId: string; token: string }) 
           </a>
         )}
       </TopBar>
-      <div className="wrap">
+      <div className="wrap game-wrap">
         <div className="game">
           <div className="game-left">
             {p.result && <ResultBanner result={p.result} />}

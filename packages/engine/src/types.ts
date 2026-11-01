@@ -1,6 +1,7 @@
 import type {
   GamePhase,
   GameResult,
+  IdentityKnowledge,
   RuleOptionInfo,
   RuleSet,
   Seat,
@@ -211,6 +212,8 @@ export interface RoleModule {
   ruleCard?(rules: RuleSet): string[];
   /** 身份附录里的私密说明，只能使用该座位有权知道的信息。 */
   appendix?(ctx: Ctx, seat: Seat): string[];
+  /** 该座位通过自身技能确实获知的信息，可区分阵营与具体身份。 */
+  knowledge?(ctx: Ctx, seat: Seat): IdentityKnowledge[];
   /** 开局：初始化私有状态、发送私密信息。 */
   setup?(ctx: Ctx, seats: Seat[]): void;
   /** 出局时产生的职责（例如猎人开枪），按返回顺序执行。 */

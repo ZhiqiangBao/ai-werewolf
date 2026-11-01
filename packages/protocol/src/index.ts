@@ -211,6 +211,11 @@ export interface SeatInfo {
   active?: boolean;
 }
 
+/** 仅发送给实际拥有该信息的座位；阵营查验不携带具体身份。 */
+export type IdentityKnowledge =
+  | { seat: Seat; kind: 'alignment'; alignment: 'good' | 'wolf'; source: 'teammate' | 'inspection' }
+  | { seat: Seat; kind: 'role'; role: string; roleName: string; source: 'teammate' | 'inspection' };
+
 export interface MeInfo {
   seat: Seat;
   name: string;
@@ -220,6 +225,7 @@ export interface MeInfo {
   factionName: string;
   alive: boolean;
   teammates?: Seat[];
+  knownIdentities?: IdentityKnowledge[];
   appendix: string;
 }
 

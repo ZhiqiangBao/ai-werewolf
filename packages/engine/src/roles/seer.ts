@@ -26,6 +26,12 @@ export const seer: RoleModule = {
     for (const s of seats) ctx.player(s).data.checks = [];
   },
 
+  knowledge(ctx, seat) {
+    return ((ctx.player(seat).data.checks ?? []) as Check[]).map((check) => ({
+      seat: check.target, kind: 'alignment' as const, alignment: check.result, source: 'inspection' as const,
+    }));
+  },
+
   appendix(ctx, seat) {
     const checks = (ctx.player(seat).data.checks ?? []) as Check[];
     if (!checks.length) return ['你的查验记录：暂无。'];
