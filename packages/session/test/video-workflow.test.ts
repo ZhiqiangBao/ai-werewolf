@@ -3,7 +3,7 @@ import { replay } from '../../../scripts/video/replay';
 import { assDocument, captionsFromWords, sourceCaptionWords } from '../../../scripts/video/timeline';
 import { subtitleLayout } from '../../../scripts/video/geometry';
 import { speakerIdentity } from '../../../scripts/video/speaker';
-import { splitSpeech, spokenText, type Script, type Fact } from '../../../scripts/video/project';
+import { clipVoiceProfile, splitSpeech, spokenText, type Script, type Fact } from '../../../scripts/video/project';
 import type { AudioMeta } from '../../../scripts/video/qwen';
 import { draftNarration } from '../../../scripts/video/narration';
 import { completeHosting } from '../../../scripts/video/hosting';
@@ -82,6 +82,21 @@ describe('offline match replay', () => {
 });
 
 describe('audio-led captions and script', () => {
+  it('applies reviewed delivery only to the matching judge cue and retains the fixed voice', () => {
+    const judge = { voice: 'fixed-judge', label: '法官', rate: 1.08, instruction: '默认主持' };
+    const player = { ...judge, voice: 'fixed-player' };
+    const voices = { model: 'fixture', profiles: { judge, 'seat-1': player }, judgeCues: { 'seer-open': { rate: 1.14, instruction: '整句自然连读' } } };
+    const data = { presentationOnly: true, presentationKey: 'seer-open' };
+    expect(clipVoiceProfile(voices, { voiceKey: 'judge', data })).toMatchObject({ voice: 'fixed-judge', rate: 1.14, instruction: '整句自然连读' });
+    expect(clipVoiceProfile(voices, { voiceKey: 'judge', data: { ...data, presentationKey: 'guard-open' } })).toBe(judge);
+    expect(clipVoiceProfile(voices, { voiceKey: 'judge', data: { ...data, presentationOnly: false } })).toBe(judge);
+    expect(clipVoiceProfile(voices, { voiceKey: 'seat-1', data })).toBe(player);
+    expect(judge.rate).toBe(1.08);
+  });
+  it('rejects invalid judge cue speed before a synthesis request', () => {
+    const voices = { model: 'fixture', profiles: { judge: { voice: 'judge', label: '', rate: 1, instruction: '' } }, judgeCues: { 'seer-open': { rate: 0 } } };
+    expect(() => clipVoiceProfile(voices, { voiceKey: 'judge', data: { presentationOnly: true, presentationKey: 'seer-open' } })).toThrow('Invalid judge cue rate');
+  });
   it('centers day and night captions inside the text region, clear of the speaker portrait', () => {
     const document = assDocument([{ text: '十一号，平民。', start: .25, end: 2, phase: 'day' }, { text: '请睁眼。', start: 3, end: 4, phase: 'night' }]);
     const { caption, divider, panel } = subtitleLayout;

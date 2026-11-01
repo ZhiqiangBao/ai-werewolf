@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { loadScript, loadVoices, buildClips, projectDir, type Script } from './project';
+import { loadScript, loadVoices, buildClips, clipVoiceProfile, projectDir, type Script, type VoiceCatalog } from './project';
 import { synthesizeSpeech } from './tts';
 import { editScript } from './editorial';
 import { assertPlayerSources } from './integrity';
@@ -7,7 +7,7 @@ import { assertPlayerSources } from './integrity';
 const prepared = process.argv.includes('--prepared-clips');
 const source: Script = prepared ? JSON.parse(await readFile(`${projectDir}/source.json`, 'utf8')) : await loadScript();
 const script: Script = prepared ? JSON.parse(await readFile(`${projectDir}/script.json`, 'utf8')) : await editScript(source);
-const voices = prepared ? JSON.parse(await readFile(`${projectDir}/voices.json`, 'utf8')) : await loadVoices();
+const voices: VoiceCatalog = prepared ? JSON.parse(await readFile(`${projectDir}/voices.json`, 'utf8')) : await loadVoices();
 const clips = prepared ? JSON.parse(await readFile(`${projectDir}/clips.json`, 'utf8')) as ReturnType<typeof buildClips> : buildClips(script);
 assertPlayerSources(source, script, clips);
 await mkdir(projectDir, { recursive: true });
@@ -29,8 +29,7 @@ async function worker() {
   while (cursor < clips.length) {
     if (errors.some((e) => fatal(e.reason))) break;
     const clip = clips[cursor++];
-    const profile = voices.profiles[clip.voiceKey];
-    if (!profile) throw Error(`No voice for ${clip.voiceKey}`);
+    const profile = clipVoiceProfile(voices, clip);
     let done = false;
     for (let attempt = 0; attempt < 3 && !done; attempt++) {
       try {

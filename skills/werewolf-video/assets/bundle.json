@@ -1,6 +1,6 @@
 {
   "format": "werewolf-video-skill-bundle",
-  "version": 4,
+  "version": 5,
   "pipelineFiles": 30,
   "artFiles": 10,
   "source": "scripts/video/",
@@ -14,8 +14,9 @@
     "compact-vote-card",
     "speaker-portrait-and-host-emblems",
     "centered-caption-region",
+    "reviewed-judge-cue-delivery",
     "native-compact-export",
     "strict-gpu-encoding"
   ],
-  "generatedAt": "2026-11-01T11:35:28.304Z"
+  "generatedAt": "2026-11-01T11:55:30.543Z"
 }

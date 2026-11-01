@@ -35,6 +35,7 @@ const summary = { roomId: script.roomId, preset: script.presetName, playerCount:
     const notes = raw.seats?.find((s: any) => s.seat === c.seat);
     return { seat: c.seat, name: c.name, roleName: c.roleName, style: notes?.style ?? '', persona: notes?.persona ?? '', voice: voices.profiles[c.voiceKey]?.voice, instruction: voices.profiles[c.voiceKey]?.instruction };
   }),
+  judgeCues: voices.judgeCues ?? {},
   editorialState: narration.review?.status === 'reviewed' ? 'reviewed' : 'prepared-unreviewed',
   editorialReview: narration.review ?? null };
 await writeFile(`${projectDir}/plan.json`, JSON.stringify(summary, null, 2));

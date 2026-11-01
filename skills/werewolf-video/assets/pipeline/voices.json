@@ -1,6 +1,7 @@
 {
   "model": "qwen-audio-3.0-tts-plus",
   "source": "https://platform.qianwenai.com/docs/developer-guides/speech/voice-list/qwen-audio-tts",
+  "judgeCues": { "seer-open": {"instruction":"请用标准普通话扮演狼人杀法官，像真人在桌边自然主持。整句话顺畅、连贯地说出来，把“预言家请睁眼”作为一个完整短句自然连读，不要拆成单字或单词点读，不要在“预言家”和“请睁眼”之间停顿，不要拉长单字。逗号处只作很轻的换气，然后自然接上后半句。声音平稳、清楚、自然，不要朗诵腔，不要擅自添加文字。","rate":1.14} },
   "profiles": {
     "commentator": { "voice": "longanlingxin", "label": "上帝解说 · 温暖知性女声", "rate": 1.08, "instruction": "请用普通话为一段狼人杀上帝视角视频配旁白。声音知性自然，像懂游戏的朋友陪观众看对局，分析时清楚克制，转折处有一点兴味和停顿。不要逐字念文稿的播音腔，不要夸张叫喊，不要擅自添加文字。" },
     "judge": { "voice": "qwen-audio-3.0-tts-plus-longshuojizhu", "label": "法官 · 清晰中性播报", "rate": 1.08, "instruction": "请用标准普通话，以狼人杀法官的口吻清晰播报，冷静、公正、简洁，有自然停顿，不要夸张表演。" },

@@ -21,10 +21,24 @@ export async function loadScript(): Promise<Script> {
   if (script.roomId !== roomId || script.perspective !== 'god' || script.status !== 'ended') throw Error('Expected the completed, authorized god-view script');
   return script;
 }
-export async function loadVoices() {
+export interface VoiceCatalog {
+  model: string;
+  profiles: Record<string, VoiceProfile>;
+  judgeCues?: Record<string, { instruction?: string; rate?: number }>;
+}
+export function clipVoiceProfile(voices: VoiceCatalog, clip: Pick<Clip, 'voiceKey' | 'data'>): VoiceProfile {
+  const profile = voices.profiles[clip.voiceKey];
+  if (!profile) throw Error(`No voice for ${clip.voiceKey}`);
+  const cue = clip.voiceKey === 'judge' && clip.data.presentationOnly ? voices.judgeCues?.[clip.data.presentationKey] : undefined;
+  if (!cue) return profile;
+  if (cue.instruction !== undefined && (typeof cue.instruction !== 'string' || !cue.instruction.trim())) throw Error('Invalid judge cue instruction');
+  if (cue.rate !== undefined && (!Number.isFinite(cue.rate) || cue.rate <= 0)) throw Error('Invalid judge cue rate');
+  return { ...profile, instruction: cue.instruction ?? profile.instruction, rate: cue.rate ?? profile.rate };
+}
+export async function loadVoices(): Promise<VoiceCatalog> {
   const file = process.env.VIDEO_VOICES_FILE;
   // Preparation creates the per-project voice file; initial defaults remain in the repository.
-  return JSON.parse(await readFile(file && existsSync(file) ? file : 'scripts/video/voices.json', 'utf8')) as { model: string; profiles: Record<string, VoiceProfile> };
+  return JSON.parse(await readFile(file && existsSync(file) ? file : 'scripts/video/voices.json', 'utf8')) as VoiceCatalog;
 }
 function chineseNumber(n: string): string {
   const digits = '零一二三四五六七八九';
