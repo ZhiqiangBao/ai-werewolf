@@ -120,7 +120,7 @@ export const guard: RoleModule = {
     if (!ctx.opt<boolean>('resolve.guardAndSaveKills')) return;
     for (const r of rows) {
       if (r.attack.kind !== 'wolf') continue;
-      const guarded = r.blockers.some((b) => b.kind === 'guard');
+      const guarded = r.blockers.some((b) => b.kind === 'guard' || b.kind === 'awakened_guard');
       const saved = r.blockers.some((b) => b.kind === 'antidote');
       if (guarded && saved) {
         r.blocked = false;

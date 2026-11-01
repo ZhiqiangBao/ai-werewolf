@@ -11,7 +11,8 @@ import type {
   SeatConfigView,
 } from '@werewolf/protocol';
 import { api } from '../api';
-import { useCatalog } from '../hooks';
+import { useCatalog, useStream } from '../hooks';
+import { HumanStatus } from '../components/HumanPlayers';
 import { RuleCard } from '../components/Cards';
 import { Avatar } from '../components/Avatar';
 import { copyText, link, seatName, seatStyle } from '../util';
@@ -54,6 +55,13 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const edits = useRef(0);
   const chain = useRef<Promise<void>>(Promise.resolve());
+  useStream(roomId, token, () => {
+    if (saving || Object.keys(queued.current).length) return;
+    const mark = edits.current;
+    api.getSetup(roomId, token).then((v) => {
+      if (mark === edits.current && !Object.keys(queued.current).length) setSetup(v);
+    }, () => {});
+  });
 
   const loadModels = useCallback(() => {
     api.modelPresets().then(setModels, (e: Error) => setError(e.message));
@@ -194,6 +202,7 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
             </button>
           </div>
           <LinksPanel roomId={roomId} setup={setup} />
+          <HumanStatus participants={setup.participants} seats={setup.seats} />
           <RuleCard text={setup.ruleCardPreview} />
         </div>
       </div>
@@ -487,6 +496,7 @@ function SeatsPanel({ setup, catalog, models, roomId, token, patchSeat, patch, f
           <SeatRow
             key={s.seat}
             s={s}
+            seatToken={setup.tokens.seats.find((t) => t.seat === s.seat)!.token}
             catalog={catalog}
             models={models}
             open={open === s.seat}
@@ -538,6 +548,7 @@ function ModelOptions({ models }: { models: ModelPresetView[] }) {
 
 function SeatRow({
   s,
+  seatToken,
   catalog,
   models,
   open,
@@ -548,6 +559,7 @@ function SeatRow({
   flush,
 }: {
   s: SeatConfigView;
+  seatToken: string;
   catalog: Catalog;
   models: ModelPresetView[];
   open: boolean;
@@ -609,7 +621,7 @@ function SeatRow({
           <ModelOptions models={models} />
         </select>
       ) : (
-        <div className="small muted">真人操作，把座位链接发给对应玩家</div>
+        <a className="btn sm" href={link('seat', roomId, seatToken)} target="_blank" rel="noreferrer">进入真人座位</a>
       )}
       {s.controller === 'ai' ? (
         <button className="btn sm" disabled={testing} onClick={() => void runTest()}>

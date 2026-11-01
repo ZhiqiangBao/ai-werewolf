@@ -87,6 +87,9 @@ export interface ToolCall {
   args: Record<string, unknown>;
 }
 
+/** 真人和模型最终都提交同一种工具调用；网页必须绑定决策窗口。 */
+export interface SeatActionInput extends ToolCall { decisionId: string }
+
 export type JsonSchema = Record<string, unknown>;
 
 export function paramToJsonSchema(p: ParamSpec): JsonSchema {
@@ -143,6 +146,8 @@ export interface RuleSet {
   /** 缺省为历史 v1；新开局使用显式单动作工具 v2。随规则存档，便于精确恢复与重放。 */
   toolsetVersion?: 1 | 2;
   presetId: string;
+  /** 新版型的项目规则版本；旧房间缺省不补写历史。 */
+  presetVersion?: number;
   presetName: string;
   playerCount: number;
   /** 身份多重集，长度等于人数。 */
@@ -180,6 +185,7 @@ export interface RoleInfo {
 
 export interface PresetInfo {
   id: string;
+  version?: number;
   name: string;
   description: string;
   playerCount: number;
@@ -211,7 +217,7 @@ export interface SeatInfo {
   active?: boolean;
 }
 
-/** 仅发送给实际拥有该信息的座位；阵营查验不携带具体身份。 */
+/** 只有实际获知该信息的座位收到；查验表现不等于引擎真实身份。 */
 export type IdentityKnowledge =
   | { seat: Seat; kind: 'alignment'; alignment: 'good' | 'wolf'; source: 'teammate' | 'inspection' }
   | { seat: Seat; kind: 'role'; role: string; roleName: string; source: 'teammate' | 'inspection' };
@@ -278,6 +284,8 @@ export interface Projection {
   task: PendingTask | null;
   /** 不阻塞流程、随时可用的工具（例如发言阶段的自爆）。 */
   interrupts: ToolSpec[];
+  /** 插入行动所属的窗口，避免刷新前的自爆等误落在下一段发言。 */
+  actionWindowId?: string;
   result?: GameResult;
   /** 上帝看全部，座位只看自己。旁观没有这个字段。 */
   thoughts?: Thought[];
@@ -385,7 +393,11 @@ export interface RoomSetupView {
   tokens: RoomLinks;
   ruleCardPreview: string;
   validationErrors: string[];
+  participants: HumanParticipant[];
 }
+
+export interface HumanParticipant { seat: Seat; joined: boolean; ready: boolean; online: boolean }
+export interface ParticipantInput { name?: string; ready?: boolean }
 
 export interface RoomSetupInput {
   presetId?: string;
@@ -416,6 +428,9 @@ export interface RoomBrief {
   seat?: Seat;
   presetName: string;
   seats: { seat: Seat; name: string; controller: Controller }[];
+  participants?: HumanParticipant[];
+  /** 候场时也能阅读本局规则，不包含发牌与私密配置。 */
+  ruleCard?: string;
 }
 
 export interface ViewResponse {

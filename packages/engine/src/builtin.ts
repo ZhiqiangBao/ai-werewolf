@@ -8,8 +8,10 @@ import { seer } from './roles/seer';
 import { villager } from './roles/villager';
 import { werewolf } from './roles/werewolf';
 import { witch } from './roles/witch';
+import { mirrorMaiden } from './roles/mirror-maiden';
+import { awakenedWolf } from './roles/awakened-wolf';
 
-export const BUILTIN_ROLES = [werewolf, villager, seer, witch, hunter, guard, idiot];
+export const BUILTIN_ROLES = [werewolf, villager, seer, witch, hunter, guard, idiot, mirrorMaiden, awakenedWolf];
 
 let registered = false;
 

@@ -39,7 +39,7 @@ export function Logo({ size = 36 }: { size?: number }) {
 }
 
 export function RoleIcon({ role, size = 24 }: { role?: string; size?: number }) {
-  if (role === 'werewolf') return <Logo size={size} />;
-  const name: IconName = role === 'seer' ? 'eye' : role === 'witch' ? 'potion' : role === 'hunter' ? 'target' : role === 'guard' ? 'shield' : role === 'idiot' ? 'spark' : 'person';
+  if (role === 'werewolf' || role === 'awakened_wolf') return <Logo size={size} />;
+  const name: IconName = role === 'seer' || role === 'mirror_maiden' ? 'eye' : role === 'witch' ? 'potion' : role === 'hunter' ? 'target' : role === 'guard' ? 'shield' : role === 'idiot' ? 'spark' : 'person';
   return <Icon name={name} size={size} />;
 }

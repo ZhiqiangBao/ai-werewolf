@@ -99,6 +99,8 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL): Promise
       return send(res, 200, manager.view(roomId, token));
     case 'POST act':
       return send(res, 200, manager.act(roomId, token, await readBody(req)));
+    case 'POST participate':
+      return send(res, 200, manager.participate(roomId, token, await readBody(req)));
     case 'GET stream':
       return stream(req, res, roomId, token);
     case 'GET audit':
@@ -123,6 +125,7 @@ const MIME: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.webp': 'image/webp',
   '.ico': 'image/x-icon',
   '.json': 'application/json',
   '.woff2': 'font/woff2',

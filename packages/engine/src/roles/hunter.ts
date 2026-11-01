@@ -86,12 +86,14 @@ export const hunter: RoleModule = {
           ctx.priv([seat], 'hunter.decline', '你放弃了开枪。', {});
           if (ctx.opt<boolean>('hunter.declineReveals')) {
             ctx.player(seat).revealed = true;
+            ctx.player(seat).revealedAs = 'hunter';
             ctx.pub('hunter.decline', `${seatLabel(seat)}是猎人，放弃开枪。`, { seat });
           }
           return;
         }
         const own = ctx.state.deaths.find((d) => d.seat === seat);
         ctx.player(seat).revealed = true;
+        ctx.player(seat).revealedAs = 'hunter';
         ctx.kill(target, {
           via: 'shot',
           causes: ['shot'],

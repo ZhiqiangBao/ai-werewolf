@@ -20,6 +20,8 @@ import type {
   SeatTestResult,
   ToolCall,
   ToolSpec,
+  ParticipantInput,
+  HumanParticipant,
   ViewResponse,
 } from '@werewolf/protocol';
 import {
@@ -263,6 +265,7 @@ export class RoomManager {
       hostToken: token(),
       spectatorToken: token(),
       seatTokens: preset.roles.map(() => token()),
+      participants: {},
       status: 'setup',
       paused: false,
       presetId: preset.id,
@@ -296,6 +299,7 @@ export class RoomManager {
       aiPacingMs: src.aiPacingMs,
       seats: structuredClone(src.seats),
       seatTokens: src.seats.map(() => token()),
+      participants: {},
     });
     this.flush(live);
     return created;
@@ -309,6 +313,7 @@ export class RoomManager {
     const live = this.host(roomId, tok);
     const rec = live.rec;
     if (rec.status !== 'setup') throw new ApiFailure(409, 'ALREADY_STARTED', '对局已经开始，不能再修改配置');
+    const previousRules = buildRuleCard(buildRules(rec.presetId, rec.ruleValues));
     if (input.presetId !== undefined && input.presetId !== rec.presetId) {
       let roles: string[];
       try {
@@ -339,6 +344,12 @@ export class RoomManager {
     if (input.humanTimeoutSec !== undefined) rec.humanTimeoutSec = Math.round(clamp(input.humanTimeoutSec, 0, 3600, 90));
     if (input.aiPacingMs !== undefined) rec.aiPacingMs = Math.round(clamp(input.aiPacingMs, 0, 10000, 1200));
     for (const s of input.seats ?? []) this.applySeat(rec, s);
+    if (previousRules !== buildRuleCard(buildRules(rec.presetId, rec.ruleValues))) {
+      for (const p of Object.values(rec.participants ?? {})) p.ready = false;
+    }
+    for (const s of input.seats ?? []) {
+      if (s.controller !== undefined && rec.participants) delete rec.participants[s.seat];
+    }
     this.changed(live);
     return this.setupView(rec);
   }
@@ -422,6 +433,7 @@ export class RoomManager {
   private setupErrors(rec: RoomRecord): string[] {
     const errors = validateRules(buildRules(rec.presetId, rec.ruleValues));
     for (const s of rec.seats) {
+      if (s.controller === 'human' && rec.participants && !rec.participants[s.seat]?.ready) errors.push(`${s.seat}号：等待真人进入座位并确认准备`);
       if (s.controller !== 'ai' || s.adapter !== 'openai_compatible') continue;
       if (!s.baseUrl) errors.push(`${s.seat}号：没有填写接口地址`);
       if (!s.model) errors.push(`${s.seat}号：没有填写模型名`);
@@ -450,6 +462,7 @@ export class RoomManager {
       },
       ruleCardPreview: buildRuleCard(rules),
       validationErrors: rec.status === 'setup' ? this.setupErrors(rec) : [],
+      participants: this.participants(rec),
     };
   }
 
@@ -516,6 +529,24 @@ export class RoomManager {
   // 投影、行动、订阅
   // -------------------------------------------------------------------------
 
+  /** 座位凭证只能修改本人昵称和准备状态。运行中可重新接入，不改变任何对局事实。 */
+  participate(roomId: string, tok: string, input: ParticipantInput): ViewResponse {
+    const { live, viewer } = this.resolve(roomId, tok);
+    if (viewer.role !== 'seat') throw new ApiFailure(403, 'FORBIDDEN', '只有座位凭证可以接入真人玩家');
+    const rec = live.rec, seat = rec.seats[viewer.seat - 1];
+    if (seat.controller !== 'human') throw new ApiFailure(409, 'NOT_HUMAN_SEAT', '这个座位由模型控制');
+    if (input.ready !== undefined && typeof input.ready !== 'boolean') throw new ApiFailure(400, 'BAD_REQUEST', '准备状态必须是布尔值');
+    if (input.name !== undefined && (typeof input.name !== 'string' || !input.name.trim() || [...input.name.trim()].length > 12)) throw new ApiFailure(400, 'BAD_REQUEST', '昵称须为 1–12 个字符');
+    if (rec.status !== 'setup' && (input.name !== undefined || input.ready !== undefined)) throw new ApiFailure(409, 'ALREADY_STARTED', '开局后不能修改昵称或准备状态');
+    rec.participants ??= {};
+    const participant = rec.participants[viewer.seat] ??= { joined: false, ready: false };
+    participant.joined = true;
+    if (input.name !== undefined) seat.name = input.name.trim();
+    if (input.ready !== undefined) participant.ready = input.ready;
+    this.changed(live);
+    return this.view(roomId, tok);
+  }
+
   /** 视角只由凭证决定。请求里的任何「视角」参数都不会提升权限。 */
   view(roomId: string, tok: string): ViewResponse {
     const { live, viewer } = this.resolve(roomId, tok);
@@ -530,7 +561,9 @@ export class RoomManager {
     if (rec.status !== 'running' || !rec.state) throw new ApiFailure(409, 'NOT_RUNNING', '对局不在进行中');
     if (rec.seats[viewer.seat - 1].controller !== 'human') throw new ApiFailure(409, 'NOT_HUMAN_SEAT', '这个座位由模型控制');
     if (rec.paused) throw new ApiFailure(409, 'PAUSED', '对局已暂停');
-    const args = body.args && typeof body.args === 'object' && !Array.isArray(body.args) ? (body.args as Record<string, unknown>) : {};
+    if (typeof body.decisionId !== 'string' || !body.decisionId) throw new ApiFailure(400, 'BAD_REQUEST', '行动必须带上决策标识，请刷新后再提交');
+    if (typeof body.tool !== 'string' || !body.args || typeof body.args !== 'object' || Array.isArray(body.args)) throw new ApiFailure(400, 'BAD_REQUEST', '行动须包含工具名称和参数对象');
+    const args = body.args as Record<string, unknown>;
     const input: SubmitInput = {
       seat: viewer.seat,
       call: { tool: typeof body.tool === 'string' ? body.tool : '', args },
@@ -545,7 +578,10 @@ export class RoomManager {
     const { live, viewer } = this.resolve(roomId, tok);
     const sub: Subscriber = { viewer, send, sig: this.signature(live.rec, viewer), count: 0 };
     live.subscribers.add(sub);
-    return () => live.subscribers.delete(sub);
+    // 新订阅的响应头尚未写出；仅向已经建立的其他连接通知在线变化。
+    sub.sig = this.signature(live.rec, viewer);
+    this.notify(live);
+    return () => { live.subscribers.delete(sub); this.notify(live); };
   }
 
   audit(roomId: string, tok: string): AuditEntry[] {
@@ -638,7 +674,17 @@ export class RoomManager {
       ...(viewer.role === 'seat' ? { seat: viewer.seat } : {}),
       presetName: rec.rules?.presetName ?? getPreset(rec.presetId).name,
       seats: rec.seats.map((s) => ({ seat: s.seat, name: s.name, controller: s.controller })),
+      participants: this.participants(rec),
+      ...(rec.status === 'setup' ? { ruleCard: buildRuleCard(buildRules(rec.presetId, rec.ruleValues)) } : {}),
     };
+  }
+
+  private participants(rec: RoomRecord): HumanParticipant[] {
+    const subscribers = this.rooms.get(rec.id)?.subscribers;
+    return rec.seats.filter((s) => s.controller === 'human').map((s) => ({
+      seat: s.seat, joined: rec.participants?.[s.seat]?.joined ?? false, ready: rec.participants?.[s.seat]?.ready ?? false,
+      online: !!subscribers && [...subscribers].some((sub) => sub.viewer.role === 'seat' && sub.viewer.seat === s.seat),
+    }));
   }
 
   private visibleThoughts(rec: RoomRecord, viewer: Viewer) {
@@ -666,11 +712,11 @@ export class RoomManager {
   }
 
   private signature(rec: RoomRecord, viewer: Viewer): string {
-    if (!rec.state) return JSON.stringify([rec.status]);
+    const room = [rec.status, rec.paused, rec.seats.map((s) => [s.seat, s.name, s.controller]), this.participants(rec)];
+    if (!rec.state) return JSON.stringify([room, rec.presetId, rec.ruleValues]);
     const p = this.project(rec, viewer);
     return JSON.stringify([
-      rec.status,
-      rec.paused,
+      room,
       p.version,
       p.stage,
       p.task?.decisionId ?? null,

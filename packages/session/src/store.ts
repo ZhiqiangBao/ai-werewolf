@@ -17,6 +17,8 @@ export interface RoomRecord {
   hostToken: string;
   spectatorToken: string;
   seatTokens: string[];
+  /** 旧房间缺省不强制候场确认；新房间为每个真人保存确认状态。 */
+  participants?: Record<number, { joined: boolean; ready: boolean }>;
   status: 'setup' | 'running' | 'ended';
   paused: boolean;
   presetId: string;

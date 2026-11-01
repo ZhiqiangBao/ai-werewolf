@@ -23,6 +23,13 @@ function god(m: RoomManager, roomId: string, hostToken: string): GodProjection {
   return m.view(roomId, hostToken).projection as GodProjection;
 }
 
+function readyHumans(m: RoomManager, roomId: string, hostToken: string) {
+  const s = m.getSetup(roomId, hostToken);
+  for (const human of s.seats.filter((seat) => seat.controller === 'human')) {
+    m.participate(roomId, s.tokens.seats[human.seat - 1].token, { ready: true });
+  }
+}
+
 describe('会话：模拟玩家整局', () => {
   for (const presetId of ['classic9', 'standard12', 'idiot12']) {
     it(`${presetId}：无密钥时模拟玩家能打完并产生胜负（SYS-04）`, async () => {
@@ -124,6 +131,7 @@ describe('真人座位', () => {
   it('真人通过接口提交行动，模型座位等待真人后继续，直到终局', async () => {
     const { m, roomId, hostToken, seatToken } = setup();
     m.updateSetup(roomId, hostToken, { presetId: 'classic9', aiPacingMs: 0, seats: [{ seat: 2, controller: 'human' } as never] });
+    readyHumans(m, roomId, hostToken);
     m.start(roomId, hostToken);
     const tok = seatToken(2);
     for (let i = 0; i < 500; i++) {
@@ -142,12 +150,13 @@ describe('真人座位', () => {
   it('过期决策被拒绝；非法行动只回给本人；开局后配置锁定', async () => {
     const { m, roomId, hostToken, seatToken } = setup();
     m.updateSetup(roomId, hostToken, { aiPacingMs: 0, seats: Array.from({ length: 12 }, (_, i) => ({ seat: i + 1, controller: 'human' }) as never) });
+    readyHumans(m, roomId, hostToken);
     m.start(roomId, hostToken);
     await m.whenIdle(roomId);
     const g = god(m, roomId, hostToken);
     const actor = g.god.pending!.actors[0].seat;
     const villager = g.god.roles.find((r) => r.role === 'villager' && r.seat !== actor)!.seat;
-    const r = m.act(roomId, seatToken(villager), { tool: 'wolf_kill', args: { target: 1 } });
+    const r = m.act(roomId, seatToken(villager), { decisionId: g.god.pending!.decisionId, tool: 'wolf_kill', args: { target: 1 } });
     expect(r.ok).toBe(false);
     expect(m.act(roomId, seatToken(actor), { decisionId: 'stale', tool: 'x', args: {} }).error?.code).toBe('STALE_DECISION');
     const pub = m.view(roomId, m.getSetup(roomId, hostToken).tokens.spectator).projection!;
@@ -165,6 +174,7 @@ describe('真人座位', () => {
       humanTimeoutSec: 30,
       seats: Array.from({ length: 12 }, (_, i) => ({ seat: i + 1, controller: 'human' }) as never),
     });
+    readyHumans(m, roomId, hostToken);
     m.start(roomId, hostToken);
     const actor = god(m, roomId, hostToken).god.pending!.actors[0].seat;
     const task = (m.view(roomId, seatToken(actor)).projection as Projection).task!;
@@ -194,6 +204,7 @@ describe('真人座位', () => {
       humanTimeoutSec: 30,
       seats: Array.from({ length: 12 }, (_, i) => ({ seat: i + 1, controller: 'human' }) as never),
     });
+    readyHumans(m, roomId, hostToken);
     m.start(roomId, hostToken);
     const seen = { speech: false, vote: false };
     const checked = new Set<string>();
@@ -405,7 +416,7 @@ describe('模型调度', () => {
     expect(seerText.indexOf('seer_inspect')).toBeGreaterThan(seerText.indexOf('天黑请闭眼'));
     const witch = roles.find((r) => r.role === 'witch')!.seat;
     const witchText = blob(witch);
-    // This room uses no self-save: a witch who is the knife target never receives a save action.
+    // 禁止自救时，随机发牌的女巫可能首夜中刀，不能假设一定出现救人菜单。
     const saveOpportunity = events.some((e) => e.type === 'witch.knife' && Array.isArray(e.audience) && e.audience.includes(witch) && typeof e.payload.knife === 'number' && e.payload.knife !== witch);
     expect(witchText.includes('witch_save')).toBe(saveOpportunity);
     expect(witchText.includes('witch_poison')).toBe(true);

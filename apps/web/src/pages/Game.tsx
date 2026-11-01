@@ -11,6 +11,7 @@ import { AvatarStylePicker } from '../components/AvatarStylePicker';
 import { SeatRing } from '../components/SeatRing';
 import { TaskPanel } from '../components/TaskPanel';
 import { ThoughtFeed } from '../components/ThoughtFeed';
+import { HumanLobby, HumanStatus } from '../components/HumanPlayers';
 import { downloadVideoScript } from '../video';
 import { phaseLabel, seatName } from '../util';
 import { LinksPanel, Setup } from './Setup';
@@ -162,6 +163,7 @@ function HostGame({ roomId, token, room, projection: p, refresh }: { roomId: str
         <div className="game">
           <div className="game-left">
             {p.result && <ResultBanner result={p.result} />}
+            <HumanStatus participants={room.participants ?? []} seats={room.seats} />
             <div className="panel">
               <SeatRing projection={p} room={room} catalog={catalog} roles={p.god.roles} />
             </div>
@@ -227,32 +229,40 @@ export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
     return (
       <>
         <TopBar room={room} projection={null} who={who} />
-        <div className="center-screen">
+        {human ? <HumanLobby room={room} token={token} refresh={refresh} /> : <div className="center-screen">
           <div>
             <h2>你是 {seatName(room.seat)}</h2>
             <p className="muted">等待房主开局。开局后身份会随机发放，这个页面会自动刷新。</p>
             {!human && <p className="muted small">这个座位目前由 AI 控制，你只能旁观它的视角。</p>}
           </div>
-        </div>
+        </div>}
       </>
     );
   }
 
   const p = data.projection;
-  const act = async (call: ToolCall, decisionId?: string): Promise<string | null> => {
+  const act = async (call: ToolCall, decisionId: string): Promise<string | null> => {
     try {
-      const r = await api.act(roomId, token, decisionId, call);
+      const r = await api.act(roomId, token, { decisionId, ...call });
       await refresh();
       return r.ok ? null : (r.error?.message ?? '行动没有被接受');
     } catch (e) {
+      await refresh();
       return (e as Error).message;
     }
   };
 
   return (
     <>
-      <TopBar room={room} projection={p} who={who} />
+      <TopBar room={room} projection={p} who={who}>
+        {human && p.task && !p.task.submitted && !room.paused && (
+          <button className="btn sm primary" aria-label={`前往行动：${p.task.title}`} onClick={() => document.getElementById('player-action')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+            轮到你了
+          </button>
+        )}
+      </TopBar>
       <div className="wrap game-wrap">
+        {error && <div className="error-box" role="alert">连接中断：{error}。草稿保留，恢复连接后再提交。</div>}
         <div className="game">
           <div className="game-left">
             {p.result && <ResultBanner result={p.result} />}

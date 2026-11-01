@@ -19,7 +19,11 @@ export function buildRuleCard(rules: RuleSet): string {
   const v = rules.values;
   const mods = modulesIn(rules);
   const phaseOwner = new Map<string, RoleModule>();
-  for (const m of mods) if (m.nightPhase) phaseOwner.set(m.nightPhase.id, m);
+  const phaseNames = new Map<string, string>();
+  for (const m of mods) {
+    if (m.nightPhase) { phaseOwner.set(m.nightPhase.id, m); phaseNames.set(m.nightPhase.id, m.name); }
+    for (const phase of m.nightPhases ?? []) { phaseOwner.set(phase.id, m); phaseNames.set(phase.id, phase.name); }
+  }
   const gods = mods.filter((m) => m.category === 'god').map((m) => m.name);
   const hasHunter = mods.some((m) => m.id === 'hunter');
   const canExplode = mods.some((m) => m.canExplode) && v['explode.enabled'] === true;
@@ -37,14 +41,14 @@ export function buildRuleCard(rules: RuleSet): string {
 
   L.push('二、夜晚');
   L.push(
-    `· 先夜后日。夜间顺序：${rules.nightOrder.map((id) => phaseOwner.get(id)?.name ?? id).join(' → ')}。该身份已无人存活时跳过。`,
+    `· 先夜后日。夜间顺序：${rules.nightOrder.map((id) => phaseNames.get(id) ?? id).join(' → ')}。没有可行动者时跳过。`,
   );
-  for (const id of rules.nightOrder) {
-    for (const line of phaseOwner.get(id)?.ruleCard?.(rules) ?? []) L.push(`· ${line}`);
+  for (const mod of new Set(rules.nightOrder.map((id) => phaseOwner.get(id)))) {
+    for (const line of mod?.ruleCard?.(rules) ?? []) L.push(`· ${line}`);
   }
   L.push('· 天亮只公布出局名单，不公布死因；出局不公布身份。');
 
-  const dayRoles = mods.filter((m) => !m.nightPhase && m.ruleCard);
+  const dayRoles = mods.filter((m) => !m.nightPhase && !m.nightPhases?.length && m.ruleCard);
   if (dayRoles.length) {
     L.push('三、其他身份');
     for (const m of dayRoles) for (const line of m.ruleCard?.(rules) ?? []) L.push(`· ${line}`);

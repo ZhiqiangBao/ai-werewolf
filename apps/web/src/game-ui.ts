@@ -4,7 +4,7 @@ export interface VisibleIdentity {
   role?: string;
   name?: string;
   tone?: 'wolf' | 'villager';
-  source?: 'self' | 'god' | 'teammate' | 'inspection';
+  source?: 'self' | 'god' | 'teammate' | 'inspection' | 'public';
 }
 
 /** Only authority-scoped knowledge can reveal another seat; never read its actual hidden role. */
@@ -13,8 +13,16 @@ export function seatIdentity(p: Pick<Projection, 'viewer' | 'me' | 'events'>, se
     const identity = roles?.find((r) => r.seat === seat.seat);
     return identity ? { role: identity.role, name: identity.roleName, source: 'god' } : {};
   }
+  if (p.viewer.kind === 'seat' && p.me?.seat === p.viewer.seat && p.me.seat === seat.seat) return { role: p.me.role, name: p.me.roleName, source: 'self' };
+  const announced = p.events.some((e) => e.audience === 'public' && (
+    (e.type === 'hunter.shot' && e.payload.shooter === seat.seat && seat.revealedRole === 'hunter') ||
+    (e.type === 'hunter.decline' && e.payload.seat === seat.seat && seat.revealedRole === 'hunter') ||
+    (e.type === 'explode' && e.payload.seat === seat.seat) ||
+    (e.type === 'idiot.flip' && e.payload.seat === seat.seat && seat.revealedRole === 'idiot') ||
+    (e.type === 'review' && Array.isArray(e.payload.roles) && e.payload.roles.some((r) => r && r.seat === seat.seat && r.role === seat.revealedRole))
+  ));
+  if (announced && seat.revealedRole && seat.revealedRoleName) return { role: seat.revealedRole, name: seat.revealedRoleName, source: 'public' };
   if (p.viewer.kind !== 'seat' || p.me?.seat !== p.viewer.seat) return {};
-  if (p.me.seat === seat.seat) return { role: p.me.role, name: p.me.roleName, source: 'self' };
   const known = p.me.knownIdentities?.findLast((k) => k.seat === seat.seat);
   if (known?.kind === 'role') return { role: known.role, name: known.roleName, source: known.source };
   if (known?.kind === 'alignment') return { name: known.alignment === 'wolf' ? '狼人' : '好人', tone: known.alignment === 'wolf' ? 'wolf' : 'villager', source: known.source };

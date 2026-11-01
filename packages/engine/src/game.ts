@@ -39,6 +39,10 @@ export class RulesError extends Error {
 }
 
 const FALLBACK_TEXT: Record<string, string> = {
+  mirror_inspect: '本夜不查验',
+  awakened_wait: '保留模仿机会',
+  awakened_empty_kill: '继承狼刀记为空刀',
+  awakened_skip_skill: '本夜不用模仿技能',
   speak: '本段发言记为「我这轮过。」',
   wolf_discuss: '密谈记为「过。」',
   wolf_kill: '你的落刀记为空刀',
@@ -141,6 +145,7 @@ function apply(ctx: Ctx, input: SubmitInput): RuleError | null {
     args: input.call?.args && typeof input.call.args === 'object' ? input.call.args : {},
   };
   const d = s.pending;
+  if (input.decisionId && input.decisionId !== d?.id) return err('STALE_DECISION', '这个决策已经结束，请刷新后重新选择');
   const inTask = !!d && d.actors.includes(input.seat) && !d.submissions[input.seat] && d.tools[input.seat].some((t) => t.name === call.tool);
 
   if (!inTask && !input.auto) {

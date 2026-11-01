@@ -16,8 +16,8 @@ function seatsInfo(state: GameState): SeatInfo[] {
   return state.players.map((p) => {
     const info: SeatInfo = { seat: p.seat, name: p.name, alive: p.alive, sheriff: state.sheriff === p.seat };
     if (p.revealed || showRoles) {
-      info.revealedRole = p.role;
-      info.revealedRoleName = getRole(p.role).name;
+      info.revealedRole = showRoles ? p.role : (p.revealedAs ?? p.role);
+      info.revealedRoleName = getRole(info.revealedRole).name;
     }
     if (state.pending?.publicActor === p.seat) info.active = true;
     return info;
@@ -97,6 +97,7 @@ export function projectSeat(state: GameState, events: GameEvent[], seat: Seat): 
     proj.interrupts = interruptsIn(state.rules)
       .filter((i) => !taskTools.has(i.tool) && i.available(ctx, seat))
       .map((i) => i.spec(ctx, seat));
+    if (proj.interrupts.length && d) proj.actionWindowId = d.id;
   }
   return proj;
 }

@@ -14,7 +14,7 @@ import {
 } from '../src/index';
 import { makeRand, randomCall, type Rand } from './random';
 
-const SECRET_TYPES = /^(wolf\.|witch\.|guard\.|seer\.|role\.assigned|action\.)/;
+const SECRET_TYPES = /^(wolf\.|witch\.|guard\.|seer\.|mirror\.|awakened\.|role\.assigned|action\.)/;
 const RULE_REJECTIONS = ['SAME_NIGHT_BOTH_POTIONS'];
 
 function randomValues(r: Rand): Record<string, unknown> {

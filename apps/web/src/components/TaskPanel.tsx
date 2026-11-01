@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ParamSpec, Projection, ToolCall, ToolSpec } from '@werewolf/protocol';
 import { useNow } from '../hooks';
 import { seatName, seatStyle } from '../util';
@@ -114,19 +114,25 @@ function ParamInput({ p, value, onChange, onSubmit }: { p: ParamSpec; value: unk
 }
 
 /** 通用表单：按工具的参数描述生成输入控件，新身份的工具不需要改网页。 */
-export function ToolForm({ tool, busy, disabled, onSubmit }: { tool: ToolSpec; busy: boolean; disabled?: boolean; onSubmit: (call: ToolCall) => void }) {
-  const [values, setValues] = useState<Values>({});
+export function ToolForm({ tool, busy, disabled, draftKey, onSubmit }: { tool: ToolSpec; busy: boolean; disabled?: boolean; draftKey?: string; onSubmit: (call: ToolCall) => void }) {
+  const [values, setValues] = useState<Values>(() => {
+    try {
+      const saved: unknown = draftKey ? JSON.parse(sessionStorage.getItem(draftKey) ?? '{}') : {};
+      return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved as Values : {};
+    } catch { return {}; }
+  });
+  useEffect(() => {
+    if (!draftKey) return;
+    try { sessionStorage.setItem(draftKey, JSON.stringify(values)); } catch { /* 存储不可用时仍可行动。 */ }
+  }, [draftKey, values]);
   const ok = tool.params.every((p) => ready(p, values[p.name]));
   const submit = () => {
     if (!ok || busy || disabled) return;
-    if (!tool.params.length && !confirm(`确定要「${tool.title}」吗？\n${tool.description}`)) return;
+    if (['wolf_explode', 'badge_tear'].includes(tool.name) && !confirm(`确定要「${tool.title}」吗？提交后无法撤回。`)) return;
     onSubmit({ tool: tool.name, args: argsOf(tool, values) });
   };
   return (
     <div>
-      <div className="small muted" style={{ marginBottom: 10 }}>
-        {tool.description}
-      </div>
       {tool.params.map((p) => (
         <div key={p.name} className="param">
           <div className="label">{p.label}</div>
@@ -144,7 +150,7 @@ interface Props {
   projection: Projection;
   human: boolean;
   paused: boolean;
-  onAct: (call: ToolCall, decisionId?: string) => Promise<string | null>;
+  onAct: (call: ToolCall, decisionId: string) => Promise<string | null>;
 }
 
 /** 座位的行动区：当前任务 + 随时可用的插入行动（例如自爆）。 */
@@ -154,16 +160,26 @@ export function TaskPanel({ projection: p, human, paused, onAct }: Props) {
   const [picked, setPicked] = useState({ id: '', idx: 0 });
   const [failure, setFailure] = useState({ id: '', msg: '' });
   const [busy, setBusy] = useState(false);
+  const inflight = useRef(false);
+  const [receipt, setReceipt] = useState('');
   const now = useNow(500);
   const toolIdx = picked.id === current ? picked.idx : 0;
   const error = failure.id === current ? failure.msg : '';
 
-  const run = async (call: ToolCall, decisionId?: string) => {
+  const run = async (call: ToolCall, decisionId: string) => {
+    if (inflight.current) return;
+    inflight.current = true;
     setBusy(true);
     setFailure({ id: current, msg: '' });
     try {
-      setFailure({ id: current, msg: (await onAct(call, decisionId)) ?? '' });
+      const msg = await onAct(call, decisionId);
+      setFailure({ id: current, msg: msg ?? '' });
+      if (!msg) {
+        setReceipt(`已提交：${[...(task?.tools ?? []), ...p.interrupts].find((t) => t.name === call.tool)?.title ?? '行动'}。法官已接受。`);
+        try { sessionStorage.removeItem(`werewolf.draft:${p.gameId}:${p.me?.seat}:${decisionId}:${call.tool}`); } catch { /* 可继续游戏。 */ }
+      }
     } finally {
+      inflight.current = false;
       setBusy(false);
     }
   };
@@ -172,8 +188,9 @@ export function TaskPanel({ projection: p, human, paused, onAct }: Props) {
   const interrupts = human && p.me?.alive ? p.interrupts : [];
   if (!task && !interrupts.length) {
     return (
-      <div className="panel">
+      <div className="panel" id="player-action" aria-label="我的行动">
         <h3>行动</h3>
+        {receipt && <div className="note-box small" role="status">{receipt}</div>}
         <div className="muted small">现在不需要你行动。{p.stage ? `当前：${p.stage}。` : ''}</div>
       </div>
     );
@@ -183,14 +200,15 @@ export function TaskPanel({ projection: p, human, paused, onAct }: Props) {
   const tool = task ? task.tools[Math.min(toolIdx, task.tools.length - 1)] : null;
 
   return (
-    <div className="panel task">
+    <div className="panel task" id="player-action" aria-label="我的行动">
+      {receipt && <div className="note-box small" role="status">{receipt}</div>}
       {task && (
         <>
           <h3>
             {task.title}
             <span className="spacer" />
             {task.simultaneous && <span className="tag">同时行动</span>}
-            {left !== null && !task.submitted && (
+            {left !== null && !task.submitted && !paused && (
               <span className={`countdown ${left <= 15 ? 'urgent' : ''}`}>
                 {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}
               </span>
@@ -219,6 +237,7 @@ export function TaskPanel({ projection: p, human, paused, onAct }: Props) {
                 <ToolForm
                   key={`${task.decisionId}:${tool.name}`}
                   tool={tool}
+                  draftKey={`werewolf.draft:${p.gameId}:${p.me?.seat}:${task.decisionId}:${tool.name}`}
                   busy={busy}
                   disabled={paused}
                   onSubmit={(call) => run(call, task.decisionId)}
@@ -232,7 +251,7 @@ export function TaskPanel({ projection: p, human, paused, onAct }: Props) {
       {interrupts.map((t) => (
         <div key={t.name} style={{ marginTop: task ? 14 : 0, paddingTop: task ? 12 : 0, borderTop: task ? '1px dashed var(--line)' : 0 }}>
           <div className="small muted" style={{ marginBottom: 6 }}>随时可用</div>
-          <ToolForm key={`intr:${p.task?.decisionId ?? ''}:${t.name}`} tool={t} busy={busy} disabled={paused} onSubmit={(call) => run(call)} />
+          <ToolForm key={`intr:${p.actionWindowId ?? ''}:${t.name}`} tool={t} busy={busy} disabled={paused || !p.actionWindowId} onSubmit={(call) => { if (p.actionWindowId) return run(call, p.actionWindowId); }} />
         </div>
       ))}
       {error && (

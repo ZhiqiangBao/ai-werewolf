@@ -50,6 +50,21 @@ describe('按实际知情范围显示身份', () => {
     expect(seatIdentity(view, view.seats[5])).toEqual({ role: 'witch', name: '女巫', source: 'inspection' });
     expect(seatIdentity({ ...view, viewer: { kind: 'spectator' } }, view.seats[5])).toEqual({});
   });
+  it('公开技能只显示已宣布的表面身份；私密旧查验不覆盖公开翻牌', () => {
+    const view = game().view(5);
+    const target = { ...view.seats[5], revealedRole: 'hunter', revealedRoleName: '猎人' };
+    view.me!.knownIdentities = [{ seat: 6, kind: 'role', role: 'witch', roleName: '女巫', source: 'inspection' }];
+    view.events.push(event('hunter.shot', { shooter: 6, target: 9, role: 'hunter' }));
+    expect(seatIdentity(view, target)).toEqual({ role: 'hunter', name: '猎人', source: 'public' });
+    expect(seatIdentity({ ...view, viewer: { kind: 'spectator' } }, target)).toEqual({ role: 'hunter', name: '猎人', source: 'public' });
+  });
+  it('正常终局可显示复盘底牌，流局不凭空揭示身份', () => {
+    const g = game(); g.until((x) => !!x.state.result);
+    const watch = g.spectator();
+    expect(watch.seats.every((s) => seatIdentity(watch, s).role === s.revealedRole)).toBe(true);
+    const target = { ...watch.seats[5], revealedRole: 'witch', revealedRoleName: '女巫' };
+    expect(seatIdentity({ ...watch, events: [] }, target)).toEqual({});
+  });
 });
 
 describe('公开座位状态', () => {

@@ -23,6 +23,7 @@ export const nightSteps: Record<string, StepHandler> = {
       s.night = { n: s.day, attacks: [], protections: [], lines: [] };
       s.dayState = { direction: null, firstSpeaker: null, anchor: null, electionToday: false };
       ctx.pub('phase', `第${s.day}夜，天黑请闭眼。`, { phase: 'night' });
+      for (const mod of ctx.modulesInGame()) mod.nightStart?.(ctx);
       ctx.pushFront(
         ...s.rules.nightOrder.map((id) => ({ type: `night:${id}` })),
         { type: 'night.resolve' },
@@ -65,6 +66,7 @@ export const nightSteps: Record<string, StepHandler> = {
         rows: rows.map((r) => ({ ...r.attack, blocked: r.blocked, blockers: r.blockers.map((b) => b.kind), causes: r.causes })),
         deaths,
       });
+      for (const mod of ctx.modulesInGame()) mod.afterNight?.(ctx);
       s.night = null;
     },
   },

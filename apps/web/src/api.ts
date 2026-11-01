@@ -12,6 +12,8 @@ import type {
   SeatTestResult,
   ToolCall,
   ViewResponse,
+  ParticipantInput,
+  SeatActionInput,
 } from '@werewolf/protocol';
 
 export class ApiError extends Error {
@@ -52,8 +54,9 @@ export const api = {
   start: (id: string, t: string) => request<RoomSetupView>('POST', `/rooms/${id}/start`, t),
   control: (id: string, t: string, action: ControlAction) => request<RoomBrief>('POST', `/rooms/${id}/control`, t, { action }),
   view: (id: string, t: string) => request<ViewResponse>('GET', `/rooms/${id}/view`, t),
-  act: (id: string, t: string, decisionId: string | undefined, call: ToolCall) =>
-    request<ActResult>('POST', `/rooms/${id}/act`, t, { decisionId, ...call }),
+  participate: (id: string, t: string, input: ParticipantInput) => request<ViewResponse>('POST', `/rooms/${id}/participate`, t, input),
+  act: (id: string, t: string, input: SeatActionInput) =>
+    request<ActResult>('POST', `/rooms/${id}/act`, t, input),
   audit: (id: string, t: string) => request<AuditEntry[]>('GET', `/rooms/${id}/audit`, t),
 };
 

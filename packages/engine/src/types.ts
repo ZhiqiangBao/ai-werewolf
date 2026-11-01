@@ -17,6 +17,8 @@ export interface PlayerState {
   alive: boolean;
   /** 身份是否已经公开（开枪、自爆、翻牌）。 */
   revealed: boolean;
+  /** 技能公开的表面身份；真实 role 始终用于阵营与胜负。 */
+  revealedAs?: string;
   /** 身份模块自己的私有状态，例如女巫药瓶、守卫上一夜守护对象。 */
   data: Record<string, any>;
 }
@@ -206,6 +208,8 @@ export interface RoleModule {
   options?: OptionDef[];
   /** 占用的夜间阶段，order 越小越早。 */
   nightPhase?: { id: string; order: number };
+  /** 一个身份可有多个夜间步骤，旧的单阶段声明仍然有效。 */
+  nightPhases?: { id: string; order: number; name: string }[];
   steps?: Record<string, StepHandler>;
   interrupts?: InterruptDef[];
   /** 公共规则卡里的技能说明。 */
@@ -214,8 +218,14 @@ export interface RoleModule {
   appendix?(ctx: Ctx, seat: Seat): string[];
   /** 该座位通过自身技能确实获知的信息，可区分阵营与具体身份。 */
   knowledge?(ctx: Ctx, seat: Seat): IdentityKnowledge[];
+  /** 具体身份查验的表现，不改变真实身份、阵营或能力。 */
+  inspectRole?(ctx: Ctx, seat: Seat): string;
   /** 开局：初始化私有状态、发送私密信息。 */
   setup?(ctx: Ctx, seats: Seat[]): void;
+  /** 新夜开始、任何夜间决策之前更新本身份的状态。 */
+  nightStart?(ctx: Ctx): void;
+  /** 夜间攻击结算后、天亮死亡职责之前启用延迟能力。 */
+  afterNight?(ctx: Ctx): void;
   /** 出局时产生的职责（例如猎人开枪），按返回顺序执行。 */
   onDeath?(ctx: Ctx, death: DeathRecord): Step[];
   /** 被放逐前调用，返回 true 表示放逐被身份能力接管（例如白痴翻牌）。 */
@@ -228,6 +238,7 @@ export interface RoleModule {
 
 export interface PresetDef {
   id: string;
+  version?: number;
   name: string;
   description: string;
   roles: string[];

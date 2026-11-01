@@ -32,6 +32,7 @@ export function engineCatalog(): { presets: PresetInfo[]; roles: RoleInfo[]; opt
   return {
     presets: allPresets().map((p) => ({
       id: p.id,
+      ...(p.version ? { version: p.version } : {}),
       name: p.name,
       description: p.description,
       playerCount: p.roles.length,

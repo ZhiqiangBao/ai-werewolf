@@ -25,8 +25,8 @@ export function deriveNightOrder(roles: string[]): string[] {
   const phases = new Map<string, number>();
   for (const id of new Set(roles)) {
     if (!hasRole(id)) continue;
-    const phase = getRole(id).nightPhase;
-    if (phase) phases.set(phase.id, phase.order);
+    const mod = getRole(id);
+    for (const phase of [...(mod.nightPhase ? [mod.nightPhase] : []), ...(mod.nightPhases ?? [])]) phases.set(phase.id, phase.order);
   }
   return [...phases.entries()].sort((a, b) => a[1] - b[1]).map(([id]) => id);
 }
@@ -57,6 +57,7 @@ export function buildRules(
   return {
     toolsetVersion: opts.toolsetVersion ?? 2,
     presetId: preset.id,
+    ...(preset.version ? { presetVersion: preset.version } : {}),
     presetName: opts.name ?? preset.name,
     playerCount: roles.length,
     roles,
