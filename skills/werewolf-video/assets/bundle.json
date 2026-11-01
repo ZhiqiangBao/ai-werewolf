@@ -1,0 +1,19 @@
+{
+  "format": "werewolf-video-skill-bundle",
+  "version": 3,
+  "pipelineFiles": 29,
+  "artFiles": 10,
+  "source": "scripts/video/",
+  "features": [
+    "preproduction-review",
+    "truthful-action-hosting",
+    "source-integrity",
+    "tts-provider-adapter",
+    "exact-request-audio-cache",
+    "all-role-rule-scroll",
+    "compact-vote-card",
+    "native-compact-export",
+    "strict-gpu-encoding"
+  ],
+  "generatedAt": "2026-11-01T01:30:02.410Z"
+}

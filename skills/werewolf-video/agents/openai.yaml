@@ -1,0 +1,4 @@
+interface:
+  display_name: "狼人杀对局视频工作流"
+  short_description: "从真实对局记录自动生成剧本、角色配音、字幕时间轴与完整上帝视角视频"
+  default_prompt: "使用 $werewolf-video 把最新已结束对局制作成完整配音视频，并交付字幕和时间轴。"
