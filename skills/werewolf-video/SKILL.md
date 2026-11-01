@@ -23,7 +23,7 @@ pnpm video:make --room=latest --prepare-only
 pnpm video:make --room=ID --resume
 ```
 
-这一条依次完成导出、材料准备、TTS、音频时间轴、直接小体积渲染、预览和检查；台词润色须先按上面的手册完成。第一遍编码就限制码率，最终只拼接视频并编码主音轨，不先生成大母版再压缩。已成功的音频与视频片段自动复用。没有 pnpm 可直接运行：
+这一条依次完成导出、材料准备、TTS、自动波形检查、音频时间轴、直接小体积渲染、预览和检查；台词润色须先按上面的手册完成。检测到破音时停止在检查点；已授权的范围内加 `--repair-audio` 可自动重配异常片段并复查。第一遍编码就限制码率，最终只拼接视频并编码主音轨，不先生成大母版再压缩。已成功的音频与视频片段自动复用。没有 pnpm 可直接运行：
 
 ```powershell
 node node_modules/tsx/dist/cli.mjs scripts/video/workflow.ts --room=ID --resume
@@ -43,6 +43,7 @@ node node_modules/tsx/dist/cli.mjs scripts/video/workflow.ts --room=ID --resume
 - 底栏左侧使用对应人物头像、编号、真实身份与昵称；法官使用法槌徽记，上帝解说使用眼睛与星芒徽记，各有固定标签与声线。字幕在右侧独立文字区垂直居中；保留“行动转述／系统托管”等来源标记。画面细则见 [制作前准备](references/preproduction.md)。
 - 使用实际 WAV 样本数与服务商真实时间戳/强制对齐。无时间戳时停止并做真实对齐；不估算阅读时长冒充正式时间轴。
 - 字幕文字以已确认的朗读稿为准，服务商时间戳标签只用于定位；必须核对字幕与原稿，不能把标签里的同音错字直接烧进视频。字词漏增或无法可靠对应时做真实对齐。
+- TTS 后检查原始波形，不能只看平均音量或归一化后的峰值。使用自动工具定位异常、有限次重配并复查；正常片段保持缓存。排查破音、使用独立工具或维护检测规则时读 [配音质量检查与定点修复](references/audio-quality.md)。
 - 当前成片是上帝视角，含私密夜间信息。玩家/闭眼版本需要先实现权限过滤，不能复用全知显示。
 - Qwen 仅用已获准的 Token Plan 凭据；程序在内存读取密钥，产物不包含密钥或房间令牌。鉴权、额度或限流失败时保留检查点并报告，不切换付费线路。
 
@@ -54,7 +55,8 @@ node node_modules/tsx/dist/cli.mjs scripts/video/workflow.ts --room=ID --resume
 - `--theme=campus|storybook|gufeng|fantasy|urban|future`：六套人物；更换后核对声音与人物是否相符。
 - `--voices=绝对路径`、`--narration=绝对路径`：显式使用已整理的配置。
 - `--tts-provider=ID --tts-adapter=文件路径`：显式接入其他 TTS；内置仍为 `qwen-token-plan`，不自动换服务或计费线路。
-- `--through=plan|tts|timeline|render|preview|verify`：停在完整的阶段检查点；旧文件再压缩是独立工具，不在默认流程中。
+- `--repair-audio`：波形检测失败时，仅重配异常片段，保留原文、固定声线与成功缓存，最多尝试三次；当前自动重配支持 Qwen Token Plan。
+- `--through=plan|tts|audit-audio|timeline|render|preview|verify`：停在完整的阶段检查点；旧文件再压缩是独立工具，不在默认流程中。
 
 默认单路编码；显存与性能判断读 [硬件说明](references/hardware.md)。批量配音、Qwen 特例和接入其他服务时，读 [批量 TTS 与适配器修改](references/tts-batch.md)，其中逐项说明改哪些文件、输出什么、怎么配置和验证。维护程序或适配新日志读 [程序设计](references/automation.md)；小体积交付见 [压缩方案](references/compression.md)。
 

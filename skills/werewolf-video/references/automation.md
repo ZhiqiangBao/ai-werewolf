@@ -4,7 +4,7 @@
 
 重新分发前运行 `node scripts/video/package-skill.mjs`。本仓库音频模块与网页语音共用 `packages/session/src/speech/`；打包器将对应实现放入技能的 `audio.ts`、`audio-cache.ts`、`qwen.ts`、`tts-types.ts` 并适配内部导入，不能把仅含重导出的本地入口直接作为独立模板。这样旧游戏仓库没有 `session/src/speech` 时仍能安装视频程序。
 
-新版 bundle 的 `assets/bundle.json` 为 version 5，包含底栏玩家头像、独立法官／上帝徽记、字幕居中文字区与按法官 cue 保留已审核连读／语速配置，保留主持、原话验证、TTS 适配、精确请求缓存、全身份规则滚动、原生小体积和强制 GPU 能力。已有仓库升级时，不能以 bootstrap 成功认定旧文件已更新：先查看本地改动，再对照 `assets/pipeline/` 合并对应文件；不要覆盖用户改动。尤其核对 `geometry.ts` 的共享字幕区域、`speaker.ts` 的身份标签、`scene.ts` 的底栏与场景版本、`timeline.ts` 的字幕坐标及原稿文字、`project.ts` 的 `judgeCues`、`editorial.ts` 的 `after`、`synthesize.ts` 的来源校验、`encoding.ts` 的有限码率和 `workflow.ts` 已移除的默认二次压缩阶段。游戏导出还需包含公开 `ruleCard`；旧导出缺失时重新导出，不能让模型凭印象补规则。
+新版 bundle 的 `assets/bundle.json` 为 version 6，在已有画面、主持、原话验证与精确缓存能力上增加自动波形检查和定点重配。已有仓库升级时，不能以 bootstrap 成功认定旧文件已更新：先查看本地改动，再对照 `assets/pipeline/` 合并对应文件；不要覆盖用户改动。核对 `audio-inspection.ts`、`audit-audio.ts`、`repair-audio.ts` 及工作流中的质量门禁，`project.ts` 的 `judgeCues`／`clipSeeds`，并保持原稿字幕、有限码率与完整事实不变。游戏导出还需包含公开 `ruleCard`；旧导出缺失时重新导出，不能让模型凭印象补规则。
 
 ## 运行环境
 
@@ -24,6 +24,8 @@ Windows 读取微软雅黑字体。其他系统应在 `scene.ts` 的字体注册
 | tts.ts / tts-types.ts | 可选择的服务商入口与统一 WAV/时间戳契约 |
 | qwen.ts / synthesize.ts | Qwen 协议适配与通用的多段合成调度 |
 | audio-cache.ts | 显式指定缓存目录 → 仅复用完整请求键相同的音频与元数据 |
+| audio-inspection.ts / audit-audio.ts | 原始 PCM → 非零平段、削波、静音及时间戳检查，定位报告和试听片段 |
+| repair-audio.ts | 异常报告／显式选择 → 有限次新种子重配、备份、质量通过后替换及可选重建成片 |
 | project.ts | 路径、类型、原文分段、号码读法、按法官 cue 选择已审核的连读／语速配置 |
 | audio.ts / timeline.ts | 实际 PCM → 规范音轨、字幕、绝对帧时间轴 |
 | replay.ts | 真实事实前缀 → 当前存活、身份、警徽、竞选、胜负 |

@@ -7,6 +7,7 @@ import { readPcm } from './audio';
 import { assertPlayerSources } from './integrity';
 import { captionContent } from './timeline';
 import { encodingSettings } from './encoding';
+import { inspectAudio } from './audio-inspection';
 
 const source = JSON.parse(await readFile(`${projectDir}/source.json`, 'utf8')) as Script;
 const script = JSON.parse(await readFile(`${projectDir}/script.json`, 'utf8')) as Script;
@@ -28,6 +29,8 @@ let cursor = 0, captions = 0;
 const actualEncoders = new Set<string>(), settings = encodingSettings();
 let compactFromFirstEncode = true;
 for (const c of timeline.clips) {
+  const originalAudio = await readPcm(c.audioFile);
+  assert.equal(inspectAudio(originalAudio.samples, originalAudio.sampleRate).issues.length, 0, `Audio waveform defects in ${c.id}; run video:audit-audio and video:repair-audio`);
   assert.equal(c.startFrame, cursor); cursor += c.frames;
   assert(c.captions.length && c.audioMeta.text === c.spokenText);
   assert.equal(captionContent(c.captions.map((cue) => cue.text).join('')), captionContent(c.spokenText), `Caption spelling differs from script: ${c.id}`);
@@ -56,6 +59,7 @@ const report = { roomId: source.roomId, video, bytes: (await stat(video)).size, 
   originalPlayerEntriesPreserved: sourcePlayers.length, privateWolfChatIncluded: true, perspective: 'god', factsUnchanged: true,
   finalAliveSeats: [...final.alive], winner: final.result.winnerName, audioVideoDifferenceSeconds: Math.abs(Number(picture.duration) - Number(audio.duration)),
   voices: [...new Set(timeline.clips.map((c) => c.audioMeta.voice))].length,
+  audioWaveformAuditPassed: true,
   videoCodec: picture.codec_name, encoders: [...actualEncoders], compactFromFirstEncode,
   averageTotalKbps: Number(((await stat(video)).size * 8 / timeline.duration / 1000).toFixed(1)) };
 await writeFile(`${projectDir}/output/verification.json`, JSON.stringify(report, null, 2));

@@ -9,8 +9,10 @@ export type { VoiceProfile, Word, AudioMeta } from './tts-types';
 // The user authorized Token Plan. Never silently switch to a pay-as-you-go key.
 const ENDPOINT = 'https://token-plan.maas.qianwenaiapi.com/api/v1/services/audio/tts/SpeechSynthesizer';
 export async function synthesizeQwen(text: string, profile: VoiceProfile, model: string, output: string, options?: { signal: AbortSignal }): Promise<AudioMeta> {
+  const seed = profile.seed ?? 31415;
+  if (!Number.isInteger(seed) || seed < 0 || seed > 2147483647) throw Error('Invalid Qwen synthesis seed');
   const input = { text, voice: profile.voice, format: 'wav', sample_rate: 24000, rate: profile.rate,
-    instruction: profile.instruction, language_hints: ['zh'], word_timestamp_enabled: true, seed: 31415 };
+    instruction: profile.instruction, language_hints: ['zh'], word_timestamp_enabled: true, seed };
   const cacheKey = createHash('sha256').update(JSON.stringify({ model, input })).digest('hex');
   try {
     const meta = JSON.parse(await readFile(output + '.json', 'utf8')) as AudioMeta;

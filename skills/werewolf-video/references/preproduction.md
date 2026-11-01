@@ -174,6 +174,7 @@ $env:VIDEO_PROJECT_DIR = '本局制作目录下独立的样品目录绝对路径
 $env:VIDEO_NARRATION_FILE = '已润色的本局 narration.json 绝对路径'
 node node_modules/tsx/dist/cli.mjs scripts/video/sample.ts --selection=样品选段文件路径
 node node_modules/tsx/dist/cli.mjs scripts/video/synthesize.ts --prepared-clips
+node node_modules/tsx/dist/cli.mjs scripts/video/audit-audio.ts --fail-on-error
 node node_modules/tsx/dist/cli.mjs scripts/video/timeline.ts
 node node_modules/tsx/dist/cli.mjs scripts/video/render.ts
 node node_modules/tsx/dist/cli.mjs scripts/video/verify-sample.ts --video=样品目录/output/latest-match.mp4

@@ -25,15 +25,18 @@ export interface VoiceCatalog {
   model: string;
   profiles: Record<string, VoiceProfile>;
   judgeCues?: Record<string, { instruction?: string; rate?: number }>;
+  clipSeeds?: Record<string, number>;
 }
-export function clipVoiceProfile(voices: VoiceCatalog, clip: Pick<Clip, 'voiceKey' | 'data'>): VoiceProfile {
+export function clipVoiceProfile(voices: VoiceCatalog, clip: Pick<Clip, 'voiceKey' | 'data'> & { id?: string }): VoiceProfile {
   const profile = voices.profiles[clip.voiceKey];
   if (!profile) throw Error(`No voice for ${clip.voiceKey}`);
   const cue = clip.voiceKey === 'judge' && clip.data.presentationOnly ? voices.judgeCues?.[clip.data.presentationKey] : undefined;
-  if (!cue) return profile;
-  if (cue.instruction !== undefined && (typeof cue.instruction !== 'string' || !cue.instruction.trim())) throw Error('Invalid judge cue instruction');
-  if (cue.rate !== undefined && (!Number.isFinite(cue.rate) || cue.rate <= 0)) throw Error('Invalid judge cue rate');
-  return { ...profile, instruction: cue.instruction ?? profile.instruction, rate: cue.rate ?? profile.rate };
+  if (cue?.instruction !== undefined && (typeof cue.instruction !== 'string' || !cue.instruction.trim())) throw Error('Invalid judge cue instruction');
+  if (cue?.rate !== undefined && (!Number.isFinite(cue.rate) || cue.rate <= 0)) throw Error('Invalid judge cue rate');
+  const seed = clip.id ? voices.clipSeeds?.[clip.id] : undefined;
+  if (seed !== undefined && (!Number.isInteger(seed) || seed < 0 || seed > 2147483647)) throw Error('Invalid clip synthesis seed');
+  if (!cue && seed === undefined) return profile;
+  return { ...profile, instruction: cue?.instruction ?? profile.instruction, rate: cue?.rate ?? profile.rate, ...(seed === undefined ? {} : { seed }) };
 }
 export async function loadVoices(): Promise<VoiceCatalog> {
   const file = process.env.VIDEO_VOICES_FILE;

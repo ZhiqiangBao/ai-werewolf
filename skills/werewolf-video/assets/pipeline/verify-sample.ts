@@ -6,6 +6,7 @@ import { readPcm } from './audio';
 import { replay } from './replay';
 import { assertPlayerSources } from './integrity';
 import { captionContent } from './timeline';
+import { inspectAudio } from './audio-inspection';
 const source: Script = JSON.parse(await readFile(`${projectDir}/source.json`, 'utf8'));
 const script: Script = JSON.parse(await readFile(`${projectDir}/script.json`, 'utf8'));
 const timeline: { frames: number; duration: number; clips: TimedClip[] } = JSON.parse(await readFile(`${projectDir}/timeline.json`, 'utf8'));
@@ -16,6 +17,8 @@ assert.deepEqual(script.events, source.events, 'Sample changed original game fac
 const playerParts = buildClips(source).filter((c) => c.seat !== undefined);
 let frames = 0;
 for (const c of timeline.clips) {
+  const originalAudio = await readPcm(c.audioFile);
+  assert.equal(inspectAudio(originalAudio.samples, originalAudio.sampleRate).issues.length, 0, `Audio waveform defects in ${c.id}`);
   assert.equal(c.startFrame, frames); frames += c.frames;
   if (c.seat !== undefined && !c.data.presentationOnly) {
     const original = playerParts.find((p) => p.sourceSeq === c.sourceSeq && p.part === c.part);
@@ -43,6 +46,7 @@ assert(Math.abs(Number(audio.duration) - Number(picture.duration)) < .06);
 const report = { video, bytes: (await stat(video)).size, durationSeconds: timeline.duration, clips: timeline.clips.length,
   selectedOriginalPlayerParts: timeline.clips.filter((c) => c.seat !== undefined && !c.data.presentationOnly).length,
   originalSelectedPlayerTextPreserved: true, factsUnchanged: true, nonContinuousExcerpt: true,
+  audioWaveformAuditPassed: true,
   reconstructedActionChoicesLabeled: true, reusedAudio: selection.reusedAudio,
   audioVideoDifferenceSeconds: Math.abs(Number(audio.duration) - Number(picture.duration)),
   chapters: info.chapters.length, resolution: `${picture.width}×${picture.height}`, codec: picture.codec_name };

@@ -4,6 +4,7 @@ import { projectDir, FPS, SAMPLE_RATE, type Clip, type TimedClip } from './proje
 import type { AudioMeta } from './qwen';
 import { readPcm, wavHeader } from './audio';
 import { subtitleLayout } from './geometry';
+import { inspectAudio } from './audio-inspection';
 
 export const captionContent = (text: string) => text.replace(/[\s\p{P}\p{S}]/gu, '');
 const symbolReadings: Record<string, string> = { '+': '加', '≥': '大于等于', '≤': '小于等于', '>': '大于', '<': '小于', '=': '等于' };
@@ -83,9 +84,9 @@ export async function buildTimeline() {
     assert.equal(audioMeta.text, clip.spokenText, `Stale audio: ${clip.id}`);
     const { samples, sampleRate } = await readPcm(clip.audioFile);
     assert.equal(sampleRate, SAMPLE_RATE);
-    let sum = 0, peak = 0;
-    for (const x of samples) { sum += (x / 32768) ** 2; peak = Math.max(peak, Math.abs(x) / 32768); }
-    const rms = Math.sqrt(sum / samples.length); assert(rms > .002 && peak > .02, `Silent clip: ${clip.id}`);
+    const inspection = inspectAudio(samples, sampleRate);
+    assert.equal(inspection.issues.length, 0, `Audio waveform defects in ${clip.id}; run video:audit-audio and video:repair-audio`);
+    const { rms, peak } = inspection; assert(rms > .002 && peak > .02, `Silent clip: ${clip.id}`);
     const gain = Math.min(1.8, Math.max(.65, .10 / rms), .94 / peak);
     const audioDuration = samples.length / sampleRate;
     const next = clips[i + 1], padding = !next || next.chapter !== clip.chapter ? .8 : next.sourceSeq !== clip.sourceSeq ? .36 : .14;

@@ -1,4 +1,4 @@
-export interface VoiceProfile { voice: string; label: string; rate: number; instruction: string }
+export interface VoiceProfile { voice: string; label: string; rate: number; instruction: string; seed?: number }
 export interface Word { text: string; begin_time: number; end_time: number; begin_index?: number; end_index?: number }
 export interface AudioMeta {
   cacheKey: string; provider?: string; model: string; voice: string; text: string;

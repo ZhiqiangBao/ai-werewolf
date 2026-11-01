@@ -11,6 +11,8 @@
     "simulate": "tsx packages/engine/scripts/simulate.ts",
     "video:export": "tsx packages/session/scripts/export-video.ts",
     "video:tts": "tsx scripts/video/synthesize.ts",
+    "video:audit-audio": "tsx scripts/video/audit-audio.ts",
+    "video:repair-audio": "tsx scripts/video/repair-audio.ts",
     "video:timeline": "tsx scripts/video/timeline.ts",
     "video:render": "tsx scripts/video/render.ts",
     "video:verify": "tsx scripts/video/verify.ts",

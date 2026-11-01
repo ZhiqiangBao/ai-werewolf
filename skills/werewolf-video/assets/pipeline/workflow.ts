@@ -1,5 +1,5 @@
 import { spawn, execFileSync } from 'node:child_process';
-import { readdir, readFile, mkdir, writeFile, stat } from 'node:fs/promises';
+import { readdir, readFile, mkdir, writeFile, stat, copyFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
@@ -7,10 +7,10 @@ import { startGpuMonitor } from './metrics';
 
 const root = resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const args = new Map(process.argv.slice(2).map((a) => { const i = a.indexOf('='); return [a.slice(0, i < 0 ? undefined : i), i < 0 ? 'true' : a.slice(i + 1)]; }));
-const stages = ['export', 'plan', 'tts', 'timeline', 'render', 'preview', 'verify'] as const;
-const supported = new Set(['--help', '--room', '--prepare-only', '--through', '--encoder', '--theme', '--voices', '--narration', '--data-dir', '--project-dir', '--resume', '--tts-provider', '--tts-adapter', '--video-kbps', '--max-video-kbps', '--audio-kbps']);
+const stages = ['export', 'plan', 'tts', 'audit-audio', 'timeline', 'render', 'preview', 'verify'] as const;
+const supported = new Set(['--help', '--room', '--prepare-only', '--through', '--encoder', '--theme', '--voices', '--narration', '--data-dir', '--project-dir', '--resume', '--repair-audio', '--tts-provider', '--tts-adapter', '--video-kbps', '--max-video-kbps', '--audio-kbps']);
 for (const key of args.keys()) if (!supported.has(key)) throw Error(`Unknown option ${key}`);
-if (args.has('--help')) { console.log('video:make --room=latest|ID [--prepare-only] [--through=STAGE] [--project-dir=DIR] [--encoder=auto|cpu|gpu] [--video-kbps=750 --max-video-kbps=1200 --audio-kbps=96] [--theme=campus|storybook|gufeng|fantasy|urban|future] [--voices=FILE] [--narration=FILE] [--tts-provider=ID --tts-adapter=FILE]'); process.exit(0); }
+if (args.has('--help')) { console.log('video:make --room=latest|ID [--prepare-only] [--through=STAGE] [--project-dir=DIR] [--encoder=auto|cpu|gpu] [--repair-audio] [--video-kbps=750 --max-video-kbps=1200 --audio-kbps=96] [--theme=campus|storybook|gufeng|fantasy|urban|future] [--voices=FILE] [--narration=FILE] [--tts-provider=ID --tts-adapter=FILE]'); process.exit(0); }
 const dataRoot = resolve(root, args.get('--data-dir') || 'data');
 const roomsDir = join(dataRoot, 'rooms');
 let room = args.get('--room') || 'latest';
@@ -61,6 +61,14 @@ try {
     if (stage === 'render') stopMonitor = await startGpuMonitor(`${dir}/gpu-metrics.json`);
     if (stage === 'export') await run('packages/session/scripts/export-video.ts', [`--room=${room}`]);
     else if (stage === 'plan') await run('scripts/video/prepare.ts');
+    else if (stage === 'audit-audio') {
+      await run('scripts/video/audit-audio.ts', args.has('--repair-audio') ? [] : ['--fail-on-error']);
+      const audit = JSON.parse(await readFile(`${dir}/output/audio-audit.json`, 'utf8'));
+      if (audit.failedClipIds.length && args.has('--repair-audio')) {
+        await run('scripts/video/repair-audio.ts', ['--auto', '--audit=output/audio-audit.json']);
+        for (const extension of ['json', 'md']) await copyFile(`${dir}/output/audio-audit-after.${extension}`, `${dir}/output/audio-audit.${extension}`);
+      }
+    }
     else await run(`scripts/video/${stage === 'tts' ? 'synthesize' : stage}.ts`);
     if (stage === 'render' && stopMonitor) { await stopMonitor(); stopMonitor = undefined; }
     report.completed.push(stage); await writeFile(`${dir}/workflow-status.json`, JSON.stringify(report, null, 2));
