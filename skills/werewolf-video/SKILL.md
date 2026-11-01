@@ -64,4 +64,6 @@ node node_modules/tsx/dist/cli.mjs scripts/video/workflow.ts --room=ID --resume
 
 默认交付直接编码得到的 `output/latest-match.mp4` 小体积整片。核对 `render-report.json`、`gpu-metrics.json` 和 `verification.json` 的实际编码器、大小与时长，不把短片比例当作整片实测。可附预览、字幕和时间轴，说明是否节选。样品使用独立目录和 `sample-verification.json`，不覆盖原整局。
 
+最终标题与简介保存为对应制作目录的 `output/publish-copy.md`，与成片放在一起，分别使用“标题”“简介”标题。聊天中修改文案后同步更新这个文件；交付时链接该定稿文件，不只把文案留在聊天或制作目录根部。备选标题与讨论草稿另存，不混入最终发布文案。
+
 为节省其他模型的上下文，优先读取 `plan.json`、`workflow-status.json`、`verification.json`。不要把原始房间文件、完整时间轴和音频元数据全部打印进上下文。发布和上传不是默认制作步骤。
