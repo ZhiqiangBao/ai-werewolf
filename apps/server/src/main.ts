@@ -5,13 +5,14 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ControlAction } from '@werewolf/protocol';
 import { ApiFailure, FileStore, RoomManager, SecretBox, SpeechService } from '@werewolf/session';
+import { DEFAULT_HOST, inviteNetwork } from './invite-network';
 
 const ROOT = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
 const WEB = join(ROOT, 'apps', 'web');
 const DATA = resolve(process.env.WEREWOLF_DATA ?? join(ROOT, 'data'));
 const DEV = process.argv.includes('--dev');
 const PORT = Number(process.env.PORT ?? 5173);
-const HOST = process.env.HOST ?? '127.0.0.1';
+const HOST = process.env.HOST ?? DEFAULT_HOST;
 
 const secrets = SecretBox.fromEnvOrFile(DATA);
 const manager = new RoomManager({ store: new FileStore(DATA), secrets, modelsPath: join(DATA, 'models.json') });
@@ -81,6 +82,12 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL): Promise
   const [, roomId, action, sub, subAction] = parts;
   if (!roomId) throw new ApiFailure(404, 'NOT_FOUND', '接口不存在');
   switch (`${method} ${action ?? ''}`) {
+    case 'GET invite-network': {
+      manager.getSetup(roomId, token); // 沿用房主鉴权，不能向座位或匿名访问者枚举网卡。
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new ApiFailure(503, 'NOT_LISTENING', '服务尚未监听网络端口');
+      return send(res, 200, inviteNetwork(address));
+    }
     case 'GET setup':
       return send(res, 200, manager.getSetup(roomId, token));
     case 'PUT setup':
@@ -191,6 +198,10 @@ server.listen(PORT, HOST, () => {
   manager.resumeAll();
   const shown = HOST === '0.0.0.0' ? 'localhost' : HOST;
   console.log(`AI 狼人杀已启动：http://${shown}:${PORT}/  （${DEV ? '开发模式' : '生产模式'}，数据目录 ${DATA}）`);
+  const address = server.address();
+  if (address && typeof address !== 'string') {
+    for (const entry of inviteNetwork(address).addresses) console.log(`局域网访问：${entry.origin}/  （${entry.label}）`);
+  }
 });
 
 const shutdown = () => {

@@ -15,6 +15,7 @@ import type {
   ParticipantInput,
   SeatActionInput,
   SpeechProvidersView,
+  InviteNetworkView,
 } from '@werewolf/protocol';
 
 export class ApiError extends Error {
@@ -51,6 +52,7 @@ export const api = {
   createRoom: () => request<CreateRoomResult>('POST', '/rooms'),
   cloneRoom: (id: string, t: string) => request<CreateRoomResult>('POST', `/rooms/${id}/clone`, t),
   getSetup: (id: string, t: string) => request<RoomSetupView>('GET', `/rooms/${id}/setup`, t),
+  inviteNetwork: (id: string, t: string) => request<InviteNetworkView>('GET', `/rooms/${id}/invite-network`, t),
   putSetup: (id: string, t: string, input: RoomSetupInput) => request<RoomSetupView>('PUT', `/rooms/${id}/setup`, t, input),
   testSeat: (id: string, t: string, seat: number) => request<SeatTestResult>('POST', `/rooms/${id}/seats/${seat}/test`, t),
   start: (id: string, t: string) => request<RoomSetupView>('POST', `/rooms/${id}/start`, t),

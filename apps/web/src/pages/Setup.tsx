@@ -9,6 +9,7 @@ import type {
   RuleValue,
   SeatConfigInput,
   SeatConfigView,
+  InviteNetworkView,
 } from '@werewolf/protocol';
 import { api } from '../api';
 import { useCatalog, useStream } from '../hooks';
@@ -16,6 +17,7 @@ import { HumanStatus } from '../components/HumanPlayers';
 import { RuleCard } from '../components/Cards';
 import { Avatar } from '../components/Avatar';
 import { InviteQr } from '../components/InviteQr';
+import { automaticInviteBase, inviteBase, sharedInvite } from '../invites';
 import { copyText, link, seatName, seatStyle } from '../util';
 
 function mergeInput(a: RoomSetupInput, b: RoomSetupInput): RoomSetupInput {
@@ -729,6 +731,30 @@ function SeatRow({
 function LinksPanel({ roomId, setup }: { roomId: string; setup: RoomSetupView }) {
   const [copied, setCopied] = useState<string | null>(null);
   const [qr, setQr] = useState<string | null>(null);
+  const [network, setNetwork] = useState<InviteNetworkView | null>(null);
+  const [networkError, setNetworkError] = useState<string | null>(null);
+  const [loadingNetwork, setLoadingNetwork] = useState(true);
+  const [networkRevision, setNetworkRevision] = useState(0);
+  const [addressChoice, setAddressChoice] = useState('auto');
+  const [customAddress, setCustomAddress] = useState('');
+  useEffect(() => {
+    let disposed = false;
+    setNetwork(null); setNetworkError(null); setLoadingNetwork(true);
+    api.inviteNetwork(roomId, setup.tokens.host).then((value) => {
+      if (!disposed) { setNetwork(value); setLoadingNetwork(false); }
+    }, (e: Error) => {
+      if (!disposed) { setNetworkError(e.message); setLoadingNetwork(false); }
+    });
+    return () => { disposed = true; };
+  }, [roomId, setup.tokens.host, networkRevision]);
+  const automatic = automaticInviteBase(location.href, network);
+  let shareBase: string | null = null, addressError: string | null = null;
+  try {
+    if (addressChoice === 'manual') shareBase = inviteBase(customAddress);
+    else if (addressChoice === 'auto') shareBase = automatic;
+    else if (network?.addresses.some((a) => a.origin === addressChoice)) shareBase = inviteBase(`${addressChoice}${location.pathname}`);
+    else addressError = '该地址已不在当前网卡列表中，请重新选择分享地址。';
+  } catch (e) { addressError = (e as Error).message; }
   const copy = async (key: string, url: string) => {
     if (await copyText(url)) {
       setCopied(key);
@@ -738,11 +764,11 @@ function LinksPanel({ roomId, setup }: { roomId: string; setup: RoomSetupView })
   const humans = setup.seats.filter((s) => s.controller === 'human');
   const rows = [
     { key: 'host', label: '房主', url: link('host', roomId, setup.tokens.host) },
-    { key: 'watch', label: '观战', url: link('watch', roomId, setup.tokens.spectator) },
+    { key: 'watch', label: '观战', url: shareBase ? sharedInvite(shareBase, 'watch', roomId, setup.tokens.spectator) : null },
     ...setup.tokens.seats.map((t) => ({
       key: `seat${t.seat}`,
       label: `${seatName(t.seat)}${humans.some((h) => h.seat === t.seat) ? '（真人）' : ''}`,
-      url: link('seat', roomId, t.token),
+      url: shareBase ? sharedInvite(shareBase, 'seat', roomId, t.token) : null,
     })),
   ];
   const selected = rows.find((r) => r.key === qr && r.key !== 'host');
@@ -752,19 +778,43 @@ function LinksPanel({ roomId, setup }: { roomId: string; setup: RoomSetupView })
       <div className="small muted" style={{ margin: '8px 0' }}>
         链接里带有凭证，等同于身份，只发给对应的人。房主链接能看到全部身份。
       </div>
+      <div className="note-box" style={{ marginBottom: 12 }}>
+        <label className="field">
+          分享地址
+          <select aria-label="分享地址" value={addressChoice} onChange={(e) => setAddressChoice(e.target.value)}>
+            <option value="auto">自动选择{automatic ? `（${new URL(automatic).host}）` : ''}</option>
+            {(network?.addresses ?? []).map((a) => <option key={a.origin} value={a.origin}>{a.label}</option>)}
+            <option value="manual">手动填写网址</option>
+          </select>
+        </label>
+        {addressChoice === 'manual' && <label className="field" style={{ marginTop: 8 }}>
+          其他设备可访问的网址
+          <input type="url" aria-label="其他设备可访问的网址" placeholder="http://192.168.1.23:5173/" value={customAddress} onChange={(e) => setCustomAddress(e.target.value)} />
+        </label>}
+        <div className="small muted" style={{ marginTop: 8 }}>其他设备与服务器连接同一 Wi-Fi 或局域网，扫描对应席位或观战二维码即可进入。多网卡时可切换地址，也可填写反向代理的网址。</div>
+        {shareBase && <div className="small" style={{ marginTop: 8 }}>邀请使用：<code>{shareBase}</code></div>}
+        {addressError && <div className="small error-box" role="alert">{addressError}</div>}
+        {!shareBase && !addressError && <div className="small error-box" role="alert">
+          {loadingNetwork ? '正在查找局域网分享地址…' : network?.loopbackOnly
+            ? '服务当前仅在本机监听。请使用默认启动方式重启，或将 HOST 设置为 0.0.0.0 后重启，才能通过局域网加入。经反向代理访问时可手动填写其网址。'
+            : networkError ? `无法读取局域网地址：${networkError}。请刷新地址；服务版本较旧时需先重启更新。也可手动填写其他设备可访问的网址。`
+              : '没有找到可分享的网络地址。请检查网络连接并刷新地址，或手动填写其他设备可访问的网址。'}
+        </div>}
+        <button className="btn sm" style={{ marginTop: 8 }} disabled={loadingNetwork} onClick={() => setNetworkRevision((v) => v + 1)}>刷新地址</button>
+      </div>
       <div className="links">
         {rows.map((r) => (
           <div key={r.key} className="link-row">
             <span style={{ width: 82, flexShrink: 0 }}>{r.label}</span>
-            <code>{r.url}</code>
-            <button className="btn sm" onClick={() => void copy(r.key, r.url)}>
+            <code>{r.url ?? '尚无可分享地址'}</code>
+            <button className="btn sm" disabled={!r.url} onClick={() => { if (r.url) void copy(r.key, r.url); }}>
               {copied === r.key ? '已复制' : '复制'}
             </button>
-            {r.key !== 'host' && <button className="btn sm" aria-label={`显示${r.label}邀请二维码`} onClick={() => setQr((value) => value === r.key ? null : r.key)}>二维码</button>}
+            {r.key !== 'host' && <button className="btn sm" disabled={!r.url} aria-label={`显示${r.label}邀请二维码`} onClick={() => setQr((value) => value === r.key ? null : r.key)}>二维码</button>}
           </div>
         ))}
       </div>
-      {selected && <InviteQr label={selected.label} url={selected.url} onClose={() => setQr(null)} />}
+      {selected?.url && <InviteQr label={selected.label} url={selected.url} onClose={() => setQr(null)} />}
     </details>
   );
 }

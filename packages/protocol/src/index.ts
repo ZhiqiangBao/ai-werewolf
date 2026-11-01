@@ -384,6 +384,12 @@ export interface RoomLinks {
   seats: { seat: Seat; token: string }[];
 }
 
+/** 仅房主可读取的当前服务分享地址，不写入对局历史或座位投影。 */
+export interface InviteNetworkView {
+  loopbackOnly: boolean;
+  addresses: { label: string; origin: string }[];
+}
+
 export interface RoomSetupView {
   roomId: string;
   status: 'setup' | 'running' | 'ended';

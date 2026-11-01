@@ -5,7 +5,7 @@ import { resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { CreateRoomResult, RoomSetupView, ViewResponse } from '@werewolf/protocol';
+import type { CreateRoomResult, InviteNetworkView, RoomSetupView, ViewResponse } from '@werewolf/protocol';
 import { mockDecision } from '../../../packages/llm/src/index';
 import { wavHeader } from '../../../packages/session/src/speech/audio';
 
@@ -32,8 +32,10 @@ beforeAll(async () => {
   const audio = Buffer.concat([wavHeader(24000, 24000), Buffer.alloc(48000)]);
   writeFileSync(resolve(dataDir, 'speech-adapter.mjs'), `export async function synthesize({text}) { if(!text.endsWith("接口朗读原文。"))throw Error("Unexpected source text"); return {bytes:Buffer.from("${audio.toString('base64')}","base64"),mimeType:"audio/wav"}; }`);
   writeFileSync(resolve(dataDir, 'speech-providers.json'), JSON.stringify({ providers: [{ id: 'fixture', label: '接口测试', type: 'module', module: './speech-adapter.mjs' }] }));
+  const env: NodeJS.ProcessEnv = { ...process.env, PORT: String(port), WEREWOLF_DATA: dataDir };
+  delete env.HOST; // 验证默认启动本身支持局域网，而非仅依赖显式 HOST 覆盖。
   child = spawn(process.execPath, ['--import', 'tsx', 'apps/server/src/main.ts'], {
-    cwd: root, env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', WEREWOLF_DATA: dataDir },
+    cwd: root, env,
     stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
   });
   await new Promise<void>((res, reject) => {
@@ -59,6 +61,37 @@ afterAll(async () => {
 });
 
 describe('真人 HTTP 与 SSE 接入', () => {
+  it('仅房主能发现分享地址，默认服务可通过真实 LAN 地址接入座位与观战', async () => {
+    const path = `rooms/${room.roomId}/invite-network`;
+    expect((await request(path, '', undefined, 'GET')).status).toBe(401);
+    for (const token of [setup.tokens.spectator, setup.tokens.seats[0].token]) {
+      expect((await request(path, token, undefined, 'GET')).status).toBe(403);
+    }
+    const response = await request(path, room.hostToken, undefined, 'GET');
+    expect(response.status).toBe(200);
+    const network = await response.json() as InviteNetworkView;
+    expect(network.loopbackOnly).toBe(false);
+    expect(network.addresses.every((a) => !/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(a.origin))).toBe(true);
+    // CI 可能只有回环网卡；有真实网卡时，实际走 LAN origin 验证 HTTP 与 SSE。
+    if (!network.addresses.length) return;
+    const lan = `${network.addresses[0].origin}/api/v1/rooms/${room.roomId}`;
+    const ctrl = new AbortController();
+    const stream = await fetch(`${lan}/stream?token=${setup.tokens.seats[0].token}`, { signal: ctrl.signal });
+    expect(stream.status).toBe(200);
+    const reader = stream.body!.getReader();
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain('retry: 2000');
+    const joined = await (await fetch(`${lan}/participate`, {
+      method: 'POST', headers: headers(setup.tokens.seats[0].token), body: JSON.stringify({ name: '扫码玩家' }),
+    })).json() as ViewResponse;
+    expect(joined.room.participants?.find((p) => p.seat === 1)?.online).toBe(true);
+    expect(joined.room.viewer).toBe('seat');
+    expect(joined.projection).toBeNull();
+    const watch = await (await fetch(`${lan}/view`, { headers: headers(setup.tokens.spectator) })).json() as ViewResponse;
+    expect(watch.room.viewer).toBe('spectator');
+    expect(JSON.stringify(watch)).not.toMatch(/apiKey|hostToken|seatTokens|seed/);
+    ctrl.abort(); await reader.cancel().catch(() => {});
+  });
+
   it('候场接口保持凭证边界，SSE 首次连接能正确返回响应头，断线不会取消准备', async () => {
     const path = `rooms/${room.roomId}/participate`;
     expect((await request(path, '', { ready: true })).status).toBe(401);
