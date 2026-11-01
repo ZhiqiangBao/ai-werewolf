@@ -1,6 +1,6 @@
 import type { RoleModule } from '../types';
 import { err } from '../tools';
-import { inspectRole, inspectionAppendix, inspectionKnowledge, inspectionTargets, mirrorTool, roleChecks } from './inspection';
+import { inspectRole, inspectionAppendix, inspectionKnowledge, inspectionTargets, mirrorTool, roleChecks, INSPECTION_PRIVACY_RULE } from './inspection';
 
 export const mirrorMaiden: RoleModule = {
   id: 'mirror_maiden', name: '魔镜少女', faction: 'good', category: 'god', maxPerGame: 1,
@@ -8,7 +8,7 @@ export const mirrorMaiden: RoleModule = {
   nightPhase: { id: 'mirror_maiden', order: 35 },
   tools: ({ seats }) => [mirrorTool(seats)],
   setup(ctx, seats) { for (const seat of seats) ctx.player(seat).data.roleChecks = []; },
-  ruleCard: () => ['魔镜少女：每晚查验一名其他存活玩家的具体身份，不能重复查验同一玩家。结果仅本人可见。觉醒隐狼未模仿时显示觉醒隐狼；模仿后立即显示模仿身份，真实阵营仍为狼人。没有未查验目标时跳过。'],
+  ruleCard: () => [`魔镜少女：每晚查验一名其他存活玩家的具体身份，不能重复查验同一玩家。${INSPECTION_PRIVACY_RULE}觉醒隐狼未模仿时显示觉醒隐狼；模仿后立即显示模仿身份，真实阵营仍为狼人。没有未查验目标时跳过。`],
   knowledge: inspectionKnowledge,
   appendix: (ctx, seat) => [inspectionAppendix(ctx, seat)],
   steps: {

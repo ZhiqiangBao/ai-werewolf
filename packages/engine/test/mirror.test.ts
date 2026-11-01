@@ -126,6 +126,24 @@ describe('镜隐迷踪：真实身份、查验表现和能力', () => {
     g.toNight(); g.until((x) => x.pending?.step.type === 'night:awakened_skill');
     expect(g.act(4, 'mirror_inspect', { targetSeat: 9 })).toBeDefined();
   });
+
+  it.each([false, true])('是否被魔镜查验不改变目标玩家或旁观者收到的投影，复制技能=%s', (copied) => {
+    const checked = game(), other = game();
+    for (const g of [checked, other]) {
+      if (copied) {
+        g.ok(4, 'awakened_mimic', { targetSeat: 5 }); g.night(); g.toNight();
+        g.until((x) => x.pending?.step.type === 'night:awakened_skill');
+      } else {
+        g.ok(4, 'awakened_wait'); g.untilTool('mirror_inspect');
+      }
+    }
+    const inspector = copied ? 4 : 5;
+    checked.ok(inspector, 'mirror_inspect', { targetSeat: 9 }); checked.night();
+    other.ok(inspector, 'mirror_inspect', { targetSeat: 10 }); other.night();
+    for (const seat of [9, 10, 11]) expect(checked.view(seat)).toEqual(other.view(seat));
+    expect(checked.spectator()).toEqual(other.spectator());
+    expect(checked.view(inspector).me?.knownIdentities).not.toEqual(other.view(inspector).me?.knownIdentities);
+  });
 });
 
 describe('镜隐迷踪：夜间结算、刀权和死亡职责', () => {

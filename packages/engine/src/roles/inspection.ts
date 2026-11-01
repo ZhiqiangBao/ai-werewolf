@@ -6,6 +6,8 @@ import { seatLabel } from '../text';
 
 export interface RoleCheck { night: number; target: Seat; role: string }
 
+export const INSPECTION_PRIVACY_RULE = '法官只向查验者私密反馈查验结果，不向被查验者通知查验行为或结果；未收到通知不代表没有被查验。';
+
 export const roleChecks = (ctx: Ctx, seat: Seat): RoleCheck[] => ctx.player(seat).data.roleChecks ?? [];
 export const inspectionTargets = (ctx: Ctx, seat: Seat): Seat[] =>
   ctx.alive().filter((s) => s !== seat && !roleChecks(ctx, seat).some((c) => c.target === s));

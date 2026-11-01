@@ -60,7 +60,8 @@ describe('提示词', () => {
     expect(user).toContain('查验结果：1号是狼人。');
 
     const villager = JSON.stringify(buildMessages(projectSeat(state, events, 8), '均衡。'));
-    expect(villager).not.toContain('查验结果');
+    // 公共规则可以说明查验反馈范围，但不能包含任何私密查验结论。
+    expect(villager).not.toMatch(/查验结果[：:]\s*\d+号/);
     expect(villager).not.toContain('狼人今晚选择刀');
     expect(villager).not.toContain('狼队成员');
     expect(villager).not.toContain('"type":"function"');

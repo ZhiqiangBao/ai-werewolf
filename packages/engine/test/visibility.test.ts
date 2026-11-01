@@ -39,6 +39,16 @@ describe('信息隔离', () => {
     expect(v.me?.teammates).toBeUndefined();
   });
 
+  it('是否被预言家查验不改变目标玩家或旁观者收到的投影', () => {
+    const checked = new TestGame({ deal: DEAL12, values: noSheriff });
+    const other = new TestGame({ deal: DEAL12, values: noSheriff });
+    checked.night({ kill: null, inspect: 9 });
+    other.night({ kill: null, inspect: 10 });
+    for (const seat of [9, 10, 11]) expect(checked.view(seat)).toEqual(other.view(seat));
+    expect(checked.spectator()).toEqual(other.spectator());
+    expect(checked.view(5).me?.knownIdentities).not.toEqual(other.view(5).me?.knownIdentities);
+  });
+
   it('狼人能看到队友；出局的狼人收不到之后的狼队密谈（VIS-03）', () => {
     const g = new TestGame({ deal: DEAL12, values: noSheriff });
     expect(g.view(1).me?.teammates).toEqual([2, 3, 4]);

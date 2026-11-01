@@ -3,6 +3,7 @@ import type { Seat } from '@werewolf/protocol';
 import { seatLabel } from '../text';
 import { seatParam } from '../tools';
 import type { RoleModule } from '../types';
+import { INSPECTION_PRIVACY_RULE } from './inspection';
 
 interface Check {
   night: number;
@@ -20,7 +21,7 @@ export const seer: RoleModule = {
   summary: '每晚查验一名其他存活玩家，结果只区分好人或狼人。',
   nightPhase: { id: 'seer', order: 30 },
 
-  ruleCard: () => ['预言家：每晚查验一名其他存活玩家，结果只区分好人或狼人。'],
+  ruleCard: () => [`预言家：每晚查验一名其他存活玩家，结果只区分好人或狼人。${INSPECTION_PRIVACY_RULE}`],
 
   setup(ctx, seats) {
     for (const s of seats) ctx.player(s).data.checks = [];
