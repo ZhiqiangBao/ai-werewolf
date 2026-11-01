@@ -108,7 +108,10 @@ export function applyExplosion(ctx: Ctx, seat: Seat): void {
         const round = vote?.round === 2 ? 2 : 1;
         el.postponedVote = { round, candidates: (round === 2 ? vote!.tied as Seat[] : remaining).filter((c) => c !== seat && !el.withdrawn.includes(c)) };
       }
-      ctx.pub('sheriff.postponed', policy === 'postpone_vote' ? '首次警上自爆，竞选延期；下一白天公布昨夜情况后直接续投，不再竞选发言，再次竞选自爆则警徽流失。' : '警长竞选尚未结束有人自爆，竞选推迟到下一个白天。', {});
+      const postponedText = s.rules.electionVersion === 2
+        ? '首次警上自爆，竞选延期；下一白天先确认自爆并直接续投，不再竞选发言，警徽落地或再次自爆后才通报昨夜情况；再次竞选自爆则警徽流失。'
+        : '首次警上自爆，竞选延期；下一白天公布昨夜情况后直接续投，不再竞选发言，再次竞选自爆则警徽流失。';
+      ctx.pub('sheriff.postponed', policy === 'postpone_vote' ? postponedText : '警长竞选尚未结束有人自爆，竞选推迟到下一个白天。', {});
     } else {
       el.explosions += 1;
       el.status = 'done';

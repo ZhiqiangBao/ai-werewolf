@@ -86,7 +86,7 @@ export const sheriffSteps: Record<string, StepHandler> = {
         el.postponed = false;
         el.postponedCandidates = null;
         delete el.postponedVote;
-        ctx.pub('sheriff.resume', `延期竞选直接续投，不再竞选发言。候选人：${candidates.length ? seatList(candidates) : '无'}。`, {
+        ctx.pub('sheriff.resume', `延期竞选直接续投，不再竞选发言。${s.pendingDeaths ? '昨夜出局情况尚未公布；先完成警上环节，再通报。' : ''}候选人：${candidates.length ? seatList(candidates) : '无'}。`, {
           candidates, withdrawn: [...el.withdrawn], mode: 'vote', round: vote.round,
         });
         if (!candidates.length) return noSheriff(ctx, '续选候选人均已出局或退水，本局没有警长。');
@@ -109,7 +109,7 @@ export const sheriffSteps: Record<string, StepHandler> = {
       }
       el.postponed = false;
       el.candidates = [];
-      ctx.pub('sheriff.start', '开始竞选警长。' + (s.pendingDeaths ? '首夜出局情况尚未公布，将在竞选结束或自爆中断后通报；尚未通报不代表平安夜。' : ''), {});
+      ctx.pub('sheriff.start', '开始竞选警长。' + (s.pendingDeaths ? `${s.rules.electionVersion === 2 ? '昨夜' : '首夜'}出局情况尚未公布，将在竞选结束或自爆中断后通报；尚未通报不代表平安夜。` : ''), {});
       ctx.pushFront({ type: 'sheriff.signup', cancelOnExplode: true });
     },
   },

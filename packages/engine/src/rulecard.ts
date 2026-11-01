@@ -28,6 +28,9 @@ export function buildRuleCard(rules: RuleSet): string {
   const hasHunter = mods.some((m) => m.id === 'hunter');
   const canExplode = mods.some((m) => m.canExplode) && v['explode.enabled'] === true;
   const sheriff = v['sheriff.enabled'] === true;
+  const resumeOrder = rules.electionVersion === 2
+    ? '先确认是否再次自爆，再保留原报名、退水与投票轮次直接续投，不重新上警或竞选发言；警徽落地或狼人自爆后，才通报昨夜出局情况并处理出局职责。尚未公布的夜间受害者仍按当前警上资格参与，不提前排除。'
+    : '先公布昨夜情况和处理出局职责，再保留原报名、退水与投票轮次直接续投，不重新上警或竞选发言。';
   const L: string[] = [];
 
   L.push(`【本局规则 · ${rules.presetName}】`);
@@ -66,7 +69,7 @@ export function buildRuleCard(rules: RuleSet): string {
     const explodeRule = !canExplode
       ? ''
       : v['sheriff.explodeInElection'] === 'postpone_vote'
-        ? '首次竞选自爆后先公布尚未公布的昨夜情况，处理猎枪等出局职责，再由自爆者及按规则有遗言的夜间出局者发表遗言，随后入夜。竞选延期到下一白天，先公布昨夜情况和处理出局职责，再保留原报名、退水与投票轮次直接续投，不重新上警或竞选发言；续投前存活狼人可确认是否再次自爆，再爆则警徽流失。候选人已出局或退水则不能参选，原警下资格不因延期重置；平票仍按 PK 规则处理。'
+        ? `首次竞选自爆后先公布尚未公布的昨夜情况，处理猎枪等出局职责，再由自爆者及按规则有遗言的夜间出局者发表遗言，随后入夜。竞选延期到下一白天，${resumeOrder}续投前存活狼人可确认是否再次自爆，再爆则警徽流失。已经公布出局或已经退水的候选人不能参选，原警下资格不因延期重置；平票仍按 PK 规则处理。`
       : v['sheriff.explodeInElection'] === 'postpone'
         ? '竞选尚未产生警长时有狼人自爆，竞选推迟到下一个白天（候选人不变）；再有自爆则警徽流失。'
         : '竞选尚未产生警长时有狼人自爆，警徽流失，本局没有警长。';
@@ -79,7 +82,7 @@ export function buildRuleCard(rules: RuleSet): string {
   }
   const anchor =
     v['speech.anchor'] === 'knife_first' ? '狼刀出局者（刀口未出局时为其他出局者）' : '一名出局者（多人出局时随机取一名）';
-  L.push('· 每个白天的普通发言都在昨夜情况通报之后。' + (v['sheriff.explodeInElection'] === 'postpone_vote' ? '延期直接续投警长时，也先通报昨夜情况再续投。' : ''));
+  L.push('· 每个白天的普通发言都在昨夜情况通报之后。' + (v['sheriff.explodeInElection'] === 'postpone_vote' ? rules.electionVersion === 2 ? '延期续选的警上环节优先于通报：先确认自爆并续投，警徽落地或自爆后再公布夜间出局。' : '延期直接续投警长时，也先通报昨夜情况再续投。' : ''));
   L.push(
     `· 发言顺序：${sheriff ? '有警长时由警长选择顺时针（号码增大）或逆时针，从警长下一位存活玩家开始，警长最后发言。没有警长时，' : ''}` +
       `昨夜有人出局则从${anchor}的下一位开始；昨夜平安则由法官随机指定起点。方向由法官随机决定并公布。`,
