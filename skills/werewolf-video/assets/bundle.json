@@ -1,7 +1,7 @@
 {
   "format": "werewolf-video-skill-bundle",
-  "version": 3,
-  "pipelineFiles": 29,
+  "version": 4,
+  "pipelineFiles": 30,
   "artFiles": 10,
   "source": "scripts/video/",
   "features": [
@@ -12,8 +12,10 @@
     "exact-request-audio-cache",
     "all-role-rule-scroll",
     "compact-vote-card",
+    "speaker-portrait-and-host-emblems",
+    "centered-caption-region",
     "native-compact-export",
     "strict-gpu-encoding"
   ],
-  "generatedAt": "2026-11-01T01:30:02.410Z"
+  "generatedAt": "2026-11-01T11:35:28.304Z"
 }

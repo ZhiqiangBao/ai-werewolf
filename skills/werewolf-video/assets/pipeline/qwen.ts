@@ -8,7 +8,7 @@ export type { VoiceProfile, Word, AudioMeta } from './tts-types';
 
 // The user authorized Token Plan. Never silently switch to a pay-as-you-go key.
 const ENDPOINT = 'https://token-plan.maas.qianwenaiapi.com/api/v1/services/audio/tts/SpeechSynthesizer';
-export async function synthesizeQwen(text: string, profile: VoiceProfile, model: string, output: string): Promise<AudioMeta> {
+export async function synthesizeQwen(text: string, profile: VoiceProfile, model: string, output: string, options?: { signal: AbortSignal }): Promise<AudioMeta> {
   const input = { text, voice: profile.voice, format: 'wav', sample_rate: 24000, rate: profile.rate,
     instruction: profile.instruction, language_hints: ['zh'], word_timestamp_enabled: true, seed: 31415 };
   const cacheKey = createHash('sha256').update(JSON.stringify({ model, input })).digest('hex');
@@ -24,7 +24,7 @@ export async function synthesizeQwen(text: string, profile: VoiceProfile, model:
   if (!apiKey?.startsWith('sk-sp-')) throw Error('Qwen Token Plan key is unavailable');
   const response = await fetch(ENDPOINT, { method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'X-DashScope-SSE': 'enable' },
-    body: JSON.stringify({ model, input }), signal: AbortSignal.timeout(240000) });
+    body: JSON.stringify({ model, input }), signal: options?.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(240000)]) : AbortSignal.timeout(240000) });
   if (!response.ok) {
     let code = 'HTTP error';
     try { const body = await response.json() as Record<string, unknown>; code = String(body.code ?? body.message ?? code).slice(0, 150); } catch { /* Do not print raw HTTP bodies or credentials. */ }
@@ -70,7 +70,7 @@ export async function synthesizeQwen(text: string, profile: VoiceProfile, model:
     // Fetch generated media without forwarding the API key to the storage host.
     const url = new URL(audioUrl);
     if (!['http:', 'https:'].includes(url.protocol)) throw Error('Unsupported audio URL');
-    const download = await fetch(url, { signal: AbortSignal.timeout(60000) });
+    const download = await fetch(url, { signal: options?.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000) });
     if (!download.ok) throw Error(`Generated audio download HTTP ${download.status}`);
     audio = Buffer.from(await download.arrayBuffer());
   }

@@ -2,7 +2,9 @@
 
 程序源码随技能保存在 `assets/pipeline/`，与目标仓库的 `scripts/video/` 同一结构。美术资源在 `assets/art/`。`bootstrap.mjs` 复制缺失文件，并只补齐 package.json 缺失的依赖与命令；已有实现保留。它依赖该游戏仓库的导出模块和 Qwen 配置读取器，不能直接套到不同日志格式。
 
-新版 bundle 的 `assets/bundle.json` 为 version 3，列出主持、原话验证、TTS 适配、精确请求缓存、全身份规则滚动、原生小体积和强制 GPU 能力。已有仓库升级时，不能以 bootstrap 成功认定旧文件已更新：先查看本地改动，再对照 `assets/pipeline/` 合并对应文件；不要覆盖用户改动。尤其核对 `editorial.ts` 的 `after`、`synthesize.ts` 的来源校验、`timeline.ts` 的原稿字幕、`encoding.ts` 的有限码率和 `workflow.ts` 已移除的默认二次压缩阶段。游戏导出还需包含公开 `ruleCard`；旧导出缺失时重新导出，不能让模型凭印象补规则。
+重新分发前运行 `node scripts/video/package-skill.mjs`。本仓库音频模块与网页语音共用 `packages/session/src/speech/`；打包器将对应实现放入技能的 `audio.ts`、`audio-cache.ts`、`qwen.ts`、`tts-types.ts` 并适配内部导入，不能把仅含重导出的本地入口直接作为独立模板。这样旧游戏仓库没有 `session/src/speech` 时仍能安装视频程序。
+
+新版 bundle 的 `assets/bundle.json` 为 version 4，增加底栏玩家头像、独立法官／上帝徽记与字幕居中文字区，保留主持、原话验证、TTS 适配、精确请求缓存、全身份规则滚动、原生小体积和强制 GPU 能力。已有仓库升级时，不能以 bootstrap 成功认定旧文件已更新：先查看本地改动，再对照 `assets/pipeline/` 合并对应文件；不要覆盖用户改动。尤其核对 `geometry.ts` 的共享字幕区域、`speaker.ts` 的身份标签、`scene.ts` 的底栏与场景版本、`timeline.ts` 的字幕坐标及原稿文字、`editorial.ts` 的 `after`、`synthesize.ts` 的来源校验、`encoding.ts` 的有限码率和 `workflow.ts` 已移除的默认二次压缩阶段。游戏导出还需包含公开 `ruleCard`；旧导出缺失时重新导出，不能让模型凭印象补规则。
 
 ## 运行环境
 
@@ -26,6 +28,7 @@ Windows 读取微软雅黑字体。其他系统应在 `scene.ts` 的字体注册
 | audio.ts / timeline.ts | 实际 PCM → 规范音轨、字幕、绝对帧时间轴 |
 | replay.ts | 真实事实前缀 → 当前存活、身份、警徽、竞选、胜负 |
 | scene.ts | 纯回放状态+已有素材 → 一段场景底图 |
+| geometry.ts / speaker.ts | 底栏共享坐标、真实玩家编号／身份／昵称、法官／上帝固定标签与来源标记 |
 | palette.ts / rule-cards.ts / rule-strip.ts | 昼夜主题、全身份技能卡和跨片段连续滚动 |
 | encoding.ts / render.ts | 有限码率配置+底图+真实配音+字幕 → 小体积分段、章节、直接交付整片 |
 | preview.ts | 已完成片段 → 非连续预览和四类抽帧 |
@@ -76,6 +79,8 @@ type TimedClip = Clip & { startFrame: number; frames: number;
 ## 渲染与恢复
 
 用现有背景、透明桌面和 4×3 人物图集构建场景；人物、号码、昵称、身份与状态分层。画面不连接实时房间，不提交游戏行动。发言波形来自实际音轨，不用任意循环冒充声音强弱。
+
+底栏人物头像复用同一张图集的对应座位；主持与解说徽记由现有 Canvas 路径绘制，不需新增外部图片。字幕在 `subtitleLayout.caption` 的右侧独立文字区垂直居中，`scene.ts` 与 `timeline.ts` 共用该布局。画面变化更新 `sceneVersion`；字幕位置变化重跑时间轴以更新逐段 ASS，随后渲染缓存会按新底图与字幕失效，配音缓存仍可复用。
 
 一段底图只绘制一次，FFmpeg 循环底图，叠加真实声波和精确字幕。每段视频固定同一分辨率、帧率与像素格式，全部合并后再给主音轨编码 AAC，避免每段音频编码延迟累积。
 

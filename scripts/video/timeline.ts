@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { projectDir, FPS, SAMPLE_RATE, type Clip, type TimedClip } from './project';
 import type { AudioMeta } from './qwen';
 import { readPcm, wavHeader } from './audio';
+import { subtitleLayout } from './geometry';
 
 export const captionContent = (text: string) => text.replace(/[\s\p{P}\p{S}]/gu, '');
 const symbolReadings: Record<string, string> = { '+': '加', '≥': '大于等于', '≤': '小于等于', '>': '大于', '<': '小于', '=': '等于' };
@@ -65,7 +66,8 @@ function assTime(t: number) {
 }
 const escapeAss = (s: string) => s.replace(/\\/g, '＼').replace(/[{}]/g, '').replace(/\n/g, '\\N');
 export function assDocument(cues: { text: string; start: number; end: number; phase?: string }[], phase = 'night') {
-  return `[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 2\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\nStyle: Night,Microsoft YaHei,36,&H00FFFFFF,&H000000FF,&H00351E10,&H90000000,-1,0,0,0,100,100,0,0,1,2,1,2,100,100,80,1\nStyle: Day,Microsoft YaHei,36,&H00363E26,&H000000FF,&H00E7F5FB,&H00E7F5FB,-1,0,0,0,100,100,0,0,1,1,0,2,100,100,80,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n` + cues.map((c) => `Dialogue: 0,${assTime(c.start)},${assTime(c.end)},${(c.phase ?? phase) === 'night' ? 'Night' : 'Day'},,0,0,0,,${escapeAss(c.text)}`).join('\n') + '\n';
+  const { caption } = subtitleLayout, right = 1920 - caption.x - caption.width;
+  return `[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 0\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\nStyle: Night,Microsoft YaHei,36,&H00FFFFFF,&H000000FF,&H00351E10,&H90000000,-1,0,0,0,100,100,0,0,1,2,1,5,${caption.x},${right},0,1\nStyle: Day,Microsoft YaHei,36,&H00363E26,&H000000FF,&H00E7F5FB,&H00E7F5FB,-1,0,0,0,100,100,0,0,1,1,0,5,${caption.x},${right},0,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n` + cues.map((c) => `Dialogue: 0,${assTime(c.start)},${assTime(c.end)},${(c.phase ?? phase) === 'night' ? 'Night' : 'Day'},,0,0,0,,{\\an5\\pos(${caption.centerX},${caption.centerY})}${escapeAss(c.text)}`).join('\n') + '\n';
 }
 
 export async function buildTimeline() {

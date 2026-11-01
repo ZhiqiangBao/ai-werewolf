@@ -11,3 +11,12 @@ export function voteCardLayout(rowCount: number) {
   const height = 112 + rows * 52;
   return { x: 509, y: 520 - height / 2, width: 410, height, waveY: 520 + height / 2 + 12 };
 }
+
+// The scene and ASS captions share these bounds so text never covers the speaker.
+export const subtitleLayout = {
+  panel: { x: 28, y: 942, width: 1864, height: 111 },
+  avatar: { x: 50, y: 956, size: 84 },
+  identity: { x: 152, titleY: 980, nameY: 1017, width: 252 },
+  divider: { x: 426, y: 961, height: 73 },
+  caption: { x: 454, y: 956, width: 1410, height: 83, centerX: 1159, centerY: 998 },
+} as const;

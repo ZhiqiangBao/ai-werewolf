@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { replay } from '../../../scripts/video/replay';
-import { captionsFromWords, sourceCaptionWords } from '../../../scripts/video/timeline';
+import { assDocument, captionsFromWords, sourceCaptionWords } from '../../../scripts/video/timeline';
+import { subtitleLayout } from '../../../scripts/video/geometry';
+import { speakerIdentity } from '../../../scripts/video/speaker';
 import { splitSpeech, spokenText, type Script, type Fact } from '../../../scripts/video/project';
 import type { AudioMeta } from '../../../scripts/video/qwen';
 import { draftNarration } from '../../../scripts/video/narration';
@@ -80,6 +82,30 @@ describe('offline match replay', () => {
 });
 
 describe('audio-led captions and script', () => {
+  it('centers day and night captions inside the text region, clear of the speaker portrait', () => {
+    const document = assDocument([{ text: '十一号，平民。', start: .25, end: 2, phase: 'day' }, { text: '请睁眼。', start: 3, end: 4, phase: 'night' }]);
+    const { caption, divider, panel } = subtitleLayout;
+    expect(caption.x).toBeGreaterThan(divider.x);
+    expect(Math.abs(caption.centerY - (panel.y + panel.height / 2))).toBeLessThanOrEqual(1);
+    expect(document).toContain(`{\\an5\\pos(${caption.centerX},${caption.centerY})}十一号，平民。`);
+    expect(document).toContain('0:00:00.25,0:00:02.00,Day');
+    expect(document).toContain('0:00:03.00,0:00:04.00,Night');
+  });
+  it('uses the cast identity even when a player claims another role, and retains action provenance', () => {
+    const script = source([]);
+    script.cast[0].role = 'werewolf'; script.cast[0].roleName = '狼人';
+    const clip = { seat: 1, voiceKey: 'seat-1', type: 'speech', data: {}, text: '我是预言家。' };
+    expect(speakerIdentity(script, clip)).toMatchObject({ kind: 'player', seat: 1, title: '1号 · 狼人' });
+    expect(speakerIdentity(script, { ...clip, type: 'hosting.choice' }).marker).toBe('行动转述');
+    expect(speakerIdentity(script, { ...clip, data: { systemFallback: true } }).marker).toBe('系统托管');
+  });
+  it('gives the judge and commentator separate identities without inventing player seats', () => {
+    const clip = { voiceKey: 'judge', type: 'hosting.judge', data: {} };
+    expect(speakerIdentity(source([]), clip)).toMatchObject({ kind: 'judge', title: '法官' });
+    expect(speakerIdentity(source([]), { ...clip, voiceKey: 'commentator' })).toMatchObject({ kind: 'commentator', title: '上帝解说' });
+    expect(speakerIdentity(source([]), clip)).not.toHaveProperty('seat');
+    expect(() => speakerIdentity(source([]), { ...clip, seat: 99 })).toThrow('Missing speaker seat');
+  });
   it('keeps symbolic player wording and merges actual spoken timestamps for mathematical symbols', () => {
     const meta = { text: '四号≥八号。', sentences: [{ index: 0, text: '', words: [
       { text: '四号', begin_time: 0, end_time: 200 },
