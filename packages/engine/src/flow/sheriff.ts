@@ -1,11 +1,41 @@
-import type { Seat } from '@werewolf/protocol';
+import type { Seat, ToolSpec } from '@werewolf/protocol';
 import type { Ctx } from '../context';
 import { directionLabel, orderList, seatLabel, seatList } from '../text';
 import { seatParam } from '../tools';
-import type { StepHandler } from '../types';
+import type { InterruptDef, StepHandler } from '../types';
 import { speechSteps } from './day';
 import { pkOrder, randomDirection, ringOrder } from './order';
 import { describeTally, tally, tallyPayload, type Ballot, type Tally } from './tally';
+
+const silentWithdraw: ToolSpec = {
+  name: 'sheriff_withdraw', title: '退水',
+  description: '退出警长竞选。当前不是你的竞选发言，不能附带发言，填写 {"content":""}。',
+  params: [{ kind: 'text', name: 'content', label: '留空', minLength: 0, maxLength: 0 }],
+};
+const stayTool: ToolSpec = {
+  name: 'sheriff_stay', title: '继续竞选',
+  description: '竞选发言结束后的最终确认：保留候选资格。没有参数，填写 {}。', params: [],
+};
+
+function withdraw(ctx: Ctx, seat: Seat): void {
+  ctx.state.election.withdrawn.push(seat);
+  ctx.pub('sheriff.withdraw', `${seatLabel(seat)}退水。`, { seat });
+}
+
+/** 不打断其他人的发言，也不把口头声明当作行动。 */
+export const withdrawInterrupt: InterruptDef = {
+  tool: 'sheriff_withdraw',
+  available(ctx, seat) {
+    const s = ctx.state;
+    return s.rules.electionVersion === 3 && !s.result && !s.ending && ctx.isAlive(seat)
+      && s.election.status === 'running' && s.election.candidates.includes(seat)
+      && !s.election.withdrawn.includes(seat)
+      && s.pending?.step.type === 'speech' && s.pending.step.kind === 'campaign'
+      && s.pending.step.seat !== seat;
+  },
+  spec: () => silentWithdraw,
+  apply: withdraw,
+};
 
 function grantSheriff(ctx: Ctx, seat: Seat): void {
   const s = ctx.state;
@@ -69,6 +99,7 @@ function startCampaign(ctx: Ctx): void {
   });
   ctx.pushFront(
     ...order.flatMap((seat) => speechSteps(ctx, seat, 'campaign')),
+    ...(s.rules.electionVersion === 3 ? [{ type: 'sheriff.withdraw', cancelOnExplode: true }] : []),
     { type: 'sheriff.vote', round: 1, cancelOnExplode: true },
   );
 }
@@ -109,7 +140,7 @@ export const sheriffSteps: Record<string, StepHandler> = {
       }
       el.postponed = false;
       el.candidates = [];
-      ctx.pub('sheriff.start', '开始竞选警长。' + (s.pendingDeaths ? `${s.rules.electionVersion === 2 ? '昨夜' : '首夜'}出局情况尚未公布，将在竞选结束或自爆中断后通报；尚未通报不代表平安夜。` : ''), {});
+      ctx.pub('sheriff.start', '开始竞选警长。' + (s.pendingDeaths ? `${(s.rules.electionVersion ?? 1) >= 2 ? '昨夜' : '首夜'}出局情况尚未公布，将在竞选结束或自爆中断后通报；尚未通报不代表平安夜。` : ''), {});
       ctx.pushFront({ type: 'sheriff.signup', cancelOnExplode: true });
     },
   },
@@ -148,6 +179,28 @@ export const sheriffSteps: Record<string, StepHandler> = {
       startCampaign(ctx);
     },
     fallback: () => ({ tool: 'sheriff_signup', args: { run: false } }),
+  },
+
+  'sheriff.withdraw': {
+    run(ctx, step) {
+      const el = ctx.state.election;
+      const actors = el.candidates.filter((c) => ctx.isAlive(c) && !el.withdrawn.includes(c));
+      if (!actors.length) return;
+      ctx.pub('sheriff.withdraw.window', '竞选发言结束，候选人同时确认继续竞选或退水；全部确认后公布退水并开始警长投票。', {});
+      ctx.ask({
+        step, actors, simultaneous: true,
+        tools: () => [stayTool, silentWithdraw],
+        prompt: () => '警长投票尚未开始。请最终确认继续竞选或退水；此处不再发言。全部确认后才开放投票，超时默认继续竞选。',
+        title: `第${ctx.state.day}天 · 退水确认`, publicStage: '警长竞选：投票前退水确认', hear: 'actors',
+      });
+    },
+    ack: (_c, _s, _seat, call) => call.tool === 'sheriff_withdraw' ? '你已确认退水，全部确认后公布。' : '你已确认继续竞选。',
+    decide(ctx, _step, subs) {
+      for (const seat of Object.keys(subs).map(Number).sort((a, b) => a - b)) {
+        if (subs[seat].tool === 'sheriff_withdraw') withdraw(ctx, seat);
+      }
+    },
+    fallback: () => ({ tool: 'sheriff_stay', args: {} }),
   },
 
   'sheriff.vote': {

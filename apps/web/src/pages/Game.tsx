@@ -258,9 +258,9 @@ export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
   return (
     <>
       <TopBar room={room} projection={p} who={who}>
-        {human && p.task && !p.task.submitted && !room.paused && (
-          <button className="btn sm primary" aria-label={`前往行动：${p.task.title}`} onClick={() => document.getElementById('player-action')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
-            轮到你了
+        {human && ((p.task && !p.task.submitted) || p.interrupts.some((t) => t.name === 'sheriff_withdraw')) && !room.paused && (
+          <button className="btn sm primary" aria-label={`前往行动：${p.task && !p.task.submitted ? p.task.title : '退水'}`} onClick={() => document.getElementById('player-action')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+            {p.task && !p.task.submitted ? '轮到你了' : '可退水'}
           </button>
         )}
       </TopBar>

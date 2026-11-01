@@ -4,7 +4,7 @@ import { daySteps } from './day';
 import { deathSteps } from './deaths';
 import { explodeInterrupt, explodeSteps } from './explode';
 import { nightSteps } from './night';
-import { sheriffSteps } from './sheriff';
+import { sheriffSteps, withdrawInterrupt } from './sheriff';
 
 let registered = false;
 
@@ -14,4 +14,5 @@ export function registerCore(): void {
   registerCoreSteps({ ...nightSteps, ...daySteps, ...deathSteps, ...sheriffSteps, ...explodeSteps });
   registerCoreOptions(CORE_OPTIONS);
   registerInterrupt(explodeInterrupt);
+  registerInterrupt(withdrawInterrupt);
 }

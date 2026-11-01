@@ -105,6 +105,42 @@ describe('真人玩家接入、候场和凭证', () => {
 });
 
 describe('真人行动复用引擎', () => {
+  it('真人发言后能按新窗口退水，保留他人发言和截止时间，重接入后仍生效', async () => {
+    const { m, store, secrets, id, host, tok, setup, ready } = room(true);
+    m.updateSetup(id, host, { humanTimeoutSec: 60 }); ready(); m.start(id, host);
+    for (let i = 0; i < 300; i++) {
+      const p = m.view(id, host).projection as GodProjection;
+      const actor = p.god.pending!.actors.find((a) => !a.submitted)!;
+      const own = m.view(id, tok(actor.seat)).projection!;
+      if (own.task!.title.endsWith('· 竞选发言')) {
+        const first = actor.seat;
+        expect(m.act(id, tok(first), { decisionId: own.task!.decisionId, tool: 'speak', args: { content: '真人已完成的竞选发言。' } }).ok).toBe(true);
+        const next = (m.view(id, host).projection as GodProjection).god.pending!;
+        const speaker = next.actors[0].seat;
+        const before = m.view(id, tok(speaker)).projection!.task;
+        const retired = m.view(id, tok(first)).projection!;
+        expect(retired.task).toBeNull();
+        expect(retired.interrupts.some((t) => t.name === 'sheriff_withdraw')).toBe(true);
+        expect(m.act(id, tok(first), { decisionId: retired.actionWindowId!, tool: 'sheriff_withdraw', args: { content: '' } }).ok).toBe(true);
+        expect(m.view(id, tok(speaker)).projection!.task).toEqual(before);
+        expect(m.view(id, setup.tokens.spectator).projection!.events.filter((e) => e.type === 'sheriff.withdraw')).toHaveLength(1);
+        expect(m.view(id, setup.tokens.spectator).projection!.events.filter((e) => e.type === 'speech' && e.payload.seat === first)).toHaveLength(1);
+        m.dispose();
+        const restored = new RoomManager({ store, secrets, tickMs: 0 }); managers.push(restored);
+        expect(restored.view(id, tok(first)).projection!.interrupts.some((t) => t.name === 'sheriff_withdraw')).toBe(false);
+        expect(restored.view(id, tok(speaker)).projection!.task?.decisionId).toBe(next.decisionId);
+        expect(restored.audit(id, host)).toEqual([]);
+        return;
+      }
+      const call = own.task!.tools.some((t) => t.name === 'sheriff_signup')
+        ? { tool: [1, 2, 3].includes(actor.seat) ? 'sheriff_signup' : 'sheriff_stay_off', args: {} }
+        : mockDecision(own, own.task!.tools);
+      expect(m.act(id, tok(actor.seat), { decisionId: own.task!.decisionId, ...call }).ok).toBe(true);
+      await m.whenIdle(id);
+    }
+    throw Error('未进入普通竞选发言');
+  });
+
   it('私密 speech 也必须先经过本人投影，其他座位和观战不能请求隐藏发言', () => {
     const { m, store, secrets, id, host, tok, setup, ready } = room(true); ready(); m.start(id, host); m.dispose();
     const record = store.rooms.get(id)!;

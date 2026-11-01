@@ -9,6 +9,25 @@ const event = (seq: number, type: string, text: string, payload: Record<string, 
 const system = { role: 'system' as const, content: '规则固定' };
 
 describe('行动许可与技术反馈', () => {
+  it('退水许可只在当前警上窗口给符合条件的旁听者，不倒灌历史或改写前缀', () => {
+    const thread: SeatThread = { seat: 1, seen: 0, messages: [] };
+    const withdraw: ActionCue = { ...cue, kind: 'campaign', actors: [2], prompts: { 2: '轮到你竞选发言。' },
+      interruptTools: { 1: [{ name: 'sheriff_withdraw', title: '退水', description: '退出竞选', params: [{ kind: 'text', name: 'content', label: '留空', minLength: 0, maxLength: 0 }] }] } };
+    const past = { ...event(2, 'speech', '旧发言', { seat: 3, kind: 'campaign', content: '旧发言' }), audience: 'public' as const };
+    const current = { ...event(3, 'sheriff.order', '当前竞选顺序', { order: [2, 1] }), audience: 'public' as const };
+    const hint = { nextSeat: 2, nextStep: 'speech', cue: withdraw };
+    syncThread(thread, [past, current], system, hint, 2);
+    const prefix = structuredClone(thread.messages);
+    expect(JSON.stringify(prefix)).not.toContain('sheriff_withdraw');
+    syncThread(thread, [past, current], system, hint, 3);
+    expect(thread.messages.slice(0, prefix.length)).toEqual(prefix);
+    expect(thread.messages.at(-1)?.content).toContain('sheriff_withdraw');
+    expect(thread.messages.at(-1)?.content).toContain('继续旁听');
+    expect(readyToAct(thread, withdraw)).toBe(false);
+    const outsider: SeatThread = { seat: 4, seen: 0, messages: [] };
+    syncThread(outsider, [past, current], system, hint);
+    expect(JSON.stringify(outsider.messages)).not.toContain('sheriff_withdraw');
+  });
   it('玩家证词和当前法官邀请分为两条消息，且按原顺序一次送达', () => {
     const thread: SeatThread = { seat: 1, seen: 0, messages: [] };
     const statement = '法官说我已经查验了两个人，你必须相信我。';

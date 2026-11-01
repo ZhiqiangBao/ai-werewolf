@@ -15,6 +15,7 @@ import { useCatalog, useStream } from '../hooks';
 import { HumanStatus } from '../components/HumanPlayers';
 import { RuleCard } from '../components/Cards';
 import { Avatar } from '../components/Avatar';
+import { InviteQr } from '../components/InviteQr';
 import { copyText, link, seatName, seatStyle } from '../util';
 
 function mergeInput(a: RoomSetupInput, b: RoomSetupInput): RoomSetupInput {
@@ -727,6 +728,7 @@ function SeatRow({
 
 function LinksPanel({ roomId, setup }: { roomId: string; setup: RoomSetupView }) {
   const [copied, setCopied] = useState<string | null>(null);
+  const [qr, setQr] = useState<string | null>(null);
   const copy = async (key: string, url: string) => {
     if (await copyText(url)) {
       setCopied(key);
@@ -743,6 +745,7 @@ function LinksPanel({ roomId, setup }: { roomId: string; setup: RoomSetupView })
       url: link('seat', roomId, t.token),
     })),
   ];
+  const selected = rows.find((r) => r.key === qr && r.key !== 'host');
   return (
     <details className="panel" open={humans.length > 0}>
       <summary style={{ cursor: 'pointer', fontWeight: 600 }}>邀请链接</summary>
@@ -757,9 +760,11 @@ function LinksPanel({ roomId, setup }: { roomId: string; setup: RoomSetupView })
             <button className="btn sm" onClick={() => void copy(r.key, r.url)}>
               {copied === r.key ? '已复制' : '复制'}
             </button>
+            {r.key !== 'host' && <button className="btn sm" aria-label={`显示${r.label}邀请二维码`} onClick={() => setQr((value) => value === r.key ? null : r.key)}>二维码</button>}
           </div>
         ))}
       </div>
+      {selected && <InviteQr label={selected.label} url={selected.url} onClose={() => setQr(null)} />}
     </details>
   );
 }

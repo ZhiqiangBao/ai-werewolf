@@ -146,8 +146,8 @@ export type RuleValue = string | number | boolean;
 export interface RuleSet {
   /** 缺省为历史 v1；新开局使用显式单动作工具 v2。随规则存档，便于精确恢复与重放。 */
   toolsetVersion?: 1 | 2;
-  /** 延期竞选时序：缺省／1 保留历史先公告再续投；新局 2 为警上优先。 */
-  electionVersion?: 1 | 2;
+  /** 缺省／1 保留历史先公告再续投；2 为警上优先；新局 3 另增加普通竞选的发言后退水与最终确认。 */
+  electionVersion?: 1 | 2 | 3;
   presetId: string;
   /** 新版型的项目规则版本；旧房间缺省不补写历史。 */
   presetVersion?: number;

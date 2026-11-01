@@ -96,7 +96,12 @@ describe('凭证与信息屏障', () => {
     for (const r of roles) {
       const prompts = audit.filter((a) => a.seat === r.seat).map((a) => JSON.stringify(a.messages));
       const all = prompts.join('\n');
-      if (r.role !== 'seer') expect(all).not.toContain('查验结果');
+      // 公共规则可以说明查验反馈范围；私密泄露应检查法官发出的具体结论，不能把规则术语当作泄露。
+      const judgeLines = audit.filter((a) => a.seat === r.seat).flatMap((a) => a.messages ?? [])
+        .filter((msg): msg is Record<string, unknown> => typeof msg === 'object' && msg !== null)
+        .filter((msg) => msg.role === 'user' && msg.name === 'judge')
+        .map((msg) => typeof msg.content === 'string' ? msg.content : '');
+      if (r.role !== 'seer') expect(judgeLines.some((line) => /^法官：查验结果[：:]\s*\d+号/.test(line))).toBe(false);
       if (r.role !== 'witch') expect(all).not.toContain('狼人今晚选择刀');
       if (r.role !== 'werewolf') expect(all).not.toContain('狼队成员');
       if (r.role !== 'guard') expect(all).not.toContain('你今晚守护了');

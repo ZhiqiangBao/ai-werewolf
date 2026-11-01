@@ -77,6 +77,7 @@ function ParamInput({ p, value, onChange, onSubmit }: { p: ParamSpec; value: unk
         </div>
       );
     case 'text': {
+      if (p.maxLength === 0) return null;
       const text = typeof value === 'string' ? value : '';
       const n = text.trim().length;
       return (
@@ -133,13 +134,13 @@ export function ToolForm({ tool, busy, disabled, draftKey, onSubmit }: { tool: T
   };
   return (
     <div>
-      {tool.params.map((p) => (
+      {tool.params.filter((p) => p.kind !== 'text' || p.maxLength !== 0).map((p) => (
         <div key={p.name} className="param">
           <div className="label">{p.label}</div>
           <ParamInput p={p} value={values[p.name]} onChange={(v) => setValues((x) => ({ ...x, [p.name]: v }))} onSubmit={submit} />
         </div>
       ))}
-      <button className={`btn ${tool.params.length ? 'primary' : 'danger'}`} disabled={!ok || busy || disabled} onClick={submit}>
+      <button className={`btn ${tool.params.length || tool.name === 'sheriff_stay' ? 'primary' : 'danger'}`} disabled={!ok || busy || disabled} onClick={submit}>
         {busy ? '提交中…' : tool.title}
       </button>
     </div>
@@ -156,7 +157,7 @@ interface Props {
 /** 座位的行动区：当前任务 + 随时可用的插入行动（例如自爆）。 */
 export function TaskPanel({ projection: p, human, paused, onAct }: Props) {
   const task = p.task;
-  const current = task?.decisionId ?? '';
+  const current = task?.decisionId ?? p.actionWindowId ?? '';
   const [picked, setPicked] = useState({ id: '', idx: 0 });
   const [failure, setFailure] = useState({ id: '', msg: '' });
   const [busy, setBusy] = useState(false);
@@ -250,7 +251,7 @@ export function TaskPanel({ projection: p, human, paused, onAct }: Props) {
       )}
       {interrupts.map((t) => (
         <div key={t.name} style={{ marginTop: task ? 14 : 0, paddingTop: task ? 12 : 0, borderTop: task ? '1px dashed var(--line)' : 0 }}>
-          <div className="small muted" style={{ marginBottom: 6 }}>随时可用</div>
+          <div className="small muted" style={{ marginBottom: 6 }}>当前可用{t.name === 'sheriff_withdraw' ? '：退出竞选，不打断当前发言' : ''}</div>
           <ToolForm key={`intr:${p.actionWindowId ?? ''}:${t.name}`} tool={t} busy={busy} disabled={paused || !p.actionWindowId} onSubmit={(call) => { if (p.actionWindowId) return run(call, p.actionWindowId); }} />
         </div>
       ))}

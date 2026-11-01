@@ -37,7 +37,7 @@ export function randomCall(r: Rand, tools: ToolSpec[]): ToolCall {
         args[p.name] = r() < 0.5;
         break;
       case 'text':
-        args[p.name] = p.minLength > 0 ? '我是好人，听我说。' : r() < 0.5 ? '' : '我退水。';
+        args[p.name] = p.maxLength === 0 ? '' : p.minLength > 0 ? '我是好人，听我说。' : r() < 0.5 ? '' : '我退水。';
         break;
       case 'choice':
         args[p.name] = pick(r, p.options).value;

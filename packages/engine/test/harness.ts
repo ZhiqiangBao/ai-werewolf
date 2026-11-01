@@ -19,7 +19,7 @@ export const DEAL9 = ['werewolf', 'werewolf', 'werewolf', 'seer', 'witch', 'hunt
 
 export interface GameOptions {
   toolsetVersion?: 1 | 2;
-  electionVersion?: 1 | 2;
+  electionVersion?: 1 | 2 | 3;
   preset?: string;
   deal?: string[];
   values?: Record<string, unknown>;
@@ -42,7 +42,8 @@ export class TestGame {
 
   constructor(o: GameOptions = {}) {
     const preset = o.preset ?? (o.deal?.length === 9 ? 'classic9' : 'standard12');
-    const rules = buildRules(preset, o.values ?? {}, { toolsetVersion: o.toolsetVersion ?? 1, electionVersion: o.electionVersion, allowFixed: true, ...(o.deal ? { roles: o.deal } : {}) });
+    // 原有用例继续覆盖版本 2；发言后退水用例显式选择 3，随机整局和会话测试覆盖新局默认版本。
+    const rules = buildRules(preset, o.values ?? {}, { toolsetVersion: o.toolsetVersion ?? 1, electionVersion: o.electionVersion ?? 2, allowFixed: true, ...(o.deal ? { roles: o.deal } : {}) });
     this.options = { id: 'test', rules, seed: o.seed ?? 'seed-1', ...(o.deal ? { deal: o.deal } : {}) };
     const r = createGame(this.options);
     this.state = r.state;

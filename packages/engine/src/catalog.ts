@@ -15,7 +15,7 @@ export function seatTools(state: GameState, seat: Seat): ToolSpec[] {
   const seats = state.players.map((p) => p.seat);
   const v = state.rules.values;
   const tools: ToolSpec[] = [speakTool(), voteTool(seats, v['vote.allowAbstain'] === true, v['vote.allowSelf'] === true, Number(v['vote.normalWeight']), Number(v['vote.sheriffWeight']))];
-  if (v['sheriff.enabled'] === true) tools.push(...sheriffTools(seats, v['vote.allowAbstain'] === true, Number(v['vote.normalWeight'])));
+  if (v['sheriff.enabled'] === true) tools.push(...sheriffTools(seats, v['vote.allowAbstain'] === true, Number(v['vote.normalWeight']), state.rules.electionVersion === 3));
   tools.push(...(getRole(player.role).tools?.({ seats, seat, rules: state.rules }) ?? []));
   if (new Set(tools.map((t) => t.name)).size !== tools.length) throw new Error(`身份 ${player.role} 的工具名称重复`);
   return expandActionTools(tools, state.rules);
@@ -41,7 +41,7 @@ function voteTool(seats: Seat[], abstain: boolean, self: boolean, normal: number
   };
 }
 
-function sheriffTools(seats: Seat[], abstain: boolean, normal: number): ToolSpec[] {
+function sheriffTools(seats: Seat[], abstain: boolean, normal: number, lateWithdrawal: boolean): ToolSpec[] {
   return [
     {
       name: 'sheriff_signup',
@@ -52,9 +52,16 @@ function sheriffTools(seats: Seat[], abstain: boolean, normal: number): ToolSpec
     {
       name: 'sheriff_withdraw',
       title: '退水',
-      description: '仅轮到你的普通警上竞选发言时使用，表示退出警长竞选并结束本段发言。竞选 PK 不提供退水。content 是同时公开的话，必须是字符串，可为空；例：{"content":"我退水。"}。一次只交此工具，无需另调 speak。其他阶段不要调用。',
+      description: lateWithdrawal
+        ? '退出警长竞选。轮到你的普通警上发言时，可同时在 content 填公开发言，或留空；例：{"content":"我退水。"}，本段发言随即结束。其他候选人普通警上发言期间及投票前退水确认阶段也可退水，此时不能附带发言，必须填 {"content":""}；不会结束其他人的发言。仅法官本轮允许时可用，竞选 PK 和投票开始后不能退水。'
+        : '仅轮到你的普通警上竞选发言时使用，表示退出警长竞选并结束本段发言。竞选 PK 不提供退水。content 是同时公开的话，必须是字符串，可为空；例：{"content":"我退水。"}。一次只交此工具，无需另调 speak。其他阶段不要调用。',
       params: [textParam('content', '退水时的发言（可留空）', 0)],
     },
+    ...(lateWithdrawal ? [{
+      name: 'sheriff_stay', title: '继续竞选',
+      description: '仅竞选发言结束后的退水确认阶段使用，确认保留候选资格；不能附带发言。没有参数，填写 {}。全部候选人确认后开始投票，已确认的选择不能修改。',
+      params: [],
+    }] : []),
     {
       name: 'sheriff_vote',
       title: '警长投票',

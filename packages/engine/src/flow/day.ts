@@ -69,7 +69,7 @@ export const daySteps: Record<string, StepHandler> = {
       const announce: Step = { type: 'dawn.announce' };
       const election: Step = { type: 'sheriff.election', cancelOnExplode: true };
       const directResume = el.postponed && ctx.opt<string>('sheriff.explodeInElection') === 'postpone_vote';
-      const electionFirst = directResume ? s.rules.electionVersion === 2 : ctx.opt<string>('sheriff.timing') === 'before_announcement';
+      const electionFirst = directResume ? (s.rules.electionVersion ?? 1) >= 2 : ctx.opt<string>('sheriff.timing') === 'before_announcement';
       if (electionToday && electionFirst) steps.push(election, announce);
       else {
         steps.push(announce);

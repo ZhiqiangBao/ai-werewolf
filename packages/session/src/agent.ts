@@ -34,6 +34,8 @@ export interface TurnHint {
 /** 这一步要不要单独补一句法官提示。发言的结尾已经写在上一条里时不必再补。 */
 export interface ActionCue {
   allowedTools?: Record<number, ToolSpec[]>;
+  /** 非本人发言时的当前行动许可，不包含局势或身份提示。 */
+  interruptTools?: Record<number, ToolSpec[]>;
   id: string;
   afterSeq?: number;
   step: string;
@@ -163,7 +165,8 @@ export function eventToMessage(
       latestTalk &&
       hint.nextSeat === me &&
       ((wolf && hint.nextStep === 'wolf.discuss') || (!wolf && hint.nextStep === 'speech'));
-    const tail = yours && hint.cue ? cueTail(hint.cue, me) : turnSuffix(wolf ? 'wolf' : speechKind(e), yours, wolf);
+    const tail = latestTalk && hint.cue && (yours || hint.cue.interruptTools?.[me]?.length)
+      ? cueTail(hint.cue, me) : turnSuffix(wolf ? 'wolf' : speechKind(e), yours, wolf);
     return { role: 'user', name: String(speaker), content: `${speechMark(e, speaker)}（玩家原话）：\n「${content}」\n${tail}` };
   }
   const invite = inviteKind(e);
@@ -171,7 +174,9 @@ export function eventToMessage(
     const first = firstSeat(e);
     const yours = latestTalk && first === me && hint.nextStep === 'speech' && hint.nextSeat === me;
     const who = latestTalk && first && hint.nextStep === 'speech' && hint.nextSeat === first ? `有请${first}号玩家发言。` : '';
-    return { role: 'user', name: 'judge', content: `法官：${e.text}${who}\n${yours && hint.cue ? cueTail(hint.cue, me) : turnSuffix(invite, yours)}` };
+    const tail = latestTalk && hint.cue && (yours || hint.cue.interruptTools?.[me]?.length)
+      ? cueTail(hint.cue, me) : turnSuffix(invite, yours);
+    return { role: 'user', name: 'judge', content: `法官：${e.text}${who}\n${tail}` };
   }
   const opened = openAction(e, me, hint);
   if (opened) return opened;
@@ -187,7 +192,9 @@ export function eventToMessage(
     return null;
   }
   const fact = ['witch.knife', 'sheriff.start', 'wolf.kill.split'].includes(e.type) ? gameRecordEvents([e])[0]?.text ?? e.text : e.text;
-  return { role: 'user', name: 'judge', content: `法官：${fact}\n不要调用工具。` };
+  const tail = hint.cue?.interruptTools?.[me]?.length && e.seq >= (hint.cue.afterSeq ?? 0)
+    ? cueTail(hint.cue, me) : '不要调用工具。';
+  return { role: 'user', name: 'judge', content: `法官：${fact}\n${tail}` };
 }
 
 /** 这条事件就是当前行动。写成一句，带上能不能用工具，不再先停再追问。 */
@@ -261,6 +268,10 @@ export function syncThread(
 /** 这条法官提示的结尾。行动者能用工具，其他人停。 */
 export function cueTail(cue: ActionCue, seat: number): string {
   const actor = cue.actors.includes(seat);
+  const interrupts = cue.interruptTools?.[seat] ?? [];
+  if (!actor && interrupts.length) {
+    return `${actionMenu(interrupts)}\n当前不是你的发言轮次；可以选择上述即时行动，或继续旁听。`;
+  }
   const wolf = cue.step === 'wolf.discuss';
   const suffix = cue.step === 'speech' || wolf ? turnSuffix(wolf ? 'wolf' : (cue.kind ?? 'discussion'), actor, wolf) : actor ? (TOOL_TAIL[cue.tool] ?? '你现在可以使用工具。') : '不要调用工具。';
   const menu = actor ? actionMenu(cue.allowedTools?.[seat] ?? []) : '';

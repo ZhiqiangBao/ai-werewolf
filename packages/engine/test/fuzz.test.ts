@@ -41,7 +41,7 @@ function playRandom(options: CreateGameOptions, r: Rand) {
     // 偶尔让一名存活狼人用打断工具自爆。
     const exploder =
       r() < 0.02
-        ? state.players.find((p) => p.alive && p.role === 'werewolf' && projectSeat(state, events, p.seat).interrupts.length)
+        ? state.players.find((p) => p.alive && p.role === 'werewolf' && projectSeat(state, events, p.seat).interrupts.some((t) => t.name === 'wolf_explode'))
         : undefined;
     let input: ActionRecord = exploder
       ? { seat: exploder.seat, call: { tool: 'wolf_explode', args: {} } }
