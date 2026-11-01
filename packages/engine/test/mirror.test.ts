@@ -57,10 +57,14 @@ describe('镜隐迷踪：真实身份、查验表现和能力', () => {
     it(`模仿 ${role} 立即改变查验表现，保持真实底牌、阵营和固定工具目录`, () => {
       const g = game();
       const tools = structuredClone(seatTools(g.state, 4));
+      expect(g.state.day).toBe(1);
+      expect(g.view(4).task?.tools.map((t) => t.name)).toEqual(['awakened_mimic', 'awakened_wait']);
       g.ok(4, 'awakened_mimic', { targetSeat: target });
       expect(g.state.players[3].role).toBe('awakened_wolf');
       expect(g.state.players[3].data.awakened.learned).toMatchObject({ role, active: false, activeFromNight: 2 });
+      expect(g.view(4).events.find((e) => e.type === 'awakened.mimic')).toMatchObject({ audience: [4], payload: { target, role, activeFromNight: 2 } });
       expect(g.view(target).events.some((e) => e.type === 'awakened.mimic')).toBe(false);
+      expect(g.spectator().events.some((e) => e.type === 'awakened.mimic')).toBe(false);
       g.untilTool('mirror_inspect'); g.ok(5, 'mirror_inspect', { targetSeat: 4 });
       expect(g.view(5).me?.knownIdentities?.at(-1)).toMatchObject({ role });
       expect(projectGod(g.state, g.events).god.roles[3].role).toBe('awakened_wolf');
@@ -68,6 +72,9 @@ describe('镜隐迷踪：真实身份、查验表现和能力', () => {
       expect(seatTools(g.state, 4)).toEqual(tools);
       g.night();
       expect(g.state.players[3].data.awakened.learned.active).toBe(true);
+      expect(g.view(4).events.find((e) => e.type === 'awakened.activated')).toMatchObject({ audience: [4], payload: { activeFromNight: 2 } });
+      expect(g.view(target).events.some((e) => e.type === 'awakened.activated')).toBe(false);
+      expect(g.spectator().events.some((e) => e.type === 'awakened.activated')).toBe(false);
       g.toNight();
       expect(g.pending?.step.type).not.toBe('night:awakened_mimic');
       expect(seatTools(g.state, 4)).toEqual(tools);
@@ -150,7 +157,14 @@ describe('镜隐迷踪：夜间结算、刀权和死亡职责', () => {
   it('其余狼在白天全灭后，下一夜继承刀权，不生成狼队资料', () => {
     const g = game(); g.ok(4, 'awakened_mimic', { targetSeat: 9 }); g.night();
     g.removeSeats(1, 2, 3); g.toNight();
-    g.untilTool('awakened_kill'); g.ok(4, 'awakened_kill', { targetSeat: 10 }); g.night();
+    expect(g.pending?.step.type).toBe('night:guard');
+    expect(g.view(4).events.find((e) => e.type === 'awakened.inherit')).toMatchObject({ phase: 'night', day: 2, audience: [4], payload: { night: 2 } });
+    expect(g.view(9).events.some((e) => e.type === 'awakened.inherit')).toBe(false);
+    expect(g.spectator().events.some((e) => e.type === 'awakened.inherit')).toBe(false);
+    g.untilTool('awakened_kill');
+    expect(g.pending?.step.type).toBe('night:awakened_knife');
+    expect(g.view(4).task?.tools.map((t) => t.name)).toEqual(['awakened_kill', 'awakened_empty_kill']);
+    g.ok(4, 'awakened_kill', { targetSeat: 10 }); g.night();
     expect(g.state.players[9].alive).toBe(false);
     expect(g.view(4).me?.teammates).toBeUndefined();
     expect(g.view(4).events.some((e) => e.type === 'wolf.team' || e.type === 'wolf.chat')).toBe(false);
