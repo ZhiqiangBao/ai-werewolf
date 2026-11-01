@@ -73,6 +73,10 @@ export function buildVideoScript(p: GodProjection, room: RoomBrief) {
     const speech = e.type === 'speech' || e.type === 'wolf.chat';
     const seat = speech && typeof e.payload.seat === 'number' ? e.payload.seat : undefined;
     const { decisionId: _decision, step: _step, prompt: _prompt, announced: _announced, ...data } = e.payload;
+    const previous = p.events.findLast((event) => event.seq < e.seq);
+    const actingSeat = seat ?? (Array.isArray(e.audience) && e.audience.length === 1 ? e.audience[0] : undefined);
+    if (previous?.type === 'action.fallback' && (e.type === 'speech.order' ||
+        (actingSeat !== undefined && Array.isArray(previous.audience) && previous.audience.includes(actingSeat)))) data.systemFallback = true;
     chapter.entries.push({
       sourceSeq: e.seq, type: e.type,
       speaker: seat === undefined ? '法官' : `${seat}号${e.type === 'wolf.chat' ? '（狼队密谈）' : ''}`,
@@ -85,6 +89,7 @@ export function buildVideoScript(p: GodProjection, room: RoomBrief) {
   return {
     format: 'werewolf-video-script', version: 1, perspective: 'god', timing: 'untimed',
     roomId: room.roomId, presetName: p.presetName, status: p.status,
+    ruleCard: p.ruleCard,
     cast: p.god.roles.map((r) => ({ seat: r.seat, name: p.seats.find((s) => s.seat === r.seat)?.name ?? `${r.seat}号`, role: r.role, roleName: r.roleName, factionName: r.factionName, voiceKey: `seat-${r.seat}` })),
     // 已被合并播报的出局等事实仍供画面重建，spoken=false 避免重复配音。
     events: p.events.filter((e) => eventPurpose(e) === 'gameplay' && e.type !== 'wolf.team').map((e) => {
