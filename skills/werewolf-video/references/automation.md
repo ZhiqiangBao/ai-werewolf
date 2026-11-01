@@ -4,7 +4,7 @@
 
 重新分发前运行 `node scripts/video/package-skill.mjs`。本仓库音频模块与网页语音共用 `packages/session/src/speech/`；打包器将对应实现放入技能的 `audio.ts`、`audio-cache.ts`、`qwen.ts`、`tts-types.ts` 并适配内部导入，不能把仅含重导出的本地入口直接作为独立模板。这样旧游戏仓库没有 `session/src/speech` 时仍能安装视频程序。
 
-新版 bundle 的 `assets/bundle.json` 为 version 7，在已有画面、主持、原话验证与精确缓存能力上包含自动波形检查、定点重配，以及简介中的逐席模型／真人与完整规则卡同步。已有仓库升级时，不能以 bootstrap 成功认定旧文件已更新：先查看本地改动，再对照 `assets/pipeline/` 合并对应文件；不要覆盖用户改动。核对音频质量门禁、`publish-copy.ts` 的公开字段选择、`project.ts` 的 `judgeCues`／`clipSeeds`，并保持原稿字幕、有限码率与完整事实不变。游戏导出还需包含公开 `ruleCard`；旧导出缺失时重新导出，不能让模型凭印象补规则。
+新版 bundle 的 `assets/bundle.json` 为 version 8，在已有画面、主持、原话验证、波形检查、定点重配和简介同步能力上增加配音前材料检查与 `--check-only`。已有仓库升级时，不能以 bootstrap 成功认定旧文件已更新：先查看本地改动，再对照 `assets/pipeline/` 合并对应文件；不要覆盖用户改动。核对 `materials.ts`／`preflight.ts`、`workflow.ts` 的材料检查阶段、`prepare.ts` 的实际材料路径、音频质量门禁、`publish-copy.ts` 的公开字段选择、`project.ts` 的 `judgeCues`／`clipSeeds`，并保持原稿字幕、有限码率与完整事实不变。游戏导出还需包含公开 `ruleCard`；旧导出缺失时重新导出，不能让模型凭印象补规则。
 
 ## 运行环境
 
@@ -16,8 +16,9 @@ Windows 读取微软雅黑字体。其他系统应在 `scene.ts` 的字体注册
 
 | 程序 | 输入 → 输出 |
 | --- | --- |
-| workflow.ts | 最新已结束房间/指定 ID → 有状态的全流程 |
+| workflow.ts | 最新已结束房间/指定 ID → 材料准备、检查及后续视频流水线；解说写作、封面和文案由制作者完成 |
 | prepare.ts / narration.ts | 原始剪辑稿 → 旁白取舍、声音表、plan.json |
+| materials.ts / preflight.ts | 实际解说稿、声音表与源记录 → 配音前检查、output/materials-check.json；不调用外部服务 |
 | publish-copy.ts | 已定稿文案＋公开座位字段＋本局规则卡 → 幂等更新 output/publish-copy.md 的简介附录 |
 | hosting.ts | 原事实锚点 → 完整法官流程与显式标注的行动转述 |
 | integrity.ts | TTS 之前拒绝改写玩家原话、伪造朗读文字或没有对应实际动作的角色配音 |

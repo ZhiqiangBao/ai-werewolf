@@ -4,7 +4,8 @@ import { projectDir, loadScript, loadVoices, dataDir } from './project';
 import { draftNarration } from './narration';
 import { syncPublishCopy } from './publish-copy';
 const script = await loadScript(); await mkdir(projectDir, { recursive: true });
-const narrationFile = `${projectDir}/narration.json`, voiceFile = `${projectDir}/voices.json`;
+const narrationFile = process.env.VIDEO_NARRATION_FILE || `${projectDir}/narration.json`;
+const voiceFile = process.env.VIDEO_VOICES_FILE || `${projectDir}/voices.json`;
 if (!existsSync(narrationFile)) {
   const example = `scripts/video/narration-${script.roomId}.json`;
   const narration = existsSync(example) ? JSON.parse(await readFile(example, 'utf8')) : draftNarration(script);
@@ -32,14 +33,14 @@ await writeFile(editorialContextFile, JSON.stringify({ roomId: script.roomId, pr
 const summary = { roomId: script.roomId, preset: script.presetName, playerCount: script.cast.length, perspective: 'god',
   playerEntries: script.chapters.flatMap((c) => c.entries).filter((e) => e.seat !== undefined).length,
   sourceCharacters: script.chapters.flatMap((c) => c.entries).reduce((s, e) => s + e.text.length, 0),
-  narrationFile, voiceFile, editorialContextFile, omittedJudgeEntries: Object.values(narration.edits).filter((e: any) => e.omit).length,
+  narrationFile, voiceFile, editorialContextFile, omittedJudgeEntries: Object.values(narration?.edits ?? {}).filter((e: any) => e?.omit).length,
   cast: script.cast.map((c) => {
     const notes = raw.seats?.find((s: any) => s.seat === c.seat);
     return { seat: c.seat, name: c.name, roleName: c.roleName, controller: notes?.controller ?? 'unknown', model: notes?.controller === 'human' ? null : notes?.model ?? null,
-      style: notes?.style ?? '', persona: notes?.persona ?? '', voice: voices.profiles[c.voiceKey]?.voice, instruction: voices.profiles[c.voiceKey]?.instruction };
+      style: notes?.style ?? '', persona: notes?.persona ?? '', voice: voices?.profiles?.[c.voiceKey]?.voice, instruction: voices?.profiles?.[c.voiceKey]?.instruction };
   }),
-  judgeCues: voices.judgeCues ?? {},
-  editorialState: narration.review?.status === 'reviewed' ? 'reviewed' : 'prepared-unreviewed',
-  editorialReview: narration.review ?? null };
+  judgeCues: voices?.judgeCues ?? {},
+  editorialState: narration?.review?.status === 'reviewed' ? 'reviewed' : 'prepared-unreviewed',
+  editorialReview: narration?.review ?? null };
 await writeFile(`${projectDir}/plan.json`, JSON.stringify(summary, null, 2));
 console.log(JSON.stringify(summary, null, 2));

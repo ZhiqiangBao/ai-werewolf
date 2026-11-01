@@ -5,7 +5,7 @@ description: 将本项目已结束的狼人杀记录制作成上帝视角视频�
 
 # 狼人杀对局视频
 
-使用目标仓库里的确定性程序完成机械步骤。使用 skill 的模型负责备料、审核声音、选择节点并润色开场/上帝点评/收尾，以及制作封面与发布文案；脚本不会自动替你完成这项编辑。默认完整对局，用户要求样品时只制作样品。
+本流程供不同 AI agent 和真人制作者使用，不要求具备某个 agent 的专属工具。使用目标仓库里的确定性程序完成机械步骤；制作者负责备料、审核声音、选择节点并润色开场/上帝点评/收尾，以及制作封面与发布文案。涉及生图等外部能力时，提供可复制的输入材料和人工操作方法，具体 agent 的内置工具仅作可选实现。默认完整对局，用户要求样品时只制作样品。
 
 ## 先定位，再运行
 
@@ -17,16 +17,33 @@ pnpm video:make --room=latest --prepare-only
 
 `latest` 只从默认 `data/rooms` 选择已结束对局，不扫描界面测试目录。指定另一数据目录用 `--data-dir=绝对路径`；指定房间用 `--room=ID`。
 
-**首次制作或修改台词必须先读 [制作前准备与台词润色](references/preproduction.md)。** 按其中材料表读取 `plan.json`、`editorial-context.json`，完成声音表、旁白稿与必要的样品选择表，再开始耗时合成。准备成功不等于完成润色；不要只跑下面的命令便交付。原话/法官取舍见 [剪辑规则](references/editing.md)。用户已授权的任务完成内部审核后直接继续，普通审核由模型完成。
+## 从准备材料到启动整片
+
+把命令中的 `ROOM_ID` 换成准备阶段输出的实际房间号，后续固定用它。首次制作或修改台词先读 [制作前材料清单](references/preproduction.md) 和 [上帝解说写作步骤与模板](references/commentary.md)。按下表执行，AI agent 和真人使用相同的文件与检查标准：
+
+| 顺序 | 操作 | 完成标志 |
+| --- | --- | --- |
+| 1. 生成材料 | 上面的 `--prepare-only` 命令 | 本局目录有 `plan.json`、`editorial-context.json`、`narration.json`、`voices.json`；此时旁白通常是未审核模板 |
+| 2. 编辑与审核 | 阅读事实与完整相关发言，写开场、关键点评、收尾；核对人物声线 | 实际完成核对后在 `narration.json` 填写 `review`；原话与事实保持完整 |
+| 3. 检查是否可启动 | 下面的 `--check-only` 命令 | `output/materials-check.json` 中 `ready: true`；此步不调用 TTS |
+| 4. 制作整片 | 检查通过后执行 `--resume` | 配音、波形检查、时间轴、渲染与视频验证完成；然后完成封面、文案和视听验收 |
 
 ```powershell
-pnpm video:make --room=ID --resume
+pnpm video:make --room=ROOM_ID --check-only --encoder=cpu
 ```
 
-这一条依次完成导出、材料准备、TTS、自动波形检查、音频时间轴、直接小体积渲染、预览和检查；台词润色须先按上面的手册完成。检测到破音时停止在检查点；已授权的范围内加 `--repair-audio` 可自动重配异常片段并复查。第一遍编码就限制码率，最终只拼接视频并编码主音轨，不先生成大母版再压缩。已成功的音频与视频片段自动复用。没有 pnpm 可直接运行：
+检查通过且 TTS 服务与外发范围已有授权后启动：
 
 ```powershell
-node node_modules/tsx/dist/cli.mjs scripts/video/workflow.ts --room=ID --resume
+pnpm video:make --room=ROOM_ID --resume
+```
+
+这一条依次完成导出、材料准备、配音前材料检查、TTS、自动波形检查、音频时间轴、直接小体积渲染、预览和检查。**首次直接启动也会在材料检查处拦住未审核模板；它不会自动创作完整上帝解说。** `review` 是制作者真实核对的记录，程序检查格式、锚点、音色与原话，表达质量仍需按写作步骤审核。原话/法官取舍见 [剪辑规则](references/editing.md)。
+
+检测到破音时停止在检查点；已授权的范围内加 `--repair-audio` 可自动重配异常片段并复查。第一遍编码就限制码率，最终只拼接视频并编码主音轨，不先生成大母版再压缩。已成功的音频与视频片段自动复用。没有 pnpm，或 PowerShell 的 pnpm 启动器不能运行时，可直接运行同一个入口：
+
+```powershell
+node node_modules/tsx/dist/cli.mjs scripts/video/workflow.ts --room=ROOM_ID --resume
 ```
 
 其他 agent 可用本技能的 `scripts/run.mjs --project=仓库绝对路径` 启动同一程序。如果目标仓库缺少制作程序，使用 `scripts/bootstrap.mjs --project=仓库绝对路径` 安装随技能附带的程序和美术资源，并补齐缺失的依赖声明与启动命令；已有实现保持原样。随后用项目包管理器安装依赖。游戏导出模块仍来自目标游戏仓库。
@@ -56,15 +73,16 @@ node node_modules/tsx/dist/cli.mjs scripts/video/workflow.ts --room=ID --resume
 - `--voices=绝对路径`、`--narration=绝对路径`：显式使用已整理的配置。
 - `--tts-provider=ID --tts-adapter=文件路径`：显式接入其他 TTS；内置仍为 `qwen-token-plan`，不自动换服务或计费线路。
 - `--repair-audio`：波形检测失败时，仅重配异常片段，保留原文、固定声线与成功缓存，最多尝试三次；当前自动重配支持 Qwen Token Plan。
-- `--through=plan|tts|audit-audio|timeline|render|preview|verify`：停在完整的阶段检查点；旧文件再压缩是独立工具，不在默认流程中。
+- `--check-only`：导出并刷新材料，执行配音前检查后停止，不调用 TTS 或渲染；缺项写入 `output/materials-check.json`。
+- `--through=plan|preflight|tts|audit-audio|timeline|render|preview|verify`：停在完整的阶段检查点；旧文件再压缩是独立工具，不在默认流程中。
 
 默认单路编码；显存与性能判断读 [硬件说明](references/hardware.md)。批量配音、Qwen 特例和接入其他服务时，读 [批量 TTS 与适配器修改](references/tts-batch.md)，其中逐项说明改哪些文件、输出什么、怎么配置和验证。维护程序或适配新日志读 [程序设计](references/automation.md)；小体积交付见 [压缩方案](references/compression.md)。
 
 ## 制作封面
 
-完整对局默认制作一张带个性化短标题的封面，保存为本局制作目录的 `output/cover.png`，并将最终提示词、参考素材和实际尺寸记入 `output/cover-prompt.md`。按 [封面制作](references/cover.md) 核对本局冲突、人物身份和真人席位，沿用当前人物图集与成片风格，使用图像生成工具完成，检查文字与缩略图可读性后随片交付。续作时复用已确认的封面；修改版保留旧图。
+完整对局默认制作一张带个性化短标题的封面。先按 [封面制作](references/cover.md) 的通用模板写好完整提示词，整理当前人物图集与画面参考，保存为本局的 `output/cover-prompt.md`；再通过可用的 AI 文生图／参考图生图工具生成，由 agent 调用或真人在生图产品中粘贴提示词、上传参考图均可。检查人物、文字与缩略图可读性后，将封面保存为 `output/cover.png`，在制作记录中补上工具和实际尺寸。续作时复用已确认的封面；修改版保留旧图。
 
-这一步由使用 skill 的模型调用图像工具，`video:make` 不会自动生成封面。视频程序验证通过后仍需检查封面和发布文案是否齐全；用户只要求样品时按样品范围制作。
+`video:make` 不会自动调用生图服务。没有内置生图工具的 agent 仍可交接完整提示词和参考素材，按通用操作步骤生成后导入检查。Codex 使用内置生图的可选方法另列在封面参考文档中。视频程序验证通过后仍需检查封面和发布文案是否齐全；用户只要求样品时按样品范围制作。
 
 ## 验收和交付
 

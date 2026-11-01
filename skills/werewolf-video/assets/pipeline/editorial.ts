@@ -1,10 +1,10 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import type { Script } from './project';
+import { projectDir, type Script } from './project';
 import { completeHosting } from './hosting';
 import type { NarrationEdit } from './narration';
 export async function editScript(source: Script): Promise<Script> {
-  const file = process.env.VIDEO_NARRATION_FILE || `scripts/video/narration-${source.roomId}.json`;
+  const file = process.env.VIDEO_NARRATION_FILE || (existsSync(`${projectDir}/narration.json`) ? `${projectDir}/narration.json` : `scripts/video/narration-${source.roomId}.json`);
   if (!existsSync(file)) return completeHosting(source, source);
   const editorial = JSON.parse(await readFile(file, 'utf8')) as { roomId: string; edits: Record<string, NarrationEdit> };
   if (editorial.roomId !== source.roomId) throw Error('Narration and match do not match');

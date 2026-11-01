@@ -1,6 +1,20 @@
 # 制作前准备与台词润色：从对局到可运行的制作材料
 
-这一步由使用 skill 的模型完成。`prepare.ts` 只生成素材索引与模板，不会替你完成有表达质量的叙事编辑，也不会自动请求另一个文案模型。不要把“脚本能运行”当作“台词已润色”。先按本文件备齐材料，再开始 TTS 和渲染。
+这一步由制作者（AI agent 或真人）完成。`prepare.ts` 只生成素材索引与模板，不会替你完成有表达质量的叙事编辑，也不会自动请求另一个文案模型。不要把“脚本能运行”当作“台词已润色”。先按本文件备齐材料，再开始 TTS 和渲染。
+
+## 启动前到底准备到哪一步
+
+第一次运行 `--prepare-only` 前，需要已结束房间、项目依赖和可读的存档；此时不必先手工创建旁白文件。脚本会生成下表的初稿与索引。进入正式配音前，制作者必须完成上帝解说和声音表的实际核对、选择已授权的 TTS 服务与凭据；再运行 `--check-only`。
+
+| 文件／事项 | 脚本生成什么 | 开始正式配音前需完成什么 |
+| --- | --- | --- |
+| `plan.json`、`editorial-context.json` | 房间、身份、规则、事实与发言索引 | 阅读材料，引用发言时补读完整原文 |
+| `narration.json` | 可编辑模板，不代表已完成本局解说 | 按 [上帝解说写作](commentary.md) 写开场、点评、收尾，核对事实后填写 `review` |
+| `voices.json` | 默认声音配置与对应座位标签 | 逐席核对角色、音色、指令与语速，法官和上帝分开 |
+| TTS 配置 | 沿用显式选择的适配器和模型 | 确认服务可用、凭据已配置、外发已授权；接入方法见 [批量 TTS](tts-batch.md) |
+| 主题与样品选择 | 已有美术；样品需另选节点 | 使用已确认画面，需样品时备好独立选择表 |
+
+封面和最终发布文案可在成片制作期间准备，在最终交付前补齐。`--check-only` 只检查配音启动材料，不宣称封面、试听或文案已经完成。
 
 ## 第一阶段：只运行轻量准备，确认素材
 
@@ -16,7 +30,7 @@ pnpm video:make --room=latest --prepare-only
 
 制作前材料清单：
 
-| 材料 | 从哪里来 | 由模型完成什么 |
+| 材料 | 从哪里来 | 由制作者完成什么 |
 | --- | --- | --- |
 | 原始剪辑稿和事实 | `video:make --prepare-only` 导出 | 确认房间已结束、上帝视角与本次授权相符；不修改事实 |
 | `editorial-context.json` | `prepare.ts` 自动生成 | 了解转折、确定点评锚点；不能拿终局信息提前写到过程里 |
@@ -24,7 +38,7 @@ pnpm video:make --room=latest --prepare-only
 | `narration.json` | 自动模板/旧编辑稿 | **亲自润色开场、关键转折和收尾**，按下面的方法写回 |
 | 公共规则卡 | 游戏规则对象生成的 `ruleCard` | 画面摘录实际规则，不因模型一次误解而新增“纠错规则” |
 | 样品选段文件（需要样品时） | 模型选择的真实 `sourceSeq` 和分段 | 覆盖待检查的流程与画面，明确节选而不冒充完整对局 |
-| 封面素材与短标题 | 本局事实、`plan.cast`、当前人物图集与画面抽帧 | 选取真实冲突和对应人物，拟定简短醒目的文案，按 [封面制作](cover.md) 生成并保存到 `output` |
+| 封面素材与短标题 | 本局事实、`plan.cast`、当前人物图集与画面抽帧 | 选取真实冲突和对应人物，按 [封面制作](cover.md) 写好可复制提示词，使用 AI 生图工具生成并保存到 `output` |
 
 ## 第二阶段：整理人物与声音
 
@@ -37,6 +51,8 @@ pnpm video:make --room=latest --prepare-only
 指令描述“年轻、冷静、句子干净、转折清晰”这类可执行特征，避免只写“自然好听”。核对服务支持的模型、音色、语速与指令字段。批量调用与新增服务适配器见 [批量 TTS](tts-batch.md)。
 
 ## 第三阶段：把自动模板改成真正的节目台词
+
+首次写解说先按 [上帝解说写作步骤与可复制任务](commentary.md) 完成“读事实 → 列锚点 → 写开场／点评／收尾 → 写回 JSON → 逐句审核”。下面保留编辑格式和具体衔接说明，便于核对既有初稿。
 
 ### 先分清三种声音材料
 
@@ -126,7 +142,7 @@ pnpm video:make --room=latest --prepare-only
 - 法官的完整流程是否仍在，解说是否只补理解、没有覆盖法官结果？
 - 同一玩家的分段是否连续，原文与音色是否完整？
 
-核对完成后在 `narration.json` 写入记录，普通内部审核由你完成，不把它变成人工审批：
+核对完成后在 `narration.json` 写入记录。`method` 按实际执行者使用 `model-editor` 或 `human-editor`；AI agent 可自行完成常规内部审核：
 
 ```json
 "review": {
@@ -139,7 +155,7 @@ pnpm video:make --room=latest --prepare-only
 }
 ```
 
-这段记录描述已经完成的工作，不能在未读材料时先填。再次运行 `--prepare-only` 会刷新 `plan.json` 的审核状态；原编辑稿和音色文件会保留。
+这段记录描述已经完成的工作，不能在未读材料时先填。再次运行 `--prepare-only` 会刷新 `plan.json` 的审核状态；原编辑稿和音色文件会保留。显式指定 `--narration`、`--voices` 时，摘要和检查使用实际指定的文件。
 
 ## 第四阶段：备好画面与样品清单
 
@@ -185,10 +201,23 @@ node node_modules/tsx/dist/cli.mjs scripts/video/verify-sample.ts --video=样品
 
 ## 第五阶段：启动自动化并验收
 
-整局制作前，确认以上材料已审好，TTS 的服务、账号和外发范围已有授权。固定房间并显式传入材料：
+把 `ROOM_ID` 替换为准备时确定的房间号，先运行不调用 TTS 的材料检查：
 
 ```powershell
-pnpm video:make --room=ID --narration=本局旁白文件 --voices=本局声音表 --encoder=gpu --resume
+pnpm video:make --room=ROOM_ID --check-only --encoder=cpu
+```
+
+检查本局 `output/materials-check.json` 的 `ready` 和 `issues`。未通过时按缺项修改，不通过提前填写审核状态绕过。检查通过后，确认 TTS 的服务、账号和外发范围已有授权，再启动整片：
+
+```powershell
+pnpm video:make --room=ROOM_ID --resume
+```
+
+这两个命令默认使用本局目录的 `narration.json` 与 `voices.json`。使用独立制作目录或外部材料时，检查与正式制作均传入同样的 `--project-dir`、`--narration`、`--voices`。例如：
+
+```powershell
+pnpm video:make --room=ROOM_ID --project-dir=独立制作目录 --narration=本局旁白文件 --voices=本局声音表 --check-only --encoder=cpu
+pnpm video:make --room=ROOM_ID --project-dir=独立制作目录 --narration=本局旁白文件 --voices=本局声音表 --encoder=auto --resume
 ```
 
 之后程序完成合成、真实时间轴、直接小体积画面、预览和检查。没有 NVIDIA 或用户选择 CPU 时显式用 `--encoder=cpu`；强制 `gpu` 失败时不隐瞒回退。新版本可用 `--project-dir=独立目录` 保存，已有原片不覆盖。遇到鉴权/额度/审批失败，保留成功缓存并报告实际障碍，不重复请求或自动换付费服务。样品模式只跑样品，不暗中制作整局。
@@ -197,7 +226,7 @@ pnpm video:make --room=ID --narration=本局旁白文件 --voices=本局声音�
 
 ## 第六阶段：制作封面并整理发布材料
 
-完整对局默认还需一张带个性化短标题的封面。按 [封面制作](cover.md) 使用本局人物和画面作参考，生成、检查并保存 `output/cover.png` 与 `output/cover-prompt.md`。已有确认版本时直接复用；视频程序检查通过后仍要核对这些交付文件。
+完整对局默认还需一张带个性化短标题的封面。按 [封面制作](cover.md) 先写好 `output/cover-prompt.md`，整理本局人物和画面参考，再由 agent 调用 AI 生图工具或真人在生图产品中操作。生成后检查并保存 `output/cover.png`，补全制作记录。文档提供通用提示词模板、人工操作步骤与 Codex 的可选方法；已有确认版本时直接复用。视频程序检查通过后仍要核对这些交付文件。
 
 将最终发布标题与简介写入同一制作目录下的 `output/publish-copy.md`，用 `# 标题`、`# 简介` 分开，交付时提供成片、封面和文案文件的链接。用户在聊天中调整用词后同步落盘，保留已经确认的措辞；备选标题不放进这份定稿。强调真人参局时按存档的座位控制方式核对，区分真人／AI操作与后期AI配音。
 

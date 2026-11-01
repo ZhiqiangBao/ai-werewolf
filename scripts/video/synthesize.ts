@@ -3,6 +3,7 @@ import { loadScript, loadVoices, buildClips, clipVoiceProfile, projectDir, type 
 import { synthesizeSpeech } from './tts';
 import { editScript } from './editorial';
 import { assertPlayerSources } from './integrity';
+import { inspectMaterials } from './materials';
 
 const prepared = process.argv.includes('--prepared-clips');
 const source: Script = prepared ? JSON.parse(await readFile(`${projectDir}/source.json`, 'utf8')) : await loadScript();
@@ -10,6 +11,10 @@ const script: Script = prepared ? JSON.parse(await readFile(`${projectDir}/scrip
 const voices: VoiceCatalog = prepared ? JSON.parse(await readFile(`${projectDir}/voices.json`, 'utf8')) : await loadVoices();
 const clips = prepared ? JSON.parse(await readFile(`${projectDir}/clips.json`, 'utf8')) as ReturnType<typeof buildClips> : buildClips(script);
 assertPlayerSources(source, script, clips);
+if (!process.argv.includes('--plan-only')) {
+  const materials = await inspectMaterials(source, voices);
+  if (!materials.ready) throw Error(`制作材料尚未就绪，没有调用 TTS：\n${materials.issues.join('\n')}`);
+}
 await mkdir(projectDir, { recursive: true });
 await writeFile(`${projectDir}/script.json`, JSON.stringify(script, null, 2));
 await writeFile(`${projectDir}/source.json`, JSON.stringify(source, null, 2));

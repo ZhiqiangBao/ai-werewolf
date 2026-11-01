@@ -1,4 +1,4 @@
 interface:
-  display_name: "����ɱ�Ծ���Ƶ������"
-  short_description: "����ʵ�Ծּ�¼�Զ����ɾ籾����ɫ��������Ļʱ�����������ϵ��ӽ���Ƶ"
-  default_prompt: "ʹ�� $werewolf-video �������ѽ����Ծ�����������������Ƶ����������Ļ��ʱ���ᡣ"
+  display_name: "狼人杀对局视频工作流"
+  short_description: "整理对局材料、编写上帝解说，完成角色配音、字幕、成片、封面与发布文案"
+  default_prompt: "使用 $werewolf-video 制作最新已结束对局：先准备材料并完成上帝解说审核，再启动视频流水线，交付成片、封面和发布文案。"

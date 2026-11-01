@@ -7,10 +7,11 @@ import { startGpuMonitor } from './metrics';
 
 const root = resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const args = new Map(process.argv.slice(2).map((a) => { const i = a.indexOf('='); return [a.slice(0, i < 0 ? undefined : i), i < 0 ? 'true' : a.slice(i + 1)]; }));
-const stages = ['export', 'plan', 'tts', 'audit-audio', 'timeline', 'render', 'preview', 'verify'] as const;
-const supported = new Set(['--help', '--room', '--prepare-only', '--through', '--encoder', '--theme', '--voices', '--narration', '--data-dir', '--project-dir', '--resume', '--repair-audio', '--tts-provider', '--tts-adapter', '--video-kbps', '--max-video-kbps', '--audio-kbps']);
+const stages = ['export', 'plan', 'preflight', 'tts', 'audit-audio', 'timeline', 'render', 'preview', 'verify'] as const;
+const supported = new Set(['--help', '--room', '--prepare-only', '--check-only', '--through', '--encoder', '--theme', '--voices', '--narration', '--data-dir', '--project-dir', '--resume', '--repair-audio', '--tts-provider', '--tts-adapter', '--video-kbps', '--max-video-kbps', '--audio-kbps']);
 for (const key of args.keys()) if (!supported.has(key)) throw Error(`Unknown option ${key}`);
-if (args.has('--help')) { console.log('video:make --room=latest|ID [--prepare-only] [--through=STAGE] [--project-dir=DIR] [--encoder=auto|cpu|gpu] [--repair-audio] [--video-kbps=750 --max-video-kbps=1200 --audio-kbps=96] [--theme=campus|storybook|gufeng|fantasy|urban|future] [--voices=FILE] [--narration=FILE] [--tts-provider=ID --tts-adapter=FILE]'); process.exit(0); }
+if (args.has('--help')) { console.log('video:make --room=latest|ID [--prepare-only | --check-only] [--through=STAGE] [--project-dir=DIR] [--encoder=auto|cpu|gpu] [--repair-audio] [--video-kbps=750 --max-video-kbps=1200 --audio-kbps=96] [--theme=campus|storybook|gufeng|fantasy|urban|future] [--voices=FILE] [--narration=FILE] [--tts-provider=ID --tts-adapter=FILE]'); process.exit(0); }
+if (args.has('--prepare-only') && args.has('--check-only')) throw Error('Choose --prepare-only or --check-only');
 const dataRoot = resolve(root, args.get('--data-dir') || 'data');
 const roomsDir = join(dataRoot, 'rooms');
 let room = args.get('--room') || 'latest';
@@ -36,7 +37,7 @@ if (encoderOption !== 'cpu') {
   try { execFileSync('nvidia-smi', ['--query-gpu=name', '--format=csv,noheader'], { windowsHide: true, stdio: 'ignore', timeout: 4000 }); encoder = 'h264_nvenc'; }
   catch { if (encoderOption === 'gpu') throw Error('Requested NVIDIA encoding but nvidia-smi is unavailable'); }
 }
-const last = args.has('--prepare-only') ? 'plan' : args.get('--through') || 'verify';
+const last = args.has('--prepare-only') ? 'plan' : args.has('--check-only') ? 'preflight' : args.get('--through') || 'verify';
 if (!stages.includes(last as any)) throw Error('Invalid final stage');
 const env = { ...process.env, WEREWOLF_DATA: dataRoot, VIDEO_DATA_DIR: dataRoot, VIDEO_ROOM: room, VIDEO_PROJECT_DIR: dir, VIDEO_AVATAR_STYLE: theme, VIDEO_ENCODER: encoder,
   VIDEO_REQUIRE_GPU: encoderOption === 'gpu' ? '1' : '0',
