@@ -68,7 +68,8 @@ export const daySteps: Record<string, StepHandler> = {
       const steps: Step[] = [];
       const announce: Step = { type: 'dawn.announce' };
       const election: Step = { type: 'sheriff.election', cancelOnExplode: true };
-      if (electionToday && ctx.opt<string>('sheriff.timing') === 'before_announcement') steps.push(election, announce);
+      const directResume = el.postponed && ctx.opt<string>('sheriff.explodeInElection') === 'postpone_vote';
+      if (electionToday && !directResume && ctx.opt<string>('sheriff.timing') === 'before_announcement') steps.push(election, announce);
       else {
         steps.push(announce);
         if (electionToday) steps.push(election);
@@ -79,7 +80,7 @@ export const daySteps: Record<string, StepHandler> = {
   },
 
   'dawn.announce': {
-    run(ctx) {
+    run(ctx, step) {
       const s = ctx.state;
       const pd = s.pendingDeaths;
       s.pendingDeaths = null;
@@ -87,14 +88,15 @@ export const daySteps: Record<string, StepHandler> = {
       if (!pd || !pd.deaths.length) {
         s.dayState.anchor = null;
         ctx.pub('dawn', '昨夜平安，无人出局。', { deaths: [] });
+        if (typeof step.batch === 'number') ctx.pushFront({ type: 'deaths.batch', batch: step.batch, mode: step.deathMode, firstLastWords: step.firstLastWords });
         return;
       }
-      const batch = ctx.newBatch();
+      const batch = typeof step.batch === 'number' ? step.batch : ctx.newBatch();
       const seats = pd.deaths.map((d) => d.seat);
       for (const d of pd.deaths) ctx.kill(d.seat, { via: 'night', causes: d.causes, batch, day: pd.night });
       s.dayState.anchor = pickAnchor(ctx, pd);
       ctx.pub('dawn', `昨夜出局：${seatList(seats)}。`, { deaths: seats });
-      ctx.pushFront({ type: 'deaths.batch', batch, mode: 'standard' });
+      ctx.pushFront({ type: 'deaths.batch', batch, mode: step.deathMode ?? 'standard', firstLastWords: step.firstLastWords });
     },
   },
 

@@ -218,6 +218,7 @@ details.panel > summary { cursor: pointer; color: var(--text); }.rulecard { font
 .speech-controls { flex: none; border-bottom: 1px solid var(--line); padding-bottom: 12px; margin-bottom: 12px; }
 .speech-controls audio { display: none; }
 .speech-controls select { width: 72px; padding: 4px; }
+.speech-controls select.speech-source { width: auto; max-width: 100%; flex: 1; min-width: 110px; }
 .speech-controls .row { gap: 6px; }
 .speech-read { margin-left: 6px; padding: 1px 6px; font-size: 10px; }
 @media (min-width: 1051px) {

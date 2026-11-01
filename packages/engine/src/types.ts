@@ -99,6 +99,8 @@ export interface ElectionState {
   withdrawn: Seat[];
   postponed: boolean;
   postponedCandidates: Seat[] | null;
+  /** 新延期规则保留投票轮次；原 candidates/withdrawn 保留首次报名与退水资格。旧存档可缺省。 */
+  postponedVote?: { round: 1 | 2; candidates: Seat[] };
   explosions: number;
 }
 

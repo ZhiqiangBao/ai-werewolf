@@ -105,6 +105,21 @@ describe('真人玩家接入、候场和凭证', () => {
 });
 
 describe('真人行动复用引擎', () => {
+  it('私密 speech 也必须先经过本人投影，其他座位和观战不能请求隐藏发言', () => {
+    const { m, store, secrets, id, host, tok, setup, ready } = room(true); ready(); m.start(id, host); m.dispose();
+    const record = store.rooms.get(id)!;
+    const seq = ++record.state!.seq;
+    record.events.push({ seq, day: 1, phase: 'night', type: 'speech', audience: [1], text: '合成的授权发言', payload: { seat: 1, content: '仅本人可听的合成发言' } });
+    const next = new RoomManager({ store, secrets, tickMs: 0 }); managers.push(next);
+    for (const token of [host, tok(1)]) {
+      const own = next.view(id, token).projection!.events.find((e) => e.payload.content === '仅本人可听的合成发言')!;
+      expect(next.speechText(id, token, own.seq)).toBe('1号发言。仅本人可听的合成发言');
+    }
+    for (const token of [tok(2), setup.tokens.spectator]) {
+      expect(next.view(id, token).projection!.events.some((e) => e.payload.content === '仅本人可听的合成发言')).toBe(false);
+      expect(() => next.speechText(id, token, seq)).toThrow();
+    }
+  });
   it('朗读按各凭证的投影编号读取已接受公开发言，不读取私密记录或自由文本', () => {
     const { m, id, host, tok, setup, ready } = room(true); ready();
     expect(() => m.speechText(id, host, 1)).toThrow('还没有开始');
@@ -121,8 +136,8 @@ describe('真人行动复用引擎', () => {
         }
         const p = m.view(id, host).projection!;
         const privateEvent = p.events.find((e) => e.audience !== 'public')!;
-        expect(() => m.speechText(id, host, privateEvent.seq)).toThrow('不是可朗读');
-        expect(() => m.speechText(id, host, p.events.find((e) => e.type === 'game.start')!.seq)).toThrow('不是可朗读');
+        expect(() => m.speechText(id, host, privateEvent.seq)).toThrow('可朗读');
+        expect(() => m.speechText(id, host, p.events.find((e) => e.type === 'game.start')!.seq)).toThrow('可朗读');
         expect(() => m.speechText(id, 'invalid-token', 1)).toThrow();
         for (const invalid of ['1', 1.5, 0, null, '自由文本']) expect(() => m.speechText(id, host, invalid)).toThrow('请选择');
         return;

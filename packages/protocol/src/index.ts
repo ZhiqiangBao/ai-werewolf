@@ -1,4 +1,5 @@
 export type Seat = number;
+export type { SpeechProviderView, SpeechProvidersView } from './speech';
 export { expandActionTools, canonicalAction, simulationTools, exposeAction, actionMenu } from './action-tools';
 export { API_PROTOCOLS, API_PROTOCOL_LABELS, apiProtocol, apiBase, apiUrl, isDashscopeEndpoint } from './api';
 export type { ApiProtocol, TokenUsage } from './api';

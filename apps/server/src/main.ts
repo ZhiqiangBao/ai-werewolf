@@ -15,7 +15,7 @@ const HOST = process.env.HOST ?? '127.0.0.1';
 
 const secrets = SecretBox.fromEnvOrFile(DATA);
 const manager = new RoomManager({ store: new FileStore(DATA), secrets, modelsPath: join(DATA, 'models.json') });
-const speech = new SpeechService(join(DATA, 'speech'));
+const speech = SpeechService.configured(join(DATA, 'speech'), process.env.WEREWOLF_SPEECH_CONFIG);
 
 function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -102,15 +102,21 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL): Promise
       return send(res, 200, manager.act(roomId, token, await readBody(req)));
     case 'POST participate':
       return send(res, 200, manager.participate(roomId, token, await readBody(req)));
+    case 'GET speech-providers':
+      manager.view(roomId, token);
+      return send(res, 200, speech.catalog());
     case 'POST speech': {
       const body = await readBody(req);
       const text = manager.speechText(roomId, token, body.eventSeq);
+      if (body.providerId !== undefined && (typeof body.providerId !== 'string' || !speech.catalog().providers.some((p) => p.id === body.providerId))) {
+        throw new ApiFailure(400, 'BAD_REQUEST', '请选择已配置的朗读来源');
+      }
       try {
-        const audio = await speech.render(text);
-        res.writeHead(200, { 'Content-Type': 'audio/wav', 'Content-Length': audio.length, 'Cache-Control': 'private, no-store' });
-        res.end(audio);
+        const audio = await speech.render(text, body.providerId as string | undefined);
+        res.writeHead(200, { 'Content-Type': audio.mimeType, 'Content-Length': audio.bytes.length, 'Cache-Control': 'private, no-store' });
+        res.end(audio.bytes);
       } catch {
-        return send(res, 503, { code: 'SPEECH_UNAVAILABLE', message: 'Token Plan 朗读暂时不可用，请检查语音配置、额度或稍后重试。' });
+        return send(res, 503, { code: 'SPEECH_UNAVAILABLE', message: '所选来源朗读失败，请检查服务配置或稍后重试；未切换到其他来源。' });
       }
       return;
     }

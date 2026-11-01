@@ -45,10 +45,11 @@ export const CORE_OPTIONS: OptionDef[] = [
     label: '竞选未产生警长时有狼人自爆',
     type: 'choice',
     choices: [
+      { value: 'postpone_vote', label: '首次自爆延期，次日直接投票；再爆则警徽流失' },
       { value: 'lost', label: '警徽流失，本局不再竞选' },
-      { value: 'postpone', label: '竞选推迟到下一个白天，再爆则警徽流失' },
+      { value: 'postpone', label: '延期后重新竞选发言（旧规则），再爆则警徽流失' },
     ],
-    default: 'lost',
+    default: 'postpone_vote',
     editable: true,
   },
   { key: 'vote.normalWeight', group: '投票', label: '普通票内部权重', type: 'number', default: 2, editable: false },

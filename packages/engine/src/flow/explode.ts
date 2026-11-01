@@ -47,6 +47,7 @@ export const explodeSteps: Record<string, StepHandler> = {
       if (!ctx.opt<boolean>('explode.enabled') || ctx.state.ending) return;
       const wolves = ctx.alive().filter((x) => canExplodeNow(ctx, x));
       if (!wolves.length) return;
+      const resume = step.electionResume === true;
       ctx.ask({
         step,
         actors: wolves,
@@ -55,13 +56,13 @@ export const explodeSteps: Record<string, StepHandler> = {
           {
             name: 'wolf_explode_decision',
             title: '是否自爆',
-            description: '下一段发言开始前，决定是否自爆。自爆会立刻出局并公开狼人身份，当天剩余流程取消。',
+            description: resume ? '警长延期续选投票前，决定是否自爆。再次自爆则警徽流失，并取消当天剩余流程。' : '下一段发言开始前，决定是否自爆。自爆会立刻出局并公开狼人身份，当天剩余流程取消。',
             params: [{ kind: 'boolean', name: 'explode', label: '是否自爆', trueLabel: '自爆', falseLabel: '不自爆' }],
           },
         ],
-        prompt: () => '下一段发言即将开始。是否现在自爆？',
+        prompt: () => resume ? '警长延期续选即将直接投票，不再竞选发言。是否现在自爆？再次自爆将使警徽流失。' : '下一段发言即将开始。是否现在自爆？',
         title: `第${ctx.state.day}天 · 自爆询问`,
-        publicStage: ctx.state.stage,
+        publicStage: resume ? '警长续选：投票前确认' : ctx.state.stage,
         speechWindow: false,
       });
     },
@@ -85,6 +86,7 @@ export const explodeSteps: Record<string, StepHandler> = {
 /** 自爆：立刻出局并公开狼人身份，取消当天剩余发言、竞选和放逐，然后按 警徽 → 遗言 → 胜负 处理。 */
 export function applyExplosion(ctx: Ctx, seat: Seat): void {
   const s = ctx.state;
+  const vote = s.agenda.find((x) => x.type === 'sheriff.vote');
   s.pending = null;
   s.agenda = s.agenda.filter((x) => !x.cancelOnExplode);
   const batch = ctx.newBatch();
@@ -96,18 +98,30 @@ export function applyExplosion(ctx: Ctx, seat: Seat): void {
   const el = s.election;
   if (ctx.opt<boolean>('sheriff.enabled') && s.dayState.electionToday && el.status !== 'done') {
     const remaining = el.candidates.filter((c) => c !== seat && !el.withdrawn.includes(c));
-    if (ctx.opt<string>('sheriff.explodeInElection') === 'postpone' && el.explosions === 0) {
+    const policy = ctx.opt<string>('sheriff.explodeInElection');
+    if ((policy === 'postpone' || policy === 'postpone_vote') && el.explosions === 0) {
       el.explosions += 1;
       el.status = 'pending';
       el.postponed = true;
       el.postponedCandidates = el.candidates.length ? remaining : null;
-      ctx.pub('sheriff.postponed', '警长竞选尚未结束有人自爆，竞选推迟到下一个白天。', {});
+      if (policy === 'postpone_vote' && el.candidates.length) {
+        const round = vote?.round === 2 ? 2 : 1;
+        el.postponedVote = { round, candidates: (round === 2 ? vote!.tied as Seat[] : remaining).filter((c) => c !== seat && !el.withdrawn.includes(c)) };
+      }
+      ctx.pub('sheriff.postponed', policy === 'postpone_vote' ? '首次警上自爆，竞选延期；下一白天公布昨夜情况后直接续投，不再竞选发言，再次竞选自爆则警徽流失。' : '警长竞选尚未结束有人自爆，竞选推迟到下一个白天。', {});
     } else {
       el.explosions += 1;
       el.status = 'done';
       el.postponed = false;
+      delete el.postponedVote;
       ctx.pub('sheriff.lost', '警长竞选尚未产生警长时有人自爆，警徽流失，本局没有警长。', {});
     }
+  }
+  // 新规则把尚未公布的夜间死亡合入同一批：先公布，再复用猎枪职责，最后处理遗言。
+  if (ctx.opt<string>('sheriff.explodeInElection') === 'postpone_vote' && s.agenda.some((x) => x.type === 'dawn.announce')) {
+    s.agenda = s.agenda.filter((x) => x.type !== 'dawn.announce');
+    ctx.pushFront({ type: 'dawn.announce', batch, deathMode: 'explode', firstLastWords: seat });
+    return;
   }
   ctx.pushFront({ type: 'deaths.batch', batch, mode: 'explode' });
 }

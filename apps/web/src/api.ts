@@ -14,6 +14,7 @@ import type {
   ViewResponse,
   ParticipantInput,
   SeatActionInput,
+  SpeechProvidersView,
 } from '@werewolf/protocol';
 
 export class ApiError extends Error {
@@ -42,6 +43,7 @@ async function request<T>(method: string, path: string, token?: string, body?: u
 }
 
 export const api = {
+  speechProviders: (id: string, token: string) => request<SpeechProvidersView>('GET', `/rooms/${id}/speech-providers`, token),
   catalog: () => request<Catalog>('GET', '/catalog'),
   modelPresets: () => request<ModelPresetView[]>('GET', '/models'),
   addModel: (draft: ModelDraft) => request<ModelPresetView>('POST', '/models', undefined, draft),

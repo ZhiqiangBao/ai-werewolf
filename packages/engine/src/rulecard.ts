@@ -46,7 +46,7 @@ export function buildRuleCard(rules: RuleSet): string {
   for (const mod of new Set(rules.nightOrder.map((id) => phaseOwner.get(id)))) {
     for (const line of mod?.ruleCard?.(rules) ?? []) L.push(`· ${line}`);
   }
-  L.push('· 天亮只公布出局名单，不公布死因；出局不公布身份。');
+  L.push('· 夜间出局情况由法官明确通报：有人出局时报出局名单，无人出局时明确宣布「昨夜平安，无人出局」。在法官公开通报前，夜间出局情况为「尚未公布」，未通报不代表平安夜。通报只公布出局名单，不公布死因；出局不公布身份。');
 
   const dayRoles = mods.filter((m) => !m.nightPhase && !m.nightPhases?.length && m.ruleCard);
   if (dayRoles.length) {
@@ -58,13 +58,15 @@ export function buildRuleCard(rules: RuleSet): string {
   if (sheriff) {
     const timing =
       v['sheriff.timing'] === 'before_announcement'
-        ? '第 1 天天亮后先竞选警长，再公布昨夜出局；昨夜出局的人在公布之前照常参与竞选。'
+        ? '第 1 天天亮后先竞选警长，再公布昨夜出局；昨夜出局的人在公布之前照常参与竞选。公布前能够上警、发言或投票，只表示有当前阶段的参与资格，不表示该玩家已经确认存活。'
         : '第 1 天先公布昨夜出局、完成首夜遗言，再竞选警长。';
     const voters = v['sheriff.withdrawnCanVote']
       ? '未上警的玩家和退水的玩家投票'
       : '只有未上警的玩家投票（上过警的玩家包括退水者都不能投）';
     const explodeRule = !canExplode
       ? ''
+      : v['sheriff.explodeInElection'] === 'postpone_vote'
+        ? '首次竞选自爆后先公布尚未公布的昨夜情况，处理猎枪等出局职责，再由自爆者及按规则有遗言的夜间出局者发表遗言，随后入夜。竞选延期到下一白天，先公布昨夜情况和处理出局职责，再保留原报名、退水与投票轮次直接续投，不重新上警或竞选发言；续投前存活狼人可确认是否再次自爆，再爆则警徽流失。候选人已出局或退水则不能参选，原警下资格不因延期重置；平票仍按 PK 规则处理。'
       : v['sheriff.explodeInElection'] === 'postpone'
         ? '竞选尚未产生警长时有狼人自爆，竞选推迟到下一个白天（候选人不变）；再有自爆则警徽流失。'
         : '竞选尚未产生警长时有狼人自爆，警徽流失，本局没有警长。';
@@ -77,6 +79,7 @@ export function buildRuleCard(rules: RuleSet): string {
   }
   const anchor =
     v['speech.anchor'] === 'knife_first' ? '狼刀出局者（刀口未出局时为其他出局者）' : '一名出局者（多人出局时随机取一名）';
+  L.push('· 每个白天的普通发言都在昨夜情况通报之后。' + (v['sheriff.explodeInElection'] === 'postpone_vote' ? '延期直接续投警长时，也先通报昨夜情况再续投。' : ''));
   L.push(
     `· 发言顺序：${sheriff ? '有警长时由警长选择顺时针（号码增大）或逆时针，从警长下一位存活玩家开始，警长最后发言。没有警长时，' : ''}` +
       `昨夜有人出局则从${anchor}的下一位开始；昨夜平安则由法官随机指定起点。方向由法官随机决定并公布。`,
@@ -109,7 +112,8 @@ export function buildRuleCard(rules: RuleSet): string {
       `被猎人带走的人：猎人第 1 夜出局时${has('shotAfterFirstNight')}遗言，猎人第 2 夜起在夜里出局时${has('shotAfterLaterNight')}遗言，猎人被放逐时${has('shotAfterVote')}遗言`,
     );
   }
-  L.push(`· 遗言：${words.join('；')}。多人遗言按座位号从小到大。胜负已分后不再发表遗言。`);
+  const explosionWords = v['sheriff.explodeInElection'] === 'postpone_vote' ? '警上自爆与尚未公布的夜间死亡合并处理时，自爆者先遗言，其余按座位号从小到大。' : '';
+  L.push(`· 遗言：${words.join('；')}。多人遗言按座位号从小到大。${explosionWords}胜负已分后不再发表遗言。`);
 
   L.push(dayRoles.length ? '五、其他' : '四、其他');
   L.push('· 发言里声称的身份，法官不证实也不否认。');

@@ -79,8 +79,24 @@ export const sheriffSteps: Record<string, StepHandler> = {
       const s = ctx.state;
       const el = s.election;
       el.status = 'running';
-      el.withdrawn = [];
       s.stage = `第${s.day}天 · 警长竞选`;
+      if (el.postponed && ctx.opt<string>('sheriff.explodeInElection') === 'postpone_vote' && el.postponedVote) {
+        const vote = el.postponedVote;
+        const candidates = vote.candidates.filter((c) => ctx.isAlive(c) && !el.withdrawn.includes(c));
+        el.postponed = false;
+        el.postponedCandidates = null;
+        delete el.postponedVote;
+        ctx.pub('sheriff.resume', `延期竞选直接续投，不再竞选发言。候选人：${candidates.length ? seatList(candidates) : '无'}。`, {
+          candidates, withdrawn: [...el.withdrawn], mode: 'vote', round: vote.round,
+        });
+        if (!candidates.length) return noSheriff(ctx, '续选候选人均已出局或退水，本局没有警长。');
+        ctx.pushFront(
+          { type: 'explode.window', electionResume: true, cancelOnExplode: true },
+          { type: 'sheriff.vote', round: vote.round, ...(vote.round === 2 ? { tied: candidates } : {}), cancelOnExplode: true },
+        );
+        return;
+      }
+      el.withdrawn = [];
       if (el.postponed && el.postponedCandidates) {
         el.candidates = el.postponedCandidates.filter((c) => ctx.isAlive(c));
         el.postponed = false;
@@ -93,7 +109,7 @@ export const sheriffSteps: Record<string, StepHandler> = {
       }
       el.postponed = false;
       el.candidates = [];
-      ctx.pub('sheriff.start', '开始竞选警长。', {});
+      ctx.pub('sheriff.start', '开始竞选警长。' + (s.pendingDeaths ? '首夜出局情况尚未公布，将在竞选结束或自爆中断后通报；尚未通报不代表平安夜。' : ''), {});
       ctx.pushFront({ type: 'sheriff.signup', cancelOnExplode: true });
     },
   },

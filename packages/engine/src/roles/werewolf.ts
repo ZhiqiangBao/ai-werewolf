@@ -216,7 +216,7 @@ function wolfTools(seats: Seat[], v: RuleSet['values']): ToolSpec[] {
     {
       name: 'wolf_explode_decision',
       title: '是否自爆',
-      description: '法官在下一段发言前询问是否自爆时使用。explode 必须是布尔值，true 表示自爆，false 表示不自爆。例：{"explode":false}。多人同时选 true 时由最小座位号执行，其余仍存活。只回答该次询问；其他阶段不要调用。',
+      description: '法官在下一段发言前或延期警长续选投票前询问是否自爆时使用。explode 必须是布尔值，true 表示自爆，false 表示不自爆。例：{"explode":false}。多人同时选 true 时由最小座位号执行，其余仍存活。只回答该次询问；其他阶段不要调用。',
       params: [{ kind: 'boolean', name: 'explode', label: '是否自爆', trueLabel: '自爆', falseLabel: '不自爆' }],
     },
   );

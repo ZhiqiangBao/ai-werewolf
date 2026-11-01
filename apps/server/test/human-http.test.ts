@@ -1,11 +1,13 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CreateRoomResult, RoomSetupView, ViewResponse } from '@werewolf/protocol';
+import { mockDecision } from '../../../packages/llm/src/index';
+import { wavHeader } from '../../../packages/session/src/speech/audio';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const dataDir = mkdtempSync(resolve(tmpdir(), 'werewolf-human-http-'));
@@ -27,6 +29,9 @@ beforeAll(async () => {
     });
   });
   base = `http://127.0.0.1:${port}/api/v1`;
+  const audio = Buffer.concat([wavHeader(24000, 24000), Buffer.alloc(48000)]);
+  writeFileSync(resolve(dataDir, 'speech-adapter.mjs'), `export async function synthesize({text}) { if(!text.endsWith("接口朗读原文。"))throw Error("Unexpected source text"); return {bytes:Buffer.from("${audio.toString('base64')}","base64"),mimeType:"audio/wav"}; }`);
+  writeFileSync(resolve(dataDir, 'speech-providers.json'), JSON.stringify({ providers: [{ id: 'fixture', label: '接口测试', type: 'module', module: './speech-adapter.mjs' }] }));
   child = spawn(process.execPath, ['--import', 'tsx', 'apps/server/src/main.ts'], {
     cwd: root, env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', WEREWOLF_DATA: dataDir },
     stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
@@ -96,5 +101,27 @@ describe('真人 HTTP 与 SSE 接入', () => {
     expect((await request(speechPath, '', { eventSeq: 1 })).status).toBe(401);
     expect((await request(speechPath, setup.tokens.spectator, { text: '客户端自由文本' })).status).toBe(400);
     expect((await request(speechPath, setup.tokens.spectator, { eventSeq: spectator.projection!.events[0].seq })).status).toBe(404);
+  });
+
+  it('朗读目录不暴露配置，HTTP 只合成凭证可见的已接受原文，不接受自由文本或未知提供方', async () => {
+    const path = `rooms/${room.roomId}`;
+    expect((await request(`${path}/speech-providers`, '', undefined, 'GET')).status).toBe(401);
+    expect(await (await request(`${path}/speech-providers`, setup.tokens.spectator, undefined, 'GET')).json()).toEqual({ providers: [{ id: 'fixture', label: '接口测试' }], defaultProviderId: 'fixture' });
+    for (let i = 0; i < 150; i++) {
+      const views = await Promise.all(setup.tokens.seats.map(async (t) => ({ token: t.token, view: await (await request(`${path}/view`, t.token, undefined, 'GET')).json() as ViewResponse })));
+      const actor = views.find((v) => v.view.projection?.task && !v.view.projection.task.submitted)!;
+      const p = actor.view.projection!, task = p.task!;
+      const call = task.tools.some((t) => t.name === 'speak') ? { tool: 'speak', args: { content: '接口朗读原文。' } } : mockDecision(p, task.tools);
+      expect((await request(`${path}/act`, actor.token, { decisionId: task.decisionId, ...call })).status).toBe(200);
+      if (call.tool !== 'speak') continue;
+      const watch = await (await request(`${path}/view`, setup.tokens.spectator, undefined, 'GET')).json() as ViewResponse;
+      const event = watch.projection!.events.find((e) => e.type === 'speech')!;
+      expect((await request(`${path}/speech`, setup.tokens.spectator, { eventSeq: event.seq, providerId: 'unknown' })).status).toBe(400);
+      const response = await request(`${path}/speech`, setup.tokens.spectator, { eventSeq: event.seq, providerId: 'fixture', text: '不能替换原文' });
+      expect(response.status).toBe(200); expect(response.headers.get('Content-Type')).toBe('audio/wav');
+      expect(Buffer.from(await response.arrayBuffer()).toString('ascii', 0, 4)).toBe('RIFF');
+      return;
+    }
+    throw Error('没有到达可测试的公开发言');
   });
 });

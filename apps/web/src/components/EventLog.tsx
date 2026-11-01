@@ -129,7 +129,7 @@ function EventItem({ e, nameOf, scope, onRead }: { e: GameEvent; nameOf: (s: num
           <div className="who">
             {nameOf(seat)} · {kind}
             {meta}
-            {!wolf && e.audience === 'public' && onRead && <button className="btn sm ghost speech-read" aria-label={`朗读${seat}号${kind}`} onClick={() => onRead(e)}>朗读</button>}
+            {!wolf && onRead && <button className="btn sm ghost speech-read" aria-label={`朗读${seat}号${kind}`} onClick={() => onRead(e)}>朗读</button>}
           </div>
           <div className="bubble">{p.content as string}</div>
         </div>

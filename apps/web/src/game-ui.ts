@@ -66,7 +66,9 @@ export function publicElection(events: GameEvent[]): PublicElection {
       state.phase = 'running'; state.candidates.clear(); state.withdrawn.clear();
     } else if (e.type === 'sheriff.signup' || e.type === 'sheriff.resume') {
       state.phase = 'running'; state.candidates = new Set(seatNumbers(e.payload.candidates));
-      if (e.type === 'sheriff.resume') state.withdrawn.clear();
+      if (e.type === 'sheriff.resume') {
+        state.withdrawn = new Set(Array.isArray(e.payload.withdrawn) ? e.payload.withdrawn as number[] : []);
+      }
     } else if (e.type === 'sheriff.withdraw' && Number.isInteger(e.payload.seat)) {
       state.withdrawn.add(e.payload.seat as number);
     } else if (e.type === 'sheriff.postponed') state.phase = 'postponed';

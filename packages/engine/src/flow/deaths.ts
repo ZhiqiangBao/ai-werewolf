@@ -28,7 +28,7 @@ export const deathSteps: Record<string, StepHandler> = {
       if (step.mode === 'explode') {
         ctx.pushFront(
           { type: 'badge.duty', batch },
-          { type: 'lastwords', batch, allowExplode: false },
+          { type: 'lastwords', batch, allowExplode: false, first: step.firstLastWords },
           { type: 'win.check', batch },
         );
       } else {
@@ -103,7 +103,7 @@ export const deathSteps: Record<string, StepHandler> = {
       const seats = ctx.state.deaths
         .filter((d) => d.batch === batch && d.lastWords)
         .map((d) => d.seat)
-        .sort((a, b) => a - b);
+        .sort((a, b) => a === step.first ? -1 : b === step.first ? 1 : a - b);
       const allowExplode = !!step.allowExplode && !ctx.state.ending;
       const steps: Step[] = [];
       for (const seat of seats) {

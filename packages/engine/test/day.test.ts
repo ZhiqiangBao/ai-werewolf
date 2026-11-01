@@ -343,8 +343,8 @@ describe('自爆（DAY-09）', () => {
     expect(g.view(1).events.some((e) => e.type === 'explode.preempted')).toBe(false);
   });
 
-  it('竞选中自爆默认警徽流失；改为推迟时第 2 天继续竞选', () => {
-    const lost = new TestGame({ deal: DEAL12 });
+  it('旧规则可选择竞选中自爆警徽流失；旧延期模式第 2 天继续竞选', () => {
+    const lost = new TestGame({ deal: DEAL12, values: { 'sheriff.explodeInElection': 'lost' } });
     lost.night({ kill: null });
     lost.until((x) => x.hasTool('sheriff_signup'));
     for (const s of lost.waiting()) lost.ok(s, 'sheriff_signup', { run: [1, 9, 10].includes(s) });
