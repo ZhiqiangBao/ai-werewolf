@@ -1,4 +1,4 @@
-import type { AdapterKind, Seat } from '@werewolf/protocol';
+import type { AdapterKind, ObservabilityOptions, Seat } from '@werewolf/protocol';
 import type { Adapter } from '@werewolf/llm';
 import type { SecretBox } from './secret';
 import type { RoomRecord, RoomStore } from './store';
@@ -77,6 +77,8 @@ export interface RoomViewState {
 }
 
 export interface ManagerOptions {
+  /** 默认关闭的独立诊断旁路，不参与对局恢复与调度。 */
+  observability?: ObservabilityOptions;
   store: RoomStore;
   secrets: SecretBox;
   now?: () => number;

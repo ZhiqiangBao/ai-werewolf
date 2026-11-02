@@ -479,6 +479,8 @@ export interface SeatTestResult {
 
 export type ControlAction = 'pause' | 'resume' | 'step' | 'end';
 
+export type * from './observation';
+
 export interface ActResult {
   ok: boolean;
   error?: ApiError;
@@ -494,6 +496,7 @@ export interface ModelRequestInfo {
 }
 
 export interface AuditEntry {
+  observation?: import('./observation').ObservationRef;
   apiProtocol?: ApiProtocol;
   usage?: TokenUsage;
   id: number;
