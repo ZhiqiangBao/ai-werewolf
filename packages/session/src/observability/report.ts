@@ -106,7 +106,7 @@ function featureBreakdown(spans: readonly Span[]) {
     const key = JSON.stringify([stream, compatibilityMemory]);
     const bucket = buckets.get(key) ?? { stream, compatibilityMemory, requests: [], attempts: [] };
     bucket.requests.push(request);
-    bucket.attempts.push(...spans.filter((span) => span.kind === 'http_attempt' && span.data.requestId === request.id));
+    bucket.attempts.push(...spans.filter((span) => span.kind === 'http_attempt' && span.runId === request.runId && span.data.requestId === request.id));
     buckets.set(key, bucket);
   }
   return [...buckets.values()].map(({ requests: groupRequests, attempts, ...dimensions }) => ({ ...dimensions, requests: counts(groupRequests), httpAttempts: counts(attempts) }));

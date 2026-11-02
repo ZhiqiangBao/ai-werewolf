@@ -17,6 +17,30 @@ describe('offline observability report', () => {
     expect(distribution([])).toMatchObject({ count: 0, p50: null, p95: null });
   });
 
+  it('keeps request and HTTP attempt associations within each run', () => {
+    const events: ObservationEvent[] = [];
+    for (const runId of ['run-a', 'run-b']) {
+      const base = { ...common, runId, callId: 'same-call' };
+      events.push(
+        { ...base, id: 'same-call', phase: 'start', atMs: 0 },
+        { ...base, id: 'same-call', phase: 'end', atMs: 1, outcome: 'success' },
+        { ...base, kind: 'http_request', id: 'same-request', requestId: 'same-request', phase: 'start', atMs: 0,
+          features: { stream: true, toolChoice: 'required', responseFormat: false, compatibilityMemory: 'cold' } },
+        { ...base, kind: 'http_request', id: 'same-request', requestId: 'same-request', phase: 'end', atMs: 1, outcome: 'success' },
+        { ...base, kind: 'http_attempt', id: 'same-attempt', requestId: 'same-request', phase: 'start', atMs: 0 },
+        { ...base, kind: 'http_attempt', id: 'same-attempt', requestId: 'same-request', phase: 'end', atMs: 1,
+          outcome: runId === 'run-a' ? 'success' : 'cancelled' },
+      );
+    }
+    const report = buildObservationReport(events);
+    expect(report.groups).toHaveLength(1);
+    expect(report.groups[0].features).toHaveLength(1);
+    expect(report.groups[0].features[0]).toMatchObject({
+      stream: true, compatibilityMemory: 'cold', requests: { started: 2, finished: 2 },
+      httpAttempts: { started: 2, finished: 2, outcomes: { success: 1, cancelled: 1 } },
+    });
+  });
+
   it('deduplicates spans and usage, counts cancellations, incomplete and separates elapsed time', () => {
     const usage = { inputTokens: 10, outputTokens: null, cacheReadTokens: 0, cacheWriteTokens: null, completeness: 'partial' as const, sourceHttpAttemptId: 'http1' };
     const events: ObservationEvent[] = [

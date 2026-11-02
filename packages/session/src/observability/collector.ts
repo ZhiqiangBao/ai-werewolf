@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import type { AdapterObservationEvent, CancelReason, DecideObservationPort, Measurement, ObservationClock,
   ObservationEvent, ObservationFields, ObservationMetrics, ObservationOutcome, ObservationRef, ObservabilityOptions } from '@werewolf/protocol';
@@ -28,6 +28,8 @@ const enumFields: Record<string, readonly string[]> = {
 };
 const enumEntries = Object.entries(enumFields);
 const safeIdentity = /^[A-Za-z0-9_.:-]{1,200}$/;
+const adapterSequence = /^[1-9]\d{0,9}$/;
+const adapterKinds = new Set(['adapter_execution','http_request','http_attempt','backoff','local_span']);
 const measurementSources = new Set(['client','provider_reported','synthetic']);
 const missingReasons = new Set(['not_observable','not_applicable','not_emitted','cancelled_before_point','failed_before_point','incomplete','legacy','collector_dropped']);
 
@@ -109,10 +111,10 @@ export class RoomObservability {
   readonly stats = { callbackErrors: 0, lateEvents: 0, activeSpans: 0 };
   private readonly identities: ObservationIdentities;
   private readonly rooms = new Map<string, ObservationSpan>();
-  private readonly decisions = new Map<string, string>();
+  private readonly decisions = new Map<string, { decision: string; ref: string }>();
+  private readonly decisionSalt = randomBytes(32);
   private readonly active = new Map<string, ObservationEvent>();
   private readonly endedCalls = new Map<string, number>();
-  private readonly expiredCalls = new Set<string>();
   private readonly validIdentities = new Set<string>();
   private next = 0;
   private closed = false;
@@ -132,6 +134,7 @@ export class RoomObservability {
 
   id(kind: string): string { return `${this.runId}:${kind}:${++this.next}`; }
   room(rec: Pick<RoomReadRecord, 'id'>): ObservationSpan {
+    if (this.closed) return this.run;
     let span = this.rooms.get(rec.id);
     if (!span) {
       span = this.begin('room', { schemaVersion: 1, runId: this.runId, roomRef: `r${this.rooms.size + 1}` });
@@ -142,14 +145,19 @@ export class RoomObservability {
   ref(rec: Pick<RoomReadRecord, 'id'>, seat?: number, decision?: string): ObservationRef {
     const base = this.room(rec).ref;
     let decisionRef: string | undefined;
-    if (decision) {
-      const key = `${rec.id}:${decision}`;
-      decisionRef = this.decisions.get(key);
-      if (!decisionRef) { decisionRef = `d${this.decisions.size + 1}`; this.decisions.set(key, decisionRef); }
+    if (decision && !this.closed) {
+      const cached = this.decisions.get(rec.id);
+      if (cached?.decision === decision) decisionRef = cached.ref;
+      else {
+        // 只缓存本房最近决策；旧请求再次引用时仍能得到相同匿名 ID。
+        decisionRef = `d-${createHmac('sha256', this.decisionSalt).update(JSON.stringify([rec.id, decision])).digest('hex').slice(0, 32)}`;
+        this.decisions.set(rec.id, { decision, ref: decisionRef });
+      }
     }
     return { ...base, ...(seat === undefined ? {} : { seatRef: `s${seat}` }), ...(decisionRef ? { decisionRef } : {}) };
   }
   provider(cfg: SeatRecord): Pick<ObservationFields, 'providerId' | 'modelKey' | 'apiProtocol'> {
+    if (this.closed) return { providerId: 'unknown', modelKey: 'unknown', apiProtocol: cfg.apiProtocol ?? 'chat_completions' };
     try { return { providerId: this.identities.provider(cfg.baseUrl), modelKey: this.identities.model(cfg.model || 'mock'), apiProtocol: cfg.apiProtocol ?? 'chat_completions' }; }
     catch { this.stats.callbackErrors++; return { providerId: 'unknown', modelKey: 'unknown', apiProtocol: cfg.apiProtocol ?? 'chat_completions' }; }
   }
@@ -161,8 +169,9 @@ export class RoomObservability {
       if (this.closed) { this.stats.lateEvents++; return; }
       if (event.phase === 'start') {
         const endedAt = event.callId ? this.endedCalls.get(event.callId) : undefined;
-        if (this.active.has(event.id) || event.callId && (this.expiredCalls.has(event.callId) || endedAt !== undefined &&
-          (event.kind === 'model_call' || this.clock.monotonicMs() - endedAt >= 60_000))) { this.stats.lateEvents++; return; }
+        const missingCaller = event.callId && event.kind !== 'model_call' && !this.active.has(event.callId) && endedAt === undefined;
+        if (this.active.has(event.id) || missingCaller || endedAt !== undefined &&
+          (event.kind === 'model_call' || this.clock.monotonicMs() - endedAt >= 60_000)) { this.stats.lateEvents++; return; }
         this.active.set(event.id, event);
       } else if (event.phase === 'end') {
         if (!this.active.delete(event.id)) { this.stats.lateEvents++; return; }
@@ -173,7 +182,44 @@ export class RoomObservability {
     } catch { this.stats.callbackErrors++; }
   }
   adapter(ref: ObservationRef): DecideObservationPort {
-    return { clock: this.clock, callId: ref.callId!, emit: (event: AdapterObservationEvent) => this.record({ ...ref, ...event } as ObservationEvent) };
+    const callId = ref.callId!, prefix = `${callId}:`;
+    const aliases = new Map<string, string>();
+    // 内置适配器使用 callId:序号；自定义适配器的原始标识只留在端口内。
+    const scopedId = (value: string): string | undefined => {
+      if (value === callId || value.startsWith(prefix) && adapterSequence.test(value.slice(prefix.length))) return value;
+      if (value.length > 200) return;
+      let alias = aliases.get(value);
+      if (!alias && aliases.size < 1000) { alias = `${prefix}external:${aliases.size + 1}`; aliases.set(value, alias); }
+      return alias;
+    };
+    return { clock: this.clock, callId, emit: (event: AdapterObservationEvent) => {
+      try {
+      const endedAt = this.endedCalls.get(callId);
+      if (this.closed || !this.active.has(callId) && (endedAt === undefined || this.clock.monotonicMs() - endedAt >= 60_000)) {
+        this.stats.lateEvents++; return;
+      }
+      const projected = { ...event, ...ref } as ObservationEvent;
+      for (const key of idNames) {
+        if (key === 'id' || key === 'parentId' || key === 'requestId' || key === 'httpAttemptId') {
+          const value = projected[key];
+          if (value !== undefined) {
+            const safe = typeof value === 'string' ? scopedId(value) : undefined;
+            if (!safe) { this.stats.callbackErrors++; return; }
+            projected[key] = safe;
+          }
+        } else if (!(key in ref)) delete projected[key];
+      }
+      if (projected.usage?.sourceHttpAttemptId !== undefined) {
+        const value = projected.usage.sourceHttpAttemptId;
+        const safe = typeof value === 'string' ? scopedId(value) : undefined;
+        if (!safe) { this.stats.callbackErrors++; return; }
+        projected.usage = { ...projected.usage, sourceHttpAttemptId: safe };
+      }
+      // 端口只接受适配器层事件，不能伪造调用者的开始或终态。
+      if (!adapterKinds.has(projected.kind)) { this.stats.callbackErrors++; return; }
+      this.record(projected);
+      } catch { this.stats.callbackErrors++; }
+    } };
   }
   measure<T>(operation: 'store_load' | 'store_save' | 'audit_read' | 'audit_append', rec: Pick<RoomReadRecord, 'id'> | undefined, work: () => T): T {
     const span = this.begin('local_span', rec ? this.ref(rec) : this.run.ref, { operation });
@@ -185,7 +231,6 @@ export class RoomObservability {
     for (const [id, endedAt] of this.endedCalls) if (now - endedAt >= 60_000) {
       for (const event of [...this.active.values()]) if (event.callId === id) this.record({ ...event, phase: 'end', atMs: now, outcome: 'incomplete', durationMs: measured(now - event.atMs) });
       this.endedCalls.delete(id);
-      this.expiredCalls.add(id);
     }
   }
   finish(): void {
@@ -197,8 +242,9 @@ export class RoomObservability {
     for (const event of [...this.active.values()]) this.record({ ...event, phase: 'end', atMs: now, outcome: 'incomplete', durationMs: measured(now - event.atMs) });
     this.closed = true;
     this.endedCalls.clear();
-    this.expiredCalls.clear();
     this.validIdentities.clear();
     this.decisions.clear();
+    this.rooms.clear();
+    this.decisionSalt.fill(0);
   }
 }

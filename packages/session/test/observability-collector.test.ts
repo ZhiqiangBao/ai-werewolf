@@ -56,15 +56,15 @@ describe('observation collector lifecycle', () => {
     const callRef = { ...ref, runId: collector.runId, callId: 'call-1' };
     const call = collector.begin('model_call', callRef, {}, 'call-1');
     const port = collector.adapter(callRef);
-    port.emit({ kind: 'http_attempt', phase: 'start', id: 'http-1', parentId: 'call-1', atMs: 0 });
+    port.emit({ kind: 'http_attempt', phase: 'start', id: 'call-1:1', parentId: 'call-1', atMs: 0 });
     monotonic = 10; call.finish('cancelled');
     monotonic = 60_010; vi.advanceTimersByTime(61_000);
-    expect(events.filter((event) => event.id === 'http-1' && event.phase === 'end')).toMatchObject([{ outcome: 'incomplete' }]);
+    expect(events.filter((event) => event.id === 'call-1:1' && event.phase === 'end')).toMatchObject([{ outcome: 'incomplete' }]);
     const activeBefore = collector.stats.activeSpans;
-    port.emit({ kind: 'http_attempt', phase: 'end', id: 'http-1', parentId: 'call-1', atMs: 60_011, outcome: 'success' });
-    port.emit({ kind: 'http_attempt', phase: 'start', id: 'late-http-2', parentId: 'call-1', atMs: 60_012 });
+    port.emit({ kind: 'http_attempt', phase: 'end', id: 'call-1:1', parentId: 'call-1', atMs: 60_011, outcome: 'success' });
+    port.emit({ kind: 'http_attempt', phase: 'start', id: 'call-1:2', parentId: 'call-1', atMs: 60_012 });
     expect(collector.stats.activeSpans).toBe(activeBefore);
-    expect(events.some((event) => event.id === 'late-http-2')).toBe(false);
+    expect(events.some((event) => event.id === 'call-1:2')).toBe(false);
     expect(collector.stats.lateEvents).toBeGreaterThanOrEqual(2);
     collector.finish();
     expect(collector.stats.activeSpans).toBe(0);
@@ -80,9 +80,9 @@ describe('observation collector lifecycle', () => {
     const call = collector.begin('model_call', callRef, {}, 'call-1');
     const port = collector.adapter(callRef);
     monotonic = 10; call.finish('cancelled');
-    monotonic = 20; port.emit({ kind: 'http_attempt', phase: 'start', id: 'http-cleanup', parentId: 'call-1', atMs: 20 });
-    monotonic = 30; port.emit({ kind: 'http_attempt', phase: 'end', id: 'http-cleanup', parentId: 'call-1', atMs: 30, outcome: 'cancelled' });
-    expect(events.filter((event) => event.id === 'http-cleanup').map((event) => event.phase)).toEqual(['start', 'end']);
+    monotonic = 20; port.emit({ kind: 'http_attempt', phase: 'start', id: 'call-1:1', parentId: 'call-1', atMs: 20 });
+    monotonic = 30; port.emit({ kind: 'http_attempt', phase: 'end', id: 'call-1:1', parentId: 'call-1', atMs: 30, outcome: 'cancelled' });
+    expect(events.filter((event) => event.id === 'call-1:1').map((event) => event.phase)).toEqual(['start', 'end']);
     collector.finish();
     expect(collector.stats.activeSpans).toBe(0);
   });
@@ -94,6 +94,65 @@ describe('observation collector lifecycle', () => {
     collector.finish();
     expect(collector.stats.callbackErrors).toBeGreaterThan(0);
     expect(collector.stats.activeSpans).toBe(0);
+  });
+
+  it('anonymizes custom adapter identifiers and keeps caller references under session ownership', () => {
+    const events: ObservationEvent[] = [];
+    const collector = new RoomObservability({ sink: { emit: (event) => events.push(event) }, mappingPath: mappingFile() });
+    const callId = collector.id('call');
+    const callRef = { ...collector.ref({ id: 'private-room' }, 1, 'private-decision'), callId };
+    const call = collector.begin('model_call', callRef, {}, callId);
+    const port = collector.adapter(callRef);
+    const unsafe = { kind: 'http_attempt', phase: 'start', id: 'private-key-valid-identifier', parentId: callId,
+      httpAttemptId: 'private-key-valid-identifier', requestId: 'private-request', atMs: 1,
+      runId: 'private-run', roomRef: 'private-room-ref', seatRef: 'private-seat', decisionRef: 'private-decision-ref',
+      providerId: 'private-provider', modelKey: 'private-model', causedByCallId: 'private-cause',
+    } as const;
+    port.emit(unsafe);
+    port.emit({ ...unsafe, phase: 'end', atMs: 2, outcome: 'success', usage: {
+      inputTokens: 1, outputTokens: 2, cacheReadTokens: null, cacheWriteTokens: null,
+      completeness: 'partial', sourceHttpAttemptId: unsafe.id,
+    } });
+    call.finish('success'); collector.finish();
+    expect(JSON.stringify(events)).not.toContain('private-');
+    const attempts = events.filter((event) => event.kind === 'http_attempt');
+    expect(attempts).toHaveLength(2);
+    expect(attempts[0]).toMatchObject({ ...callRef, id: `${callId}:external:1`, httpAttemptId: `${callId}:external:1` });
+    expect(attempts[1].usage?.sourceHttpAttemptId).toBe(attempts[0].id);
+    expect(unsafe.id).toBe('private-key-valid-identifier');
+    expect(collector.stats.callbackErrors).toBe(0);
+  });
+
+  it('releases historical decisions and caller grace records without keeping permanent tombstones', () => {
+    vi.useFakeTimers();
+    let monotonic = 0;
+    const collector = new RoomObservability({ clock: { monotonicMs: () => monotonic, wallTimeMs: () => 0 },
+      sink: { emit: () => {} }, mappingPath: mappingFile() });
+    const first = collector.ref({ id: 'room' }, 1, 'first-decision').decisionRef;
+    let lastPort!: ReturnType<RoomObservability['adapter']>;
+    for (let i = 0; i < 1000; i++) {
+      const callId = collector.id('call');
+      const callRef = { ...collector.ref({ id: 'room' }, 1, `decision-${i}`), callId };
+      const call = collector.begin('model_call', callRef, {}, callId);
+      lastPort = collector.adapter(callRef);
+      call.finish('success');
+    }
+    const state = collector as unknown as { decisions: Map<string, unknown>; endedCalls: Map<string, unknown>; rooms: Map<string, unknown> };
+    expect(state.decisions.size).toBe(1);
+    expect(collector.ref({ id: 'room' }, 1, 'first-decision').decisionRef).toBe(first);
+    monotonic = 60_001; vi.advanceTimersByTime(61_000);
+    expect(state.endedCalls.size).toBe(0);
+    expect(collector).not.toHaveProperty('expiredCalls');
+    const active = collector.stats.activeSpans;
+    lastPort.emit({ kind: 'http_attempt', phase: 'start', id: 'late-child', atMs: monotonic });
+    expect(collector.stats.activeSpans).toBe(active);
+    expect(collector.stats.lateEvents).toBeGreaterThan(0);
+    collector.finish();
+    collector.ref({ id: 'late-room' }, 1, 'late-decision');
+    expect(state.decisions.size).toBe(0);
+    expect(state.rooms.size).toBe(0);
+    expect(collector.stats.activeSpans).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('projects arbitrary input onto numeric, enum and identifier fields only', () => {
@@ -178,6 +237,19 @@ describe('bounded observation output', () => {
 });
 
 describe('provider and model identities', () => {
+  it('maps prototype-like model names to distinct stable IDs across instances', () => {
+    const file = mappingFile();
+    const first = new ObservationIdentities(file);
+    const names = ['constructor', 'toString', '__proto__'];
+    const ids = names.map((name) => first.model(name));
+    expect(ids.every((id) => /^m-[a-f0-9-]{36}$/.test(id))).toBe(true);
+    expect(new Set(ids).size).toBe(names.length);
+    const reloaded = new ObservationIdentities(file);
+    expect(names.map((name) => reloaded.model(name))).toEqual(ids);
+    const saved = JSON.parse(readFileSync(file, 'utf8')) as { models: Record<string, string> };
+    for (let i = 0; i < names.length; i++) expect(Object.hasOwn(saved.models, names[i])).toBe(true);
+  });
+
   it('separates same-origin routes only through explicit non-sensitive grouping keys', () => {
     const file = mappingFile();
     const aliases = { 'https://private-host.invalid/private-route-a?credential=sentinel-a': 'group-a',

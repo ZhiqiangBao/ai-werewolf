@@ -9,7 +9,8 @@ export class ObservationIdentities {
   private readonly data: IdentityFile;
   constructor(private readonly file: string, private readonly alias?: (origin: string) => string | undefined,
     private readonly routeAliases?: Readonly<Record<string, string>>) {
-    this.data = { version: 1, providers: {}, models: {} };
+    // Model names are user configuration and can equal Object.prototype keys.
+    this.data = { version: 1, providers: Object.create(null), models: Object.create(null) };
     try {
       if (existsSync(file)) {
         const loaded = JSON.parse(readFileSync(file, 'utf8')) as IdentityFile;

@@ -32,6 +32,12 @@ interface WorkObservation {
   markAskedMs?: number;
 }
 
+interface SeatActionIds {
+  decisionId: string | undefined;
+  normal?: string;
+  interrupt?: string;
+}
+
 function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
     const abort = () => reject(new Error('Request cancelled'));
@@ -80,7 +86,8 @@ export class RoomRuntimeService {
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly cancelReasons = new WeakMap<AbortSignal, CancelReason>();
-  private readonly actionIds = new Map<string, string>();
+  /** Per room and seat, retain only IDs for that seat's most recent decision. */
+  private readonly actionIds = new Map<string, Map<Seat, SeatActionIds>>();
 
   constructor(
     private readonly now: () => number,
@@ -129,6 +136,16 @@ export class RoomRuntimeService {
   /** 由兼容入口逐房间调用，保留取消该房间后立即落盘的退出顺序。 */
   disposeRoom(rec: RoomRuntimeRecord): void {
     for (const c of this.state(rec).inflight.values()) this.cancel(c, 'dispose');
+    this.actionIds.delete(rec.id);
+  }
+
+  private actionId(roomId: string, seat: Seat, decisionId: string | undefined, interrupt = false): string {
+    let seats = this.actionIds.get(roomId);
+    if (!seats) { seats = new Map(); this.actionIds.set(roomId, seats); }
+    let ids = seats.get(seat);
+    if (!ids || ids.decisionId !== decisionId) { ids = { decisionId }; seats.set(seat, ids); }
+    const key = interrupt ? 'interrupt' : 'normal';
+    return ids[key] ??= this.observability!.id('action');
   }
 
   private cancel(controller: AbortController, reason: CancelReason): void {
@@ -268,9 +285,7 @@ export class RoomRuntimeService {
     if (this.observability) {
       const interrupt = projectSeat(rec.state!, rec.events, input.seat).interrupts.some((tool) => tool.name === input.call.tool);
       const ref = { ...causedBy, ...this.observability.ref(rec, input.seat, previous?.id) };
-      const key = `${rec.id}:${input.seat}:${previous?.id}${interrupt ? ':interrupt' : ''}`;
-      let actionId = causedBy?.actionId ?? this.actionIds.get(key);
-      if (!actionId) { actionId = this.observability.id('action'); this.actionIds.set(key, actionId); }
+      const actionId = causedBy?.actionId ?? this.actionId(rec.id, input.seat, previous?.id, interrupt);
       action = this.observability.begin('engine_action', { ...ref, actionId }, {
         actionKind: input.auto ? 'automatic' : interrupt ? 'interrupt' : 'normal',
         ...(causedBy?.callId ? { causedByCallId: causedBy.callId } : {}),
@@ -299,6 +314,7 @@ export class RoomRuntimeService {
   private changedState(live: RoomRuntimeState): void {
     this.armDeadlines(live, false);
     const current = live.rec.state?.pending?.id;
+    if (live.rec.status !== 'running') this.actionIds.delete(live.rec.id);
     for (const [key, ctrl] of live.inflight) {
       // 旁听属于这条消息，不属于当时碰巧正在等待的行动；换下一位不能取消别人的收听。
       if (!key.includes(':hear:') && (!current || !key.startsWith(`${current}:`))) {
@@ -846,9 +862,7 @@ export class RoomRuntimeService {
     ensureCue(thread, this.actionCue(rec));
     // 此刻才真正发出行动请求，排队、旁听和 AI 展示间隔均不占用行动时限。
     if (context && this.observability) {
-      const key = `${rec.id}:${seat}:${decision}`;
-      let actionId = this.actionIds.get(key);
-      if (!actionId) { actionId = this.observability.id('action'); this.actionIds.set(key, actionId); }
+      const actionId = this.actionId(rec.id, seat, decision);
       const actionSegmentId = this.observability.id('segment');
       context.ref = { ...context.ref, actionId, actionSegmentId };
       context.segment = this.observability.begin('action_segment', context.ref, {}, actionSegmentId);
