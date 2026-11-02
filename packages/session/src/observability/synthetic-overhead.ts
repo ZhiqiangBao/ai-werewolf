@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, writeFile, appendFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { SYNTHETIC_SEEDS, type SyntheticProtocol } from './synthetic-plan';
+import { renderOverheadResources, summarizeOverheadResources } from './synthetic-overhead-resources';
 
 const runFile = promisify(execFile);
 const median = (values: number[]): number | null => {
@@ -58,7 +59,10 @@ export async function runSyntheticOverhead(options: { scenario: 'S01' | 'S02'; p
     sourceMismatches,
     sourceRevision: pairs[0]?.off.manifest.sourceRevision ?? 'unknown', sourceSha256: pairs[0]?.off.manifest.sourceSha256 ?? 'unknown', sourceDirty: pairs[0]?.off.manifest.sourceDirty ?? null };
   await writeFile(resolve(directory, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
-  await writeFile(resolve(directory, 'report.md'), `# 合成采集开销配对\n\n状态：${status}。完成 ${pairs.length}/${options.pairs} 组；两组使用相同测试夹具。每组原始样本和 CPU、事件循环、采集字节与写入耗时见 pairs.jsonl。\n`);
+  const resources = summarizeOverheadResources(pairs, summary);
+  await writeFile(resolve(directory, 'report.md'), renderOverheadResources(resources));
+  await writeFile(resolve(directory, 'resource-summary.json'), `${JSON.stringify(resources, null, 2)}\n`);
+  await writeFile(resolve(directory, 'resource-report.md'), renderOverheadResources(resources));
   if (failure) throw new Error(`Overhead run incomplete; retained results: ${directory}`);
   return { directory, summary };
 }

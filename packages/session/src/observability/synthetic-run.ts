@@ -18,7 +18,7 @@ import { startSyntheticService, type SyntheticResponsePlan } from './synthetic-s
 import { SYNTHETIC_SCENARIOS, SYNTHETIC_SEEDS, type SyntheticProtocol } from './synthetic-plan';
 
 export type RunnableSyntheticScenario = 'S01' | 'S02' | 'S03' | 'S04' | 'S05' | 'S06' | 'S07' | 'S08' | 'S09' | 'S12' | 'S13' | 'S14' | 'S15';
-async function sourceFingerprint(): Promise<string> {
+export async function sourceFingerprint(): Promise<string> {
   const files: string[] = [];
   async function visit(dir: string): Promise<void> {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -32,7 +32,7 @@ async function sourceFingerprint(): Promise<string> {
   for (const path of files.sort()) { hash.update(path); hash.update('\0'); hash.update(await readFile(path)); hash.update('\0'); }
   return hash.digest('hex');
 }
-function gitState() {
+export function gitState() {
   try { return { revision: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
     dirty: !!execFileSync('git', ['status', '--porcelain', '--untracked-files=normal'], { encoding: 'utf8' }).trim() }; }
   catch { return { revision: 'unknown', dirty: null }; }

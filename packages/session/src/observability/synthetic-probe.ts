@@ -1,6 +1,5 @@
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { cpus, platform, release, totalmem } from 'node:os';
@@ -10,10 +9,13 @@ import { createSyntheticFetch } from './synthetic-fetch';
 import { buildObservationReport, renderObservationReport } from './report';
 import { startSyntheticService, type SyntheticResponsePlan } from './synthetic-service';
 import type { SyntheticProtocol } from './synthetic-plan';
+import { gitState, sourceFingerprint } from './synthetic-run';
 
 /** Adapter-only probes use short legal adapter budgets, without changing session limits. */
 export async function runSyntheticProbe(options: { scenario: 'S10' | 'S11'; protocol: SyntheticProtocol; probe: 'before_headers' | 'after_content' | 'backoff' | 'abort'; repetition?: number }) {
   if ((options.scenario === 'S10') !== (options.probe !== 'abort')) throw new Error('Unsupported probe for this scenario');
+  const sourceStart = await sourceFingerprint(), gitStart = gitState();
+  const runId = `run-${randomUUID()}`, callId = `${runId}:call`;
   const root = resolve('data/diagnostics/synthetic'); await mkdir(root, { recursive: true });
   const directory = await mkdtemp(resolve(root, 'probe-'));
   const events: ObservationEvent[] = [];
@@ -24,6 +26,7 @@ export async function runSyntheticProbe(options: { scenario: 'S10' | 'S11'; prot
   let abortTimer: ReturnType<typeof setTimeout> | undefined, attempt = 0;
   let outcome: 'timeout' | 'cancelled' | 'other' = 'other';
   let error = false;
+  let adapterWallMs: number | undefined;
   const start = performance.now();
   try {
     globalThis.fetch = wrapper.fetch;
@@ -36,8 +39,8 @@ export async function runSyntheticProbe(options: { scenario: 'S10' | 'S11'; prot
       tools: [{ name: 'synthetic_tool', title: 'test', description: 'test', params: [] }], toolChoice: 'required', stream: true,
       config: { apiProtocol: options.protocol, baseUrl: service.origin, model: 'synthetic', apiKey: null, temperature: 0, toolMode: 'tools', timeoutSec: 1 },
       signal: controller.signal,
-      observation: { clock: { monotonicMs: () => performance.now(), wallTimeMs: Date.now }, callId: 'probe-call', emit(event) {
-        events.push({ schemaVersion: 1, runId: 'probe-run', roomRef: 'adapter-only', callId: 'probe-call', ...event });
+      observation: { clock: { monotonicMs: () => performance.now(), wallTimeMs: Date.now }, callId, emit(event) {
+        events.push({ schemaVersion: 1, runId, roomRef: 'adapter-only', callId, ...event });
         if (event.kind === 'http_attempt' && event.phase === 'start') {
           wrapper.setAttempt(event.id);
           if (options.probe === 'abort' && !abortTimer) abortTimer = setTimeout(() => controller.abort(), 100);
@@ -48,17 +51,21 @@ export async function runSyntheticProbe(options: { scenario: 'S10' | 'S11'; prot
     error = outcome !== (options.probe === 'abort' ? 'cancelled' : 'timeout');
   } catch { error = true; }
   finally {
+    adapterWallMs = performance.now() - start;
     if (abortTimer) clearTimeout(abortTimer);
     globalThis.fetch = originalFetch;
     await service.close();
   }
-  let sourceRevision = 'unknown', lockSha256 = 'unknown';
-  try { sourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(); } catch { /* unavailable */ }
+  const sourceEnd = await sourceFingerprint(), gitEnd = gitState();
+  let lockSha256 = 'unknown';
   try { lockSha256 = createHash('sha256').update(await readFile('pnpm-lock.yaml')).digest('hex'); } catch { /* unavailable */ }
-  const manifest = { reportKind: 'synthetic_adapter_probe', completed: !error, acceptance: 'not_evaluated', coverage: 'partial_fault_case', sourceRevision, lockSha256,
+  const manifest = { reportKind: 'synthetic_adapter_probe', completed: !error, acceptance: 'not_evaluated', coverage: 'partial_fault_case',
+    sourceRevision: gitStart.revision, sourceRevisionEnd: gitEnd.revision, sourceDirty: gitStart.dirty, sourceDirtyEnd: gitEnd.dirty,
+    sourceSha256: sourceStart, sourceSha256End: sourceEnd, sourceChangedDuringRun: sourceStart !== sourceEnd || gitStart.revision !== gitEnd.revision,
+    runId, callId, lockSha256,
     scenario: options.scenario, protocol: options.protocol, probe: options.probe, repetition: options.repetition ?? 1,
     node: process.version, os: `${platform()} ${release()}`, cpu: cpus()[0]?.model ?? 'unknown', memoryTotalBytes: totalmem(), storage: 'unknown',
-    observationsEnabled: true, timeoutSec: 1, stream: true, serviceProcesses: 1, outcome, windowWallMs: performance.now() - start };
+    observationsEnabled: true, timeoutSec: 1, stream: true, serviceProcesses: 1, outcome, windowWallMs: adapterWallMs };
   await writeFile(resolve(directory, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   await writeFile(resolve(directory, 'observations.jsonl'), events.map((event) => JSON.stringify(event)).join('\n') + '\n');
   await writeFile(resolve(directory, 'synthetic-truth.jsonl'), service.truth.map((truth) => JSON.stringify(truth)).join('\n') + '\n');
