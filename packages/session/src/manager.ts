@@ -8,6 +8,7 @@ import { RoomRuntimeService } from './room-runtime';
 import { RoomViewService } from './room-view';
 import type { ManagerOptions } from './room-types';
 import type { RoomRecord } from './store';
+import { RoomObservability } from './observability/collector';
 
 export { ApiFailure } from './room-failure';
 export { actionLimitSec } from './room-runtime';
@@ -21,11 +22,13 @@ export class RoomManager {
   private readonly runtime: RoomRuntimeService;
   private readonly views: RoomViewService;
   private readonly persistence: RoomPersistence;
+  private readonly observability?: RoomObservability;
 
   constructor(o: ManagerOptions) {
     const now = o.now ?? Date.now;
+    this.observability = o.observability ? new RoomObservability(o.observability) : undefined;
     this.models = new ModelLibrary(o.secrets, o.modelsPath);
-    this.persistence = new RoomPersistence(o.store, now);
+    this.persistence = new RoomPersistence(o.store, now, this.observability);
     this.lobby = new RoomLobbyService(now, o.secrets, this.models);
     this.views = new RoomViewService(now, {
       seatView: this.lobby.seatView.bind(this.lobby),
@@ -38,8 +41,9 @@ export class RoomManager {
       notify: this.views.notify.bind(this.views),
       publishThoughts: this.views.publishThoughts.bind(this.views),
       attachDeadline: this.views.attachDeadline.bind(this.views),
-    });
-    for (const rec of o.store.loadAll()) this.register(rec, true);
+    }, this.observability);
+    const restored = this.observability ? this.observability.measure('store_load', undefined, () => o.store.loadAll()) : o.store.loadAll();
+    for (const rec of restored) this.register(rec, true);
     this.runtime.startTimer(o.tickMs ?? 1000);
   }
 
@@ -59,6 +63,7 @@ export class RoomManager {
       this.views.dispose(rec);
       this.persistence.flush(rec);
     }
+    this.observability?.finish();
   }
 
   catalog(): Catalog {
