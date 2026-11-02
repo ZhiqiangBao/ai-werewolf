@@ -77,6 +77,8 @@ import type { RoomRecord, RoomStore, SeatRecord } from './store';
 import { ApiFailure } from './room-failure';
 import { RoomPersistence } from './room-persistence';
 import { RoomViewService } from './room-view';
+import { RoomLobbyService } from './room-lobby';
+import { adapterConfig } from './room-model';
 import type { ManagerOptions, RoomRuntimeState, RoomViewState, Subscriber, Viewer } from './room-types';
 export { ApiFailure } from './room-failure';
 export type { ManagerOptions } from './room-types';
@@ -110,38 +112,6 @@ function aiTimeoutSec(stepType: string, configured: number): number {
 }
 const AUTO: ToolCall = { tool: '', args: {} };
 
-const token = () => randomBytes(18).toString('base64url');
-const same = (a: string, b: string) => {
-  const x = Buffer.from(a);
-  const y = Buffer.from(b);
-  return x.length === y.length && timingSafeEqual(x, y);
-};
-const clamp = (v: unknown, lo: number, hi: number, fallback: number) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : fallback;
-};
-const text = (v: unknown, max: number) => String(v ?? '').trim().slice(0, max);
-
-function defaultSeat(seat: Seat, avatarStyle: AvatarStyleId = 'storybook'): SeatRecord {
-  return {
-    seat,
-    name: avatarDefaultName(avatarStyle, seat),
-    nameSource: 'avatar',
-    controller: 'ai',
-    adapter: 'mock',
-    baseUrl: '',
-    model: '',
-    apiKeyEnc: null,
-    apiKeyMask: null,
-    modelId: null,
-    temperature: 0.7,
-    style: STYLES[(seat - 1) % STYLES.length].id,
-    persona: '',
-    toolMode: 'tools',
-    timeoutSec: 90,
-  };
-}
-
 /** 模型写超长时截断文本参数，而不是让整次行动失败。 */
 function clampTexts(call: ToolCall, tools: ToolSpec[]): ToolCall {
   const spec = tools.find((t) => t.name === call.tool);
@@ -162,6 +132,7 @@ export class RoomManager {
   private readonly store: RoomStore;
   private readonly persistence: RoomPersistence;
   private readonly views: RoomViewService;
+  private readonly lobby: RoomLobbyService;
   private readonly secrets: SecretBox;
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
@@ -175,10 +146,11 @@ export class RoomManager {
     this.models = new ModelLibrary(o.secrets, o.modelsPath);
     this.now = o.now ?? Date.now;
     this.persistence = new RoomPersistence(o.store, this.now);
+    this.lobby = new RoomLobbyService(this.now, o.secrets, this.models);
     this.views = new RoomViewService(this.now, {
-      seatView: (s) => this.seatView(s),
-      setupErrors: (rec) => this.setupErrors(rec),
-      scheduleSave: (rec) => this.persistence.scheduleSave(rec),
+      seatView: this.lobby.seatView.bind(this.lobby),
+      setupErrors: this.lobby.setupErrors.bind(this.lobby),
+      scheduleSave: this.persistence.scheduleSave.bind(this.persistence),
     });
     this.sleep = o.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.adapters = o.adapters ?? {};
@@ -216,7 +188,7 @@ export class RoomManager {
   // -------------------------------------------------------------------------
 
   catalog(): Catalog {
-    return { ...engineCatalog(), styles: STYLES };
+    return this.lobby.catalog();
   }
 
   /** 统一项目模型库，包含已迁移和网页新增的条目；没有密钥明文。 */
@@ -243,36 +215,7 @@ export class RoomManager {
   }
 
   createRoom(input: Pick<RoomSetupInput, 'avatarStyle' | 'locale'> = {}): CreateRoomResult {
-    const avatarStyle = input.avatarStyle === undefined ? 'storybook' : input.avatarStyle;
-    if (!isAvatarStyleId(avatarStyle)) throw new ApiFailure(400, 'BAD_REQUEST', '没有这个人物风格');
-    const locale = input.locale ?? DEFAULT_GAME_LOCALE;
-    if (!isGameLocale(locale)) throw new ApiFailure(400, 'BAD_REQUEST', '不支持的对局语言');
-    const preset = getPreset(DEFAULT_PRESET);
-    const rec: RoomRecord = {
-      id: randomBytes(5).toString('hex'),
-      avatarStyle,
-      locale,
-      createdAt: this.now(),
-      hostToken: token(),
-      spectatorToken: token(),
-      seatTokens: preset.roles.map(() => token()),
-      participants: {},
-      status: 'setup',
-      paused: false,
-      presetId: preset.id,
-      ruleValues: {},
-      timing: defaultGameTiming(),
-      humanTimeoutSec: 90,
-      aiPacingMs: 1200,
-      seats: preset.roles.map((_, i) => defaultSeat(i + 1, avatarStyle)),
-      seed: null,
-      rules: null,
-      state: null,
-      events: [],
-      actions: [],
-      deadlines: {},
-      thoughts: [],
-    };
+    const rec = this.lobby.createRoom(input);
     const live = this.live(rec);
     this.rooms.set(rec.id, live);
     this.flush(live);
@@ -284,18 +227,7 @@ export class RoomManager {
     const src = this.host(roomId, tok).rec;
     const created = this.createRoom();
     const live = this.rooms.get(created.roomId)!;
-    Object.assign(live.rec, {
-      avatarStyle: src.avatarStyle,
-      locale: src.rules?.locale ?? src.locale ?? DEFAULT_GAME_LOCALE,
-      presetId: src.presetId,
-      ruleValues: { ...src.ruleValues },
-      timing: src.timing ? structuredClone(src.timing) : undefined,
-      humanTimeoutSec: src.humanTimeoutSec,
-      aiPacingMs: src.aiPacingMs,
-      seats: structuredClone(src.seats),
-      seatTokens: src.seats.map(() => token()),
-      participants: {},
-    });
+    this.lobby.cloneSetup(src, live.rec);
     this.flush(live);
     return created;
   }
@@ -306,185 +238,23 @@ export class RoomManager {
 
   updateSetup(roomId: string, tok: string, input: RoomSetupInput): RoomSetupView {
     const live = this.host(roomId, tok);
-    const rec = live.rec;
-    if (rec.status !== 'setup') throw new ApiFailure(409, 'ALREADY_STARTED', '对局已经开始，不能再修改配置');
-    if (input.avatarStyle !== undefined && !isAvatarStyleId(input.avatarStyle)) throw new ApiFailure(400, 'BAD_REQUEST', '没有这个人物风格');
-    let timing: RoomRecord['timing'];
-    try { timing = input.timing === undefined ? undefined : parseGameTiming(input.timing); }
-    catch (error) { throw new ApiFailure(400, 'BAD_REQUEST', (error as Error).message); }
-    if (input.locale !== undefined && !isGameLocale(input.locale)) throw new ApiFailure(400, 'BAD_REQUEST', '不支持的对局语言');
-    const previousRules = buildRuleCard(buildRules(rec.presetId, rec.ruleValues, { locale: rec.locale }));
-    if (input.locale !== undefined) rec.locale = input.locale;
-    if (input.presetId !== undefined && input.presetId !== rec.presetId) {
-      let roles: string[];
-      try {
-        roles = getPreset(input.presetId).roles;
-      } catch {
-        throw new ApiFailure(400, 'BAD_REQUEST', `没有这个版型：${input.presetId}`);
-      }
-      rec.presetId = input.presetId;
-      rec.ruleValues = {};
-      rec.seats = roles.map((_, i) => rec.seats[i] ?? defaultSeat(i + 1, rec.avatarStyle));
-      rec.seatTokens = roles.map((_, i) => rec.seatTokens[i] ?? token());
-    }
-    if (input.avatarStyle !== undefined) {
-      rec.avatarStyle = input.avatarStyle;
-      for (const seat of rec.seats) {
-        if (seat.nameSource !== 'avatar' && !(seat.nameSource === undefined && seat.name === `${seat.seat}号`)) continue;
-        const name = avatarDefaultName(input.avatarStyle, seat.seat);
-        if (name !== seat.name && rec.participants?.[seat.seat]) rec.participants[seat.seat].ready = false;
-        seat.name = name;
-        seat.nameSource = 'avatar';
-      }
-    }
-    if (input.ruleValues) {
-      const editable = new Map(allOptions().filter((o) => o.editable).map((o) => [o.key, o]));
-      for (const [key, value] of Object.entries(input.ruleValues)) {
-        const o = editable.get(key);
-        if (!o) continue;
-        const ok =
-          o.type === 'choice'
-            ? o.choices?.some((c) => String(c.value) === String(value))
-            : o.type === 'boolean'
-              ? typeof value === 'boolean'
-              : Number.isFinite(Number(value));
-        if (!ok) throw new ApiFailure(400, 'BAD_REQUEST', `规则选项 ${key} 的值不合法`);
-        rec.ruleValues[key] = o.type === 'choice' ? (o.choices!.find((c) => String(c.value) === String(value))!.value as RuleValue) : (value as RuleValue);
-      }
-    }
-    if (timing) rec.timing = timing;
-    else if (input.humanTimeoutSec !== undefined || input.aiPacingMs !== undefined) delete rec.timing; // 旧客户端保留旧计时策略。
-    if (input.humanTimeoutSec !== undefined) rec.humanTimeoutSec = Math.round(clamp(input.humanTimeoutSec, 0, 3600, 90));
-    if (input.aiPacingMs !== undefined) rec.aiPacingMs = Math.round(clamp(input.aiPacingMs, 0, 10000, 1200));
-    for (const s of input.seats ?? []) this.applySeat(rec, s);
-    if (previousRules !== buildRuleCard(buildRules(rec.presetId, rec.ruleValues, { locale: rec.locale }))) {
-      for (const p of Object.values(rec.participants ?? {})) p.ready = false;
-    }
-    for (const s of input.seats ?? []) {
-      if (s.controller !== undefined && rec.participants) delete rec.participants[s.seat];
-    }
+    this.lobby.updateSetup(live.rec, input);
     this.changed(live);
-    return this.views.setupView(rec);
+    return this.views.setupView(live.rec);
   }
 
-  private applySeat(rec: RoomRecord, s: SeatConfigInput): void {
-    const current = rec.seats.find((x) => x.seat === s.seat);
-    if (!current) throw new ApiFailure(400, 'BAD_REQUEST', `没有 ${s.seat} 号座位`);
-    const seat = { ...current };
-    // 兼容旧房间遗留的空昵称；切换控制者时保留已有自定义昵称。
-    if (!seat.name?.trim()) {
-      seat.name = avatarDefaultName(rec.avatarStyle ?? 'storybook', seat.seat);
-      seat.nameSource = 'avatar';
-    }
-    if (s.apiProtocol !== undefined) {
-      try { seat.apiProtocol = apiProtocol(s.apiProtocol); } catch (error) { throw new ApiFailure(400, 'BAD_REQUEST', (error as Error).message); }
-    }
-    if (s.maxOutputTokens !== undefined) {
-      if (!Number.isInteger(s.maxOutputTokens) || s.maxOutputTokens < 1024 || s.maxOutputTokens > 128000) throw new ApiFailure(400, 'BAD_REQUEST', '单次输出上限须为 1024–128000 的整数');
-      seat.maxOutputTokens = s.maxOutputTokens;
-    }
-    if (s.controller !== undefined) {
-      if (s.controller !== 'human' && s.controller !== 'ai') throw new ApiFailure(400, 'BAD_REQUEST', '控制者只能是 human 或 ai');
-      seat.controller = s.controller;
-    }
-    if (s.adapter !== undefined) {
-      if (s.adapter !== 'mock' && s.adapter !== 'openai_compatible') throw new ApiFailure(400, 'BAD_REQUEST', '适配器只能是 mock 或 openai_compatible');
-      seat.adapter = s.adapter;
-    }
-    if (s.toolMode !== undefined) {
-      if (s.toolMode !== 'tools' && s.toolMode !== 'json') throw new ApiFailure(400, 'BAD_REQUEST', '输出模式只能是 tools 或 json');
-      seat.toolMode = s.toolMode;
-    }
-    if (s.name !== undefined) {
-      const name = text(s.name, 12);
-      seat.name = name || avatarDefaultName(rec.avatarStyle ?? 'storybook', seat.seat);
-      seat.nameSource = name ? 'custom' : 'avatar';
-      if (seat.name !== current.name && rec.participants?.[seat.seat]) rec.participants[seat.seat].ready = false;
-    }
-    if (s.baseUrl !== undefined) seat.baseUrl = text(s.baseUrl, 300);
-    if (s.model !== undefined) seat.model = text(s.model, 120);
-    if (s.temperature !== undefined) seat.temperature = clamp(s.temperature, 0, 2, 0.7);
-    if (s.timeoutSec !== undefined) seat.timeoutSec = Math.round(clamp(s.timeoutSec, 90, 300, 90));
-    if (s.thinkingMode !== undefined) {
-      if (!THINKING_MODES.includes(s.thinkingMode)) throw new ApiFailure(400, 'BAD_REQUEST', '无效的思考强度');
-      seat.thinkingMode = s.thinkingMode;
-    }
-    if (s.style !== undefined) seat.style = STYLES.some((x) => x.id === s.style) ? s.style : STYLES[0].id;
-    if (s.persona !== undefined) seat.persona = text(s.persona, 300);
-    if (s.apiKey === null || s.apiKey === '') {
-      seat.apiKeyEnc = null;
-      seat.apiKeyMask = null;
-    } else if (typeof s.apiKey === 'string') {
-      seat.apiKeyEnc = this.secrets.encrypt(s.apiKey.trim());
-      seat.apiKeyMask = maskKey(s.apiKey);
-    }
-    if (s.presetId) {
-      const preset = this.models.find(s.presetId);
-      if (!preset) throw new ApiFailure(400, 'BAD_REQUEST', '没有这个模型');
-      seat.modelId = s.modelId === null ? null : preset.id;
-      seat.model = preset.model;
-      seat.baseUrl = preset.baseUrl;
-      seat.apiProtocol = s.apiProtocol ?? preset.apiProtocol ?? 'chat_completions';
-      seat.adapter = 'openai_compatible';
-      if (typeof s.apiKey !== 'string') {
-        if (preset.apiKey) {
-          seat.apiKeyEnc = this.secrets.encrypt(preset.apiKey);
-          seat.apiKeyMask = maskKey(preset.apiKey);
-        } else {
-          seat.apiKeyEnc = null;
-          seat.apiKeyMask = null;
-        }
-      }
-    } else if (s.modelId === null) {
-      seat.modelId = null;
-    }
-    const preferred = defaultThinkingMode(seat.baseUrl, seat.model, seat.apiProtocol);
-    const option = thinkingOptions(seat.baseUrl, seat.model, seat.apiProtocol).find((o) => o.value === (seat.thinkingMode ?? preferred));
-    if (!option?.supported) {
-      if (s.thinkingMode !== undefined) throw new ApiFailure(400, 'BAD_REQUEST', option?.hint ?? '无效的思考强度');
-      seat.thinkingMode = preferred;
-    }
-    if (seat.adapter === 'openai_compatible' && seat.thinkingMode === undefined) seat.thinkingMode = preferred;
-    Object.assign(current, seat);
-  }
 
-  private seatView(s: SeatRecord): SeatConfigView {
-    const { apiKeyEnc: _enc, apiKeyMask, nameSource: _nameSource, ...rest } = s;
-    return { ...rest, apiProtocol: s.apiProtocol ?? 'chat_completions', ...(s.adapter === 'openai_compatible' ? { thinkingMode: s.thinkingMode ?? defaultThinkingMode(s.baseUrl, s.model, s.apiProtocol) } : {}), apiKeyMasked: apiKeyMask, modelId: s.modelId ?? null };
-  }
 
-  private setupErrors(rec: RoomRecord): string[] {
-    const errors = validateRules(buildRules(rec.presetId, rec.ruleValues, { locale: rec.locale }));
-    for (const s of rec.seats) {
-      if (s.controller === 'human' && rec.participants && !rec.participants[s.seat]?.ready) errors.push(`${s.seat}号：等待真人进入座位并确认准备`);
-      if (s.controller !== 'ai' || s.adapter !== 'openai_compatible') continue;
-      if (!s.baseUrl) errors.push(`${s.seat}号：没有填写接口地址`);
-      if (!s.model) errors.push(`${s.seat}号：没有填写模型名`);
-      if (s.baseUrl) { try { apiUrl(s.baseUrl, s.apiProtocol); } catch (error) { errors.push(`${s.seat}号：${(error as Error).message}`); } }
-      const thinking = thinkingOptions(s.baseUrl, s.model, s.apiProtocol).find((o) => o.value === (s.thinkingMode ?? defaultThinkingMode(s.baseUrl, s.model, s.apiProtocol)));
-      if (!thinking?.supported) errors.push(`${s.seat}号：${thinking?.hint ?? '无效的思考强度'}`);
-    }
-    return errors;
-  }
 
 
   async testSeat(roomId: string, tok: string, seat: Seat): Promise<SeatTestResult> {
-    const rec = this.host(roomId, tok).rec;
-    const s = rec.seats.find((x) => x.seat === seat);
-    if (!s) throw new ApiFailure(404, 'NOT_FOUND', `没有 ${seat} 号座位`);
-    if (s.adapter === 'mock') return { ok: true, message: '模拟玩家不需要联网。', latencyMs: 0 };
-    const config = this.adapterConfig(s);
-    if (!config.baseUrl || !config.model) return { ok: false, message: '请先为这个座位选择模型。', latencyMs: 0 };
-    const r = await testConnection(config);
-    return { ...r, message: redact(r.message, config.apiKey) };
+    return this.lobby.testSeat(this.host(roomId, tok).rec, seat);
   }
 
   start(roomId: string, tok: string): RoomSetupView {
     const live = this.host(roomId, tok);
     const rec = live.rec;
-    if (rec.status !== 'setup') throw new ApiFailure(409, 'ALREADY_STARTED', '对局已经开始');
-    const errors = this.setupErrors(rec);
-    if (errors.length) throw new ApiFailure(422, 'INVALID_SETUP', errors.join('；'));
+    this.lobby.validateStart(rec);
     const rules = buildRules(rec.presetId, rec.ruleValues, { locale: rec.locale });
     const seed = randomBytes(8).toString('hex');
     const r = createGame({ id: rec.id, rules, seed, names: rec.seats.map((s) => s.name) });
@@ -558,24 +328,7 @@ export class RoomManager {
   /** 座位凭证只能修改本人昵称和准备状态。运行中可重新接入，不改变任何对局事实。 */
   participate(roomId: string, tok: string, input: ParticipantInput): ViewResponse {
     const { live, viewer } = this.resolve(roomId, tok);
-    if (viewer.role !== 'seat') throw new ApiFailure(403, 'FORBIDDEN', '只有座位凭证可以接入真人玩家');
-    const rec = live.rec, seat = rec.seats[viewer.seat - 1];
-    if (seat.controller !== 'human') throw new ApiFailure(409, 'NOT_HUMAN_SEAT', '这个座位由模型控制');
-    if (input.ready !== undefined && typeof input.ready !== 'boolean') throw new ApiFailure(400, 'BAD_REQUEST', '准备状态必须是布尔值');
-    if (input.name !== undefined && (typeof input.name !== 'string' || !input.name.trim() || [...input.name.trim()].length > 12)) throw new ApiFailure(400, 'BAD_REQUEST', '昵称须为 1–12 个字符');
-    if (rec.status !== 'setup' && (input.name !== undefined || input.ready !== undefined)) throw new ApiFailure(409, 'ALREADY_STARTED', '开局后不能修改昵称或准备状态');
-    if (rec.status === 'setup' && !seat.name?.trim()) {
-      seat.name = avatarDefaultName(rec.avatarStyle ?? 'storybook', seat.seat);
-      seat.nameSource = 'avatar';
-    }
-    rec.participants ??= {};
-    const participant = rec.participants[viewer.seat] ??= { joined: false, ready: false };
-    participant.joined = true;
-    if (input.name !== undefined && input.name.trim() !== seat.name) {
-      seat.name = input.name.trim();
-      seat.nameSource = 'custom';
-    }
-    if (input.ready !== undefined) participant.ready = input.ready;
+    this.lobby.participate(live.rec, viewer, input);
     this.changed(live);
     return this.view(roomId, tok);
   }
@@ -669,20 +422,14 @@ export class RoomManager {
 
   private resolve(roomId: string, tok: string): { live: Live; viewer: Viewer } {
     const live = this.rooms.get(roomId);
-    if (!live) throw new ApiFailure(404, 'NOT_FOUND', '房间不存在');
-    if (!tok) throw new ApiFailure(401, 'UNAUTHORIZED', '缺少凭证');
-    const rec = live.rec;
-    if (same(tok, rec.hostToken)) return { live, viewer: { role: 'host' } };
-    if (same(tok, rec.spectatorToken)) return { live, viewer: { role: 'spectator' } };
-    const i = rec.seatTokens.findIndex((t) => same(tok, t));
-    if (i >= 0) return { live, viewer: { role: 'seat', seat: i + 1 } };
-    throw new ApiFailure(403, 'FORBIDDEN', '凭证无效');
+    const { viewer } = this.lobby.resolve(live?.rec, tok);
+    return { live: live!, viewer };
   }
 
   private host(roomId: string, tok: string): Live {
-    const { live, viewer } = this.resolve(roomId, tok);
-    if (viewer.role !== 'host') throw new ApiFailure(403, 'FORBIDDEN', '只有房主凭证可以执行这个操作');
-    return live;
+    const live = this.rooms.get(roomId);
+    this.lobby.host(live?.rec, tok);
+    return live!;
   }
 
 
@@ -836,19 +583,6 @@ export class RoomManager {
     }
   }
 
-  private adapterConfig(s: SeatRecord): AdapterConfig {
-    return {
-      apiProtocol: s.apiProtocol ?? 'chat_completions',
-      baseUrl: s.baseUrl,
-      model: s.model,
-      apiKey: s.apiKeyEnc ? this.secrets.decrypt(s.apiKeyEnc) : null,
-      temperature: s.temperature,
-      toolMode: s.toolMode,
-      timeoutSec: s.timeoutSec,
-      thinkingMode: s.thinkingMode ?? defaultThinkingMode(s.baseUrl, s.model, s.apiProtocol),
-      maxOutputTokens: s.maxOutputTokens,
-    };
-  }
 
   private writeAudit(live: Live, entry: Omit<AuditEntry, 'id' | 'at'>): void {
     this.persistence.writeAudit(live.rec, entry);
@@ -1098,7 +832,7 @@ export class RoomManager {
     try {
       let config: AdapterConfig;
       try {
-        config = { ...this.adapterConfig(cfg), timeoutSec: aiTimeoutSec('', cfg.timeoutSec) };
+        config = { ...adapterConfig(cfg, this.secrets), timeoutSec: aiTimeoutSec('', cfg.timeoutSec) };
       } catch {
         this.writeAudit(live, { seat, model, decisionId: decision, projectionVersion: projection.version, purpose: 'listen', ok: false, error: '密钥无法解密（主密钥可能已更换）' });
         return;
@@ -1179,7 +913,7 @@ export class RoomManager {
       const limit = rec.timing?.[actionKind(rec.state?.pending?.step.type ?? '')].limitSec ?? aiTimeoutSec(rec.state?.pending?.step.type ?? '', cfg.timeoutSec);
       let config: AdapterConfig;
       try {
-        config = { ...this.adapterConfig(cfg), timeoutSec: limit };
+        config = { ...adapterConfig(cfg, this.secrets), timeoutSec: limit };
       } catch {
         this.writeAudit(live, { seat, model, decisionId: decision, projectionVersion: projection.version, ok: false, error: '密钥无法解密（主密钥可能已更换），已托管' });
         this.fallbackIfWaiting(live, seat, decision, 'request_failed');
