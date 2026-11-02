@@ -5,6 +5,50 @@ import type { RoomRecord, RoomStore } from './store';
 
 export type Viewer = { role: 'host' } | { role: 'seat'; seat: Seat } | { role: 'spectator' };
 
+/** 新增存档字段时必须明确唯一写入方；建房时的初值由候场工厂一次构造。 */
+export const roomFieldOwners = {
+  id: 'identity',
+  createdAt: 'identity',
+  locale: 'lobby',
+  avatarStyle: 'lobby',
+  hostToken: 'lobby',
+  spectatorToken: 'lobby',
+  seatTokens: 'lobby',
+  participants: 'lobby',
+  presetId: 'lobby',
+  ruleValues: 'lobby',
+  timing: 'lobby',
+  humanTimeoutSec: 'lobby',
+  aiPacingMs: 'lobby',
+  seats: 'lobby',
+  status: 'runtime',
+  paused: 'runtime',
+  seed: 'runtime',
+  rules: 'runtime',
+  state: 'runtime',
+  events: 'runtime',
+  actions: 'runtime',
+  deadlines: 'runtime',
+  actionAvailableAt: 'runtime',
+  actionGateRemainingMs: 'runtime',
+  deadlineRemainingMs: 'runtime',
+  thoughts: 'runtime',
+  threads: 'runtime',
+  heardSeq: 'runtime',
+} as const satisfies Record<keyof RoomRecord, 'identity' | 'lobby' | 'runtime'>;
+
+export type OwnedRoomFields<Owner extends 'lobby' | 'runtime'> = {
+  [Field in keyof typeof roomFieldOwners]: typeof roomFieldOwners[Field] extends Owner ? Field : never
+}[keyof typeof roomFieldOwners];
+
+/** 服务只能替换自己负责的字段；读取其他字段时仍引用同一份记录。 */
+type OwnedRoomRecord<Owner extends 'lobby' | 'runtime'> =
+  Pick<RoomRecord, OwnedRoomFields<Owner>> & Readonly<Omit<RoomRecord, OwnedRoomFields<Owner>>>;
+
+export type RoomLobbyRecord = OwnedRoomRecord<'lobby'>;
+export type RoomRuntimeRecord = OwnedRoomRecord<'runtime'>;
+export type RoomReadRecord = Readonly<RoomRecord>;
+
 export interface Subscriber {
   viewer: Viewer;
   send: (n: number) => void;
@@ -14,7 +58,7 @@ export interface Subscriber {
 
 /** 仅运行服务拥有推进、取消、代数和单步预算。rec 指向唯一房间记录。 */
 export interface RoomRuntimeState {
-  readonly rec: RoomRecord;
+  readonly rec: RoomRuntimeRecord;
   running: Promise<void> | null;
   again: boolean;
   stepBudget: number;

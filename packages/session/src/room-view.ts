@@ -2,19 +2,19 @@ import { DEFAULT_GAME_LOCALE, deathCauses, gameText } from '@werewolf/protocol';
 import type { GodProjection, HumanParticipant, Projection, RoomBrief, RoomSetupView, Seat, SeatConfigView, ViewResponse } from '@werewolf/protocol';
 import { buildRuleCard, buildRules, getPreset, projectGod, projectSeat, projectSpectator } from '@werewolf/engine';
 import { ApiFailure } from './room-failure';
-import type { RoomRecord, SeatRecord } from './store';
-import type { RoomViewState, Subscriber, Viewer } from './room-types';
+import type { SeatRecord } from './store';
+import type { RoomReadRecord, RoomViewState, Subscriber, Viewer } from './room-types';
 
 export class RoomViewService {
   private readonly states = new Map<string, RoomViewState>();
 
   constructor(private readonly now: () => number, private readonly ports: {
     seatView(s: SeatRecord): SeatConfigView;
-    setupErrors(rec: RoomRecord): string[];
-    scheduleSave(rec: RoomRecord): void;
+    setupErrors(rec: RoomReadRecord): string[];
+    scheduleSave(rec: RoomReadRecord): void;
   }) {}
 
-  private getState(rec: RoomRecord): RoomViewState {
+  private getState(rec: RoomReadRecord): RoomViewState {
     let state = this.states.get(rec.id);
     if (!state) {
       state = { subscribers: new Set<Subscriber>(), thoughtTimer: null, thoughtNotifiedAt: 0 };
@@ -23,7 +23,7 @@ export class RoomViewService {
     return state;
   }
 
-  setupView(rec: RoomRecord): RoomSetupView {
+  setupView(rec: RoomReadRecord): RoomSetupView {
     const rules = rec.rules ?? buildRules(rec.presetId, rec.ruleValues, { locale: rec.locale });
     return {
       roomId: rec.id,
@@ -48,17 +48,17 @@ export class RoomViewService {
     };
   }
 
-  view(rec: RoomRecord, viewer: Viewer): ViewResponse {
+  view(rec: RoomReadRecord, viewer: Viewer): ViewResponse {
     return { room: this.brief(rec, viewer), projection: rec.state ? this.project(rec, viewer) : null,
       presentation: { deaths: (rec.state?.deaths ?? []).map((d) => ({ seat: d.seat, day: d.day, causes: deathCauses(d.via, d.causes, viewer.role === 'host') })),
         ...(rec.actionAvailableAt ? { actionAvailableAt: rec.actionAvailableAt } : {}) } };
   }
 
-  speechLocale(rec: RoomRecord): string {
+  speechLocale(rec: RoomReadRecord): string {
     return rec.state?.rules.locale ?? rec.locale ?? DEFAULT_GAME_LOCALE;
   }
 
-  speechText(rec: RoomRecord, viewer: Viewer, seq: unknown): string {
+  speechText(rec: RoomReadRecord, viewer: Viewer, seq: unknown): string {
     if (!Number.isInteger(seq) || Number(seq) < 1) throw new ApiFailure(400, 'BAD_REQUEST', '请选择一条已提交发言');
     if (!rec.state) throw new ApiFailure(409, 'NOT_STARTED', '对局还没有开始');
     const event = this.project(rec, viewer).events.find((e) => e.seq === seq);
@@ -68,7 +68,7 @@ export class RoomViewService {
     return gameText(rec.state.rules.locale, '{0}号发言。{1}', event.payload.seat, event.payload.content);
   }
 
-  subscribe(rec: RoomRecord, viewer: Viewer, send: (n: number) => void): () => void {
+  subscribe(rec: RoomReadRecord, viewer: Viewer, send: (n: number) => void): () => void {
     const state = this.getState(rec);
     const sub: Subscriber = { viewer, send, sig: this.signature(rec, viewer), count: 0 };
     state.subscribers.add(sub);
@@ -78,7 +78,7 @@ export class RoomViewService {
     return () => { state.subscribers.delete(sub); this.notify(rec); };
   }
 
-  exportRecord(rec: RoomRecord, viewer: Viewer, kind: 'public' | 'god'): unknown {
+  exportRecord(rec: RoomReadRecord, viewer: Viewer, kind: 'public' | 'god'): unknown {
     if (!rec.state) throw new ApiFailure(409, 'NOT_STARTED', '对局还没有开始');
     if (kind === 'god') {
       if (viewer.role !== 'host') throw new ApiFailure(403, 'FORBIDDEN', '只有房主可以导出上帝记录');
@@ -98,7 +98,7 @@ export class RoomViewService {
     return projectSpectator(rec.state, rec.events);
   }
 
-  brief(rec: RoomRecord, viewer: Viewer): RoomBrief {
+  brief(rec: RoomReadRecord, viewer: Viewer): RoomBrief {
     return {
       roomId: rec.id,
       locale: rec.rules?.locale ?? rec.locale ?? DEFAULT_GAME_LOCALE,
@@ -114,7 +114,7 @@ export class RoomViewService {
     };
   }
 
-  private participants(rec: RoomRecord): HumanParticipant[] {
+  private participants(rec: RoomReadRecord): HumanParticipant[] {
     const subscribers = this.getState(rec).subscribers;
     return rec.seats.filter((s) => s.controller === 'human').map((s) => ({
       seat: s.seat, joined: rec.participants?.[s.seat]?.joined ?? false, ready: rec.participants?.[s.seat]?.ready ?? false,
@@ -122,7 +122,7 @@ export class RoomViewService {
     }));
   }
 
-  private visibleThoughts(rec: RoomRecord, viewer: Viewer) {
+  private visibleThoughts(rec: RoomReadRecord, viewer: Viewer) {
     const all = rec.thoughts ?? [];
     if (viewer.role === 'host') return all;
     if (viewer.role === 'seat') return all.filter((t) => t.seat === viewer.seat);
@@ -130,13 +130,13 @@ export class RoomViewService {
   }
 
   /** 模型和座位页面看到同一份投影，包括这一步还剩多少时间。 */
-  attachDeadline(rec: RoomRecord, seat: Seat, projection: Projection): Projection {
+  attachDeadline(rec: RoomReadRecord, seat: Seat, projection: Projection): Projection {
     const deadline = projection.task && !projection.task.submitted ? rec.deadlines[`${projection.task.decisionId}:${seat}`] : undefined;
     if (projection.task && deadline) projection.task.deadline = deadline;
     return projection;
   }
 
-  private project(rec: RoomRecord, viewer: Viewer): Projection | GodProjection {
+  private project(rec: RoomReadRecord, viewer: Viewer): Projection | GodProjection {
     const state = rec.state!;
     if (viewer.role === 'spectator') return projectSpectator(state, rec.events);
     const p = viewer.role === 'host' ? projectGod(state, rec.events) : projectSeat(state, rec.events, viewer.seat);
@@ -146,7 +146,7 @@ export class RoomViewService {
     return p;
   }
 
-  private signature(rec: RoomRecord, viewer: Viewer): string {
+  private signature(rec: RoomReadRecord, viewer: Viewer): string {
     const room = [rec.status, rec.paused, rec.avatarStyle, rec.actionAvailableAt, rec.seats.map((s) => [s.seat, s.name, s.controller]), this.participants(rec)];
     if (!rec.state) return JSON.stringify([room, rec.presetId, rec.ruleValues]);
     const p = this.project(rec, viewer);
@@ -163,7 +163,7 @@ export class RoomViewService {
     ]);
   }
 
-  notify(rec: RoomRecord): void {
+  notify(rec: RoomReadRecord): void {
     for (const sub of this.getState(rec).subscribers) {
       const sig = this.signature(rec, sub.viewer);
       if (sig === sub.sig) continue;
@@ -176,7 +176,7 @@ export class RoomViewService {
     }
   }
 
-  publishThoughts(rec: RoomRecord, immediate: boolean): void {
+  publishThoughts(rec: RoomReadRecord, immediate: boolean): void {
     const state = this.getState(rec);
     const send = () => {
       if (state.thoughtTimer) clearTimeout(state.thoughtTimer);
@@ -198,7 +198,7 @@ export class RoomViewService {
     state.thoughtTimer = setTimeout(send, 80 - elapsed);
   }
 
-  dispose(rec: RoomRecord): void {
+  dispose(rec: RoomReadRecord): void {
     const state = this.states.get(rec.id);
     if (state?.thoughtTimer) clearTimeout(state.thoughtTimer);
     if (state) state.thoughtTimer = null;

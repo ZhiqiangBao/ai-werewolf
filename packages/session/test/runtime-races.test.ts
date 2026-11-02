@@ -110,3 +110,35 @@ it('同一房间重复触发推进时不重复请求在途座位；暂停使迟�
   expect(manager.audit(roomId, hostToken).length).toBeGreaterThan(0);
   expect(manager.view(roomId, hostToken).room.paused).toBe(true);
 });
+
+it('暂停与单步不接受自爆；恢复后同窗口仅执行一次，并使旧发言超时失效', async () => {
+  let now = 100_000;
+  const { manager, roomId, hostToken, views } = humanRoom(() => now);
+  for (let i = 0; i < 300; i++) {
+    const all = views();
+    const speaker = all.find(({ p }) => p.task && !p.task.submitted && p.task.tools.some((t) => t.name === 'speak'));
+    const wolf = all.find(({ seat, p }) => seat !== speaker?.seat && p.interrupts.some((t) => t.name === 'wolf_explode'));
+    if (speaker && wolf) {
+      const decisionId = speaker.p.task!.decisionId;
+      const explode = { decisionId, tool: 'wolf_explode', args: {} };
+      manager.control(roomId, hostToken, 'pause');
+      now = speaker.p.task!.deadline! + 1;
+      manager.tick();
+      expect(() => manager.act(roomId, wolf.token, explode)).toThrow('对局已暂停');
+      manager.control(roomId, hostToken, 'step');
+      await manager.whenIdle(roomId);
+      expect(views().find((v) => v.seat === speaker.seat)!.p.task?.decisionId).toBe(decisionId);
+      manager.control(roomId, hostToken, 'resume');
+      expect(manager.act(roomId, wolf.token, explode).ok).toBe(true);
+      expect(manager.act(roomId, wolf.token, explode).ok).toBe(false);
+      manager.tick();
+      expect(manager.view(roomId, hostToken).projection!.events.some((e) => e.type === 'action.fallback')).toBe(false);
+      expect(manager.act(roomId, speaker.token, { decisionId, tool: 'speak', args: { content: '旧窗口的迟到发言' } }).ok).toBe(false);
+      return;
+    }
+    const actor = all.find(({ p }) => p.task && !p.task.submitted)!;
+    manager.act(roomId, actor.token, { decisionId: actor.p.task!.decisionId, ...mockDecision(actor.p, actor.p.task!.tools) });
+    await manager.whenIdle(roomId);
+  }
+  throw new Error('没有到达可自爆的发言窗口');
+});

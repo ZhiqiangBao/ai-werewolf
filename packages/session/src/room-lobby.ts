@@ -7,7 +7,7 @@ import { ApiFailure } from './room-failure';
 import { adapterConfig } from './room-model';
 import type { ModelLibrary } from './model-library';
 import { maskKey, type SecretBox } from './secret';
-import type { Viewer } from './room-types';
+import type { OwnedRoomFields, RoomLobbyRecord, RoomReadRecord, Viewer } from './room-types';
 import type { RoomRecord, SeatRecord } from './store';
 
 const token = () => randomBytes(18).toString('base64url');
@@ -84,7 +84,7 @@ export class RoomLobbyService {
     return rec;
   }
 
-  cloneSetup(src: RoomRecord, rec: RoomRecord): void {
+  cloneSetup(src: RoomReadRecord, rec: RoomLobbyRecord): void {
     Object.assign(rec, {
       avatarStyle: src.avatarStyle,
       locale: src.rules?.locale ?? src.locale ?? DEFAULT_GAME_LOCALE,
@@ -96,10 +96,10 @@ export class RoomLobbyService {
       seats: structuredClone(src.seats),
       seatTokens: src.seats.map(() => token()),
       participants: {},
-    });
+    } satisfies Partial<Pick<RoomRecord, OwnedRoomFields<'lobby'>>>);
   }
 
-  updateSetup(rec: RoomRecord, input: RoomSetupInput): void {
+  updateSetup(rec: RoomLobbyRecord, input: RoomSetupInput): void {
     if (rec.status !== 'setup') throw new ApiFailure(409, 'ALREADY_STARTED', '对局已经开始，不能再修改配置');
     if (input.avatarStyle !== undefined && !isAvatarStyleId(input.avatarStyle)) throw new ApiFailure(400, 'BAD_REQUEST', '没有这个人物风格');
     let timing: RoomRecord['timing'];
@@ -158,7 +158,7 @@ export class RoomLobbyService {
     }
   }
 
-  private applySeat(rec: RoomRecord, s: SeatConfigInput): void {
+  private applySeat(rec: RoomLobbyRecord, s: SeatConfigInput): void {
     const current = rec.seats.find((x) => x.seat === s.seat);
     if (!current) throw new ApiFailure(400, 'BAD_REQUEST', `没有 ${s.seat} 号座位`);
     const seat = { ...current };
@@ -244,7 +244,7 @@ export class RoomLobbyService {
     return { ...rest, apiProtocol: s.apiProtocol ?? 'chat_completions', ...(s.adapter === 'openai_compatible' ? { thinkingMode: s.thinkingMode ?? defaultThinkingMode(s.baseUrl, s.model, s.apiProtocol) } : {}), apiKeyMasked: apiKeyMask, modelId: s.modelId ?? null };
   }
 
-  setupErrors(rec: RoomRecord): string[] {
+  setupErrors(rec: RoomReadRecord): string[] {
     const errors = validateRules(buildRules(rec.presetId, rec.ruleValues, { locale: rec.locale }));
     for (const s of rec.seats) {
       if (s.controller === 'human' && rec.participants && !rec.participants[s.seat]?.ready) errors.push(`${s.seat}号：等待真人进入座位并确认准备`);
@@ -258,7 +258,7 @@ export class RoomLobbyService {
     return errors;
   }
 
-  async testSeat(rec: RoomRecord, seat: Seat): Promise<SeatTestResult> {
+  async testSeat(rec: RoomReadRecord, seat: Seat): Promise<SeatTestResult> {
     const s = rec.seats.find((x) => x.seat === seat);
     if (!s) throw new ApiFailure(404, 'NOT_FOUND', `没有 ${seat} 号座位`);
     if (s.adapter === 'mock') return { ok: true, message: '模拟玩家不需要联网。', latencyMs: 0 };
@@ -268,7 +268,7 @@ export class RoomLobbyService {
     return { ...r, message: redact(r.message, config.apiKey) };
   }
 
-  participate(rec: RoomRecord, viewer: Viewer, input: ParticipantInput): void {
+  participate(rec: RoomLobbyRecord, viewer: Viewer, input: ParticipantInput): void {
     if (viewer.role !== 'seat') throw new ApiFailure(403, 'FORBIDDEN', '只有座位凭证可以接入真人玩家');
     const seat = rec.seats[viewer.seat - 1];
     if (seat.controller !== 'human') throw new ApiFailure(409, 'NOT_HUMAN_SEAT', '这个座位由模型控制');
@@ -305,7 +305,7 @@ export class RoomLobbyService {
     return resolved.rec;
   }
 
-  validateStart(rec: RoomRecord): void {
+  validateStart(rec: RoomReadRecord): void {
     if (rec.status !== 'setup') throw new ApiFailure(409, 'ALREADY_STARTED', '对局已经开始');
     const errors = this.setupErrors(rec);
     if (errors.length) throw new ApiFailure(422, 'INVALID_SETUP', errors.join('；'));

@@ -32,7 +32,7 @@ export class RoomManager {
       setupErrors: this.lobby.setupErrors.bind(this.lobby),
       scheduleSave: this.persistence.scheduleSave.bind(this.persistence),
     });
-    this.runtime = new RoomRuntimeService(now, o.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))), o.secrets, o.adapters ?? {}, {
+    this.runtime = new RoomRuntimeService(now, o.sleep, o.secrets, o.adapters ?? {}, {
       scheduleSave: this.persistence.scheduleSave.bind(this.persistence),
       writeAudit: this.persistence.writeAudit.bind(this.persistence),
       notify: this.views.notify.bind(this.views),
@@ -53,8 +53,9 @@ export class RoomManager {
   }
 
   dispose(): void {
-    this.runtime.dispose();
+    this.runtime.stopTimer();
     for (const rec of this.rooms.values()) {
+      this.runtime.disposeRoom(rec);
       this.views.dispose(rec);
       this.persistence.flush(rec);
     }

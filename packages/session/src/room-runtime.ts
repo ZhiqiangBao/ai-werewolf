@@ -6,16 +6,16 @@ import { buildMessages, feedbackMessages, getAdapter, redact, styleText, type Ad
 import { NOT_TOOL_TURN, migrateThread, ensureCue, ownLine, readyToAct, syncThread, type ActionCue, type TurnHint, type SeatThread } from './agent';
 import { ApiFailure } from './room-failure';
 import { adapterConfig } from './room-model';
-import type { RoomRuntimeState, Viewer } from './room-types';
+import type { OwnedRoomFields, RoomReadRecord, RoomRuntimeRecord, RoomRuntimeState, Viewer } from './room-types';
 import type { SecretBox } from './secret';
 import type { RoomRecord } from './store';
 
 interface RuntimePorts {
-  scheduleSave(rec: RoomRecord): void;
-  writeAudit(rec: RoomRecord, entry: Omit<AuditEntry, 'id' | 'at'>): void;
-  notify(rec: RoomRecord): void;
-  publishThoughts(rec: RoomRecord, immediate: boolean): void;
-  attachDeadline(rec: RoomRecord, seat: Seat, projection: Projection): Projection;
+  scheduleSave(rec: RoomReadRecord): void;
+  writeAudit(rec: RoomReadRecord, entry: Omit<AuditEntry, 'id' | 'at'>): void;
+  notify(rec: RoomReadRecord): void;
+  publishThoughts(rec: RoomReadRecord, immediate: boolean): void;
+  attachDeadline(rec: RoomReadRecord, seat: Seat, projection: Projection): Projection;
 }
 
 function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -64,14 +64,17 @@ function clampTexts(call: ToolCall, tools: ToolSpec[]): ToolCall {
 export class RoomRuntimeService {
   private readonly rooms = new Map<string, RoomRuntimeState>();
   private timer: ReturnType<typeof setInterval> | null = null;
+  private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(
     private readonly now: () => number,
-    private readonly sleep: (ms: number) => Promise<void>,
+    sleep: ((ms: number) => Promise<void>) | undefined,
     private readonly secrets: SecretBox,
     private readonly adapters: Partial<Record<AdapterKind, Adapter>>,
     private readonly ports: RuntimePorts,
-  ) {}
+  ) {
+    this.sleep = sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+  }
 
   startTimer(tickMs: number): void {
     if (this.timer) return;
@@ -79,7 +82,7 @@ export class RoomRuntimeService {
     this.timer?.unref?.();
   }
 
-  register(rec: RoomRecord, restored: boolean): void {
+  register(rec: RoomRuntimeRecord, restored: boolean): void {
     if (restored) {
       if (rec.heardSeq === undefined) rec.heardSeq = rec.events.reduce((m, e) => Math.max(m, e.seq), 0);
       rec.threads ??= [];
@@ -87,7 +90,7 @@ export class RoomRuntimeService {
     this.rooms.set(rec.id, this.live(rec));
   }
 
-  private state(rec: RoomRecord): RoomRuntimeState {
+  private state(rec: RoomRuntimeRecord): RoomRuntimeState {
     return this.rooms.get(rec.id)!;
   }
 
@@ -101,19 +104,21 @@ export class RoomRuntimeService {
     }
   }
 
-  dispose(): void {
+  stopTimer(): void {
     if (this.timer) clearInterval(this.timer);
-    for (const live of this.rooms.values()) {
-      for (const c of live.inflight.values()) c.abort();
-    }
+  }
+
+  /** 由兼容入口逐房间调用，保留取消该房间后立即落盘的退出顺序。 */
+  disposeRoom(rec: RoomRuntimeRecord): void {
+    for (const c of this.state(rec).inflight.values()) c.abort();
   }
 
   /** 配置、候场和引擎事实变更共用既有的截止时间→取消→保存→通知顺序。 */
-  changed(rec: RoomRecord): void {
+  changed(rec: RoomRuntimeRecord): void {
     this.changedState(this.state(rec));
   }
 
-  start(rec: RoomRecord): void {
+  start(rec: RoomRuntimeRecord): void {
     const live = this.state(rec);
     const rules = buildRules(rec.presetId, rec.ruleValues, { locale: rec.locale });
     const seed = randomBytes(8).toString('hex');
@@ -129,12 +134,12 @@ export class RoomRuntimeService {
       deadlines: {},
       threads: [],
       heardSeq: 0,
-    });
+    } satisfies Pick<RoomRecord, OwnedRoomFields<'runtime'>>);
     this.changedState(live);
     void this.pump(live);
   }
 
-  control(rec: RoomRecord, action: ControlAction): void {
+  control(rec: RoomRuntimeRecord, action: ControlAction): void {
     const live = this.state(rec);
     if (rec.status !== 'running') throw new ApiFailure(409, 'NOT_RUNNING', '对局不在进行中');
     if (action === 'pause') {
@@ -178,7 +183,7 @@ export class RoomRuntimeService {
     if (action !== 'end') void this.pump(live);
   }
 
-  act(rec: RoomRecord, viewer: Viewer, body: { decisionId?: unknown; tool?: unknown; args?: unknown }) {
+  act(rec: RoomRuntimeRecord, viewer: Viewer, body: { decisionId?: unknown; tool?: unknown; args?: unknown }) {
     const live = this.state(rec);
     if (viewer.role !== 'seat') throw new ApiFailure(403, 'FORBIDDEN', '只有座位凭证可以提交行动');
     if (rec.status !== 'running' || !rec.state) throw new ApiFailure(409, 'NOT_RUNNING', '对局不在进行中');
@@ -197,7 +202,7 @@ export class RoomRuntimeService {
     return res.error ? { ok: false, error: { code: res.error.code, message: res.error.reason } } : { ok: true };
   }
 
-  private live(rec: RoomRecord): RoomRuntimeState {
+  private live(rec: RoomRuntimeRecord): RoomRuntimeState {
     return {
       rec,
       running: null,
@@ -297,10 +302,11 @@ export class RoomRuntimeService {
     this.ports.publishThoughts(live.rec, true);
   }
 
-  private isHuman(rec: RoomRecord, seat: Seat): boolean {
+  private isHuman(rec: RoomRuntimeRecord, seat: Seat): boolean {
     return rec.seats[seat - 1]?.controller === 'human';
   }
 
+  /** 真人从窗口开放起计时；模型等问话入席并发出正式请求后才计时。 */
   private armDeadlines(live: RoomRuntimeState, reset: boolean): void {
     const rec = live.rec;
     const d = rec.state?.pending;
@@ -359,6 +365,7 @@ export class RoomRuntimeService {
     }
   }
 
+  /** 每房间复用一个推进任务；重复触发只安排当前任务结束后重新检查。 */
   private pump(live: RoomRuntimeState): Promise<void> {
     if (live.rec.status === 'ended') return Promise.resolve();
     if (live.running) {
@@ -456,6 +463,7 @@ export class RoomRuntimeService {
     return thread;
   }
 
+  /** 逐事件同步到可见座位；同波次并行请求，全部完成后才推进下一波。 */
   private prepareWave(live: RoomRuntimeState): { seat: Seat; action: boolean }[] | null {
     const rec = live.rec;
     const ai = rec.seats.filter((s) => !this.isHuman(rec, s.seat));
@@ -507,7 +515,7 @@ export class RoomRuntimeService {
     return wave.length ? wave : null;
   }
 
-  private turnHint(rec: RoomRecord): TurnHint {
+  private turnHint(rec: RoomRuntimeRecord): TurnHint {
     const step = rec.state?.pending?.step;
     if (!step) return { nextSeat: null, nextStep: null };
     if (step.type === 'speech' || step.type === 'wolf.discuss') {
@@ -516,7 +524,7 @@ export class RoomRuntimeService {
     return { nextSeat: null, nextStep: step.type };
   }
 
-  private actionCue(rec: RoomRecord): ActionCue | null {
+  private actionCue(rec: RoomRuntimeRecord): ActionCue | null {
     const d = rec.state?.pending;
     if (!d) return null;
     const actors = waitingSeats(rec.state!).filter((seat) => d.tools[seat]?.length);
@@ -571,6 +579,7 @@ export class RoomRuntimeService {
     }
   }
 
+  /** 旁听属于消息；阶段变化不直接取消，提交打断前再次校验当前许可。 */
   private async receive(live: RoomRuntimeState, seat: Seat, decision: string): Promise<void> {
     const rec = live.rec;
     const cfg = rec.seats[seat - 1];

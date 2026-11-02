@@ -1,5 +1,6 @@
 import type { AuditEntry } from '@werewolf/protocol';
-import type { RoomRecord, RoomStore } from './store';
+import type { RoomStore } from './store';
+import type { RoomReadRecord } from './room-types';
 
 interface PersistenceState {
   saveTimer: ReturnType<typeof setTimeout> | null;
@@ -12,7 +13,7 @@ export class RoomPersistence {
 
   constructor(private readonly store: RoomStore, private readonly now: () => number) {}
 
-  private state(rec: RoomRecord): PersistenceState {
+  private state(rec: RoomReadRecord): PersistenceState {
     let state = this.states.get(rec.id);
     if (!state) {
       state = { saveTimer: null, auditId: 0 };
@@ -21,13 +22,13 @@ export class RoomPersistence {
     return state;
   }
 
-  scheduleSave(rec: RoomRecord): void {
+  scheduleSave(rec: RoomReadRecord): void {
     const state = this.state(rec);
     if (state.saveTimer) return;
     state.saveTimer = setTimeout(() => this.flush(rec), 300);
   }
 
-  flush(rec: RoomRecord): void {
+  flush(rec: RoomReadRecord): void {
     const state = this.state(rec);
     if (state.saveTimer) clearTimeout(state.saveTimer);
     state.saveTimer = null;
@@ -38,7 +39,7 @@ export class RoomPersistence {
     }
   }
 
-  writeAudit(rec: RoomRecord, entry: Omit<AuditEntry, 'id' | 'at'>): void {
+  writeAudit(rec: RoomReadRecord, entry: Omit<AuditEntry, 'id' | 'at'>): void {
     const state = this.state(rec);
     if (state.auditId === 0) state.auditId = this.store.readAudit(rec.id).length;
     this.store.appendAudit(rec.id, { id: ++state.auditId, at: this.now(), ...entry });
