@@ -74,54 +74,13 @@ import { ModelLibrary } from './model-library';
 import { maskKey, type SecretBox } from './secret';
 import type { RoomRecord, RoomStore, SeatRecord } from './store';
 
-export class ApiFailure extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-  }
-}
+import { ApiFailure } from './room-failure';
+import { RoomPersistence } from './room-persistence';
+import type { ManagerOptions, RoomRuntimeState, RoomViewState, Subscriber, Viewer } from './room-types';
+export { ApiFailure } from './room-failure';
+export type { ManagerOptions } from './room-types';
 
-type Viewer = { role: 'host' } | { role: 'seat'; seat: Seat } | { role: 'spectator' };
-
-interface Subscriber {
-  viewer: Viewer;
-  send: (n: number) => void;
-  sig: string;
-  count: number;
-}
-
-interface Live {
-  rec: RoomRecord;
-  running: Promise<void> | null;
-  again: boolean;
-  stepBudget: number;
-  /** 暂停时冻结推进间隔；恢复时将截止时刻向后平移。 */
-  gatePausedAt: number | undefined;
-  /** 终结时加一。还在飞的请求和推进循环看到代数变了就立刻退出，不能再提交。 */
-  gen: number;
-  inflight: Map<string, AbortController>;
-  subscribers: Set<Subscriber>;
-  saveTimer: ReturnType<typeof setTimeout> | null;
-  thoughtTimer: ReturnType<typeof setTimeout> | null;
-  thoughtNotifiedAt: number;
-  auditId: number;
-}
-
-export interface ManagerOptions {
-  store: RoomStore;
-  secrets: SecretBox;
-  now?: () => number;
-  sleep?: (ms: number) => Promise<void>;
-  /** 测试时替换适配器。 */
-  adapters?: Partial<Record<AdapterKind, Adapter>>;
-  /** 行动超时检查间隔，0 表示不启动定时器。 */
-  tickMs?: number;
-  /** 页面里添加的模型。不传则只留在内存里。 */
-  modelsPath?: string;
-}
+interface Live extends RoomRuntimeState, RoomViewState {}
 
 function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -200,6 +159,7 @@ function clampTexts(call: ToolCall, tools: ToolSpec[]): ToolCall {
 export class RoomManager {
   private readonly rooms = new Map<string, Live>();
   private readonly store: RoomStore;
+  private readonly persistence: RoomPersistence;
   private readonly secrets: SecretBox;
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
@@ -212,6 +172,7 @@ export class RoomManager {
     this.secrets = o.secrets;
     this.models = new ModelLibrary(o.secrets, o.modelsPath);
     this.now = o.now ?? Date.now;
+    this.persistence = new RoomPersistence(o.store, this.now);
     this.sleep = o.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.adapters = o.adapters ?? {};
     for (const rec of this.store.loadAll()) {
@@ -693,7 +654,7 @@ export class RoomManager {
 
   audit(roomId: string, tok: string): AuditEntry[] {
     this.host(roomId, tok);
-    return this.store.readAudit(roomId);
+    return this.persistence.audit(roomId);
   }
 
   exportRecord(roomId: string, tok: string, kind: 'public' | 'god'): unknown {
@@ -732,10 +693,8 @@ export class RoomManager {
       gen: 0,
       inflight: new Map(),
       subscribers: new Set(),
-      saveTimer: null,
       thoughtTimer: null,
       thoughtNotifiedAt: 0,
-      auditId: 0,
     };
   }
 
@@ -947,18 +906,11 @@ export class RoomManager {
   }
 
   private scheduleSave(live: Live): void {
-    if (live.saveTimer) return;
-    live.saveTimer = setTimeout(() => this.flush(live), 300);
+    this.persistence.scheduleSave(live.rec);
   }
 
   private flush(live: Live): void {
-    if (live.saveTimer) clearTimeout(live.saveTimer);
-    live.saveTimer = null;
-    try {
-      this.store.save(live.rec);
-    } catch (e) {
-      console.error(`房间 ${live.rec.id} 保存失败：`, (e as Error).message);
-    }
+    this.persistence.flush(live.rec);
   }
 
   private isHuman(rec: RoomRecord, seat: Seat): boolean {
@@ -1041,8 +993,7 @@ export class RoomManager {
   }
 
   private writeAudit(live: Live, entry: Omit<AuditEntry, 'id' | 'at'>): void {
-    if (live.auditId === 0) live.auditId = this.store.readAudit(live.rec.id).length;
-    this.store.appendAudit(live.rec.id, { id: ++live.auditId, at: this.now(), ...entry });
+    this.persistence.writeAudit(live.rec, entry);
   }
 
   /** 自动推进：轮到模型就请求并提交，轮到真人就等待。同时行动的模型座位并行请求。 */
