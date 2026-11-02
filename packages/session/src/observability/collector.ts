@@ -13,7 +13,7 @@ type SpanData = ObservationFields & { parentId?: string };
 
 const metricNames = new Set(['gateWaitMs','pacingWaitMs','plannedWaitMs','wavePrepareMs','localPreDispatchMs','actionSegmentMs',
   'markAskedMs','modelCallMs','adapterExecutionMs','requestEncodeMs','serializeMs','requestSendMs','headersMs','firstBodyByteMs',
-  'firstStreamContentMs','legacyFirstDeltaMs','parsedOutputAvailableMs','bodyConsumeMs','parseMs','httpAttemptMs','backoffMs',
+  'firstStreamContentMs','legacyFirstDeltaMs','legacyLatencyMs','parsedOutputAvailableMs','bodyConsumeMs','parseMs','httpAttemptMs','backoffMs',
   'waveAwaitMs','memberTailWaitMs','waveWallMs','persistenceMs','providerQueueMs','roomWallMs','runWallMs']);
 const idNames = ['id','parentId','runId','roomRef','seatRef','waveId','workId','decisionRef','actionId','actionSegmentId','callId','requestId','httpAttemptId','causedByCallId','providerId','modelKey'] as const;
 const enumFields: Record<string, readonly string[]> = {
@@ -44,7 +44,7 @@ export function whitelistObservation(event: ObservationEvent): ObservationEvent 
   const out: Record<string, unknown> = { schemaVersion: 1 };
   for (const key of idNames) if (typeof source[key] === 'string' && /^[A-Za-z0-9_.:-]{1,200}$/.test(source[key])) out[key] = source[key];
   for (const [key, values] of Object.entries(enumFields)) if (values.includes(String(source[key]))) out[key] = source[key];
-  for (const key of ['atMs','correctionAttempt','variantIndex','attemptIndex','status','members','httpAttemptsStarted','httpAttemptsFinished','compatibilityFallbacks']) {
+  for (const key of ['atMs','wallTimeMs','correctionAttempt','variantIndex','attemptIndex','status','members','httpAttemptsStarted','httpAttemptsFinished','compatibilityFallbacks']) {
     const value = source[key]; if (typeof value === 'number' && Number.isFinite(value) && value >= 0) out[key] = value;
   }
   const duration = measurement(source.durationMs); if (duration) out.durationMs = duration;
@@ -150,7 +150,7 @@ export class RoomObservability {
         if (event.kind === 'model_call') this.endedCalls.set(event.id, event.atMs);
       } else if (!this.active.has(event.id)) { this.stats.lateEvents++; return; }
       this.stats.activeSpans = this.active.size;
-      this.options.sink.emit(whitelistObservation(event));
+      this.options.sink.emit(whitelistObservation(event.kind === 'run' || event.kind === 'room' ? { ...event, wallTimeMs: this.clock.wallTimeMs() } : event));
     } catch { this.stats.callbackErrors++; }
   }
   adapter(ref: ObservationRef): DecideObservationPort {

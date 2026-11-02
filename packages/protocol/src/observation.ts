@@ -50,6 +50,8 @@ export interface ObservationMetrics {
   firstBodyByteMs?: Measurement;
   firstStreamContentMs?: Measurement;
   legacyFirstDeltaMs?: Measurement;
+  /** 历史审计的旧墙钟定义，不能冒充新 modelCallMs。 */
+  legacyLatencyMs?: Measurement;
   parsedOutputAvailableMs?: Measurement;
   bodyConsumeMs?: Measurement;
   parseMs?: Measurement;
@@ -115,6 +117,8 @@ interface SpanEvent extends ObservationFields {
   httpAttemptId?: string;
   phase: 'start' | 'end' | 'point';
   atMs: number;
+  /** 仅作日志时间范围，不参与任何新耗时计算。 */
+  wallTimeMs?: number;
   durationMs?: Measurement;
   outcome?: ObservationOutcome;
 }

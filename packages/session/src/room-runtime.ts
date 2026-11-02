@@ -488,9 +488,10 @@ export class RoomRuntimeService {
       try {
         await Promise.all(wave.map((w, i) => (w.action ? this.runAi(live, w.seat, decision, members[i]) : this.receive(live, w.seat, decision, members[i]))));
       } finally { if (awaitStarted !== undefined) awaitMs = observed!.clock.monotonicMs() - awaitStarted; }
-      if (observed) for (const member of members) if (member.endedAt !== undefined) {
+      const waveAwaitEnded = awaitStarted === undefined || awaitMs === undefined ? undefined : awaitStarted + awaitMs;
+      if (observed && waveAwaitEnded !== undefined) for (const member of members) if (member.endedAt !== undefined) {
         const tail = observed.begin('local_span', member.ref, { parentId: member.id, ...member.fields });
-        tail.finish('success', { memberTailWaitMs: measured(observed.clock.monotonicMs() - member.endedAt) });
+        tail.finish('success', { memberTailWaitMs: measured(waveAwaitEnded - member.endedAt) });
       }
       if (stepping && rec.paused && rec.timing && live.gen === gen) rec.deadlineRemainingMs = Object.fromEntries(Object.entries(rec.deadlines).map(([key, deadline]) => [key, Math.max(0, deadline - this.now())]));
       this.ports.scheduleSave(live.rec);
@@ -501,7 +502,8 @@ export class RoomRuntimeService {
         outcome = 'await_rejected';
         throw error;
       } finally {
-        for (const member of members) if (member.endedAt === undefined) member.finish(live.gen !== gen || rec.paused ? 'cancelled' : 'skipped');
+        // Promise.all 失败可能早于其余成员；保留它们的真实终态，不提前标成取消。
+        if (outcome !== 'await_rejected') for (const member of members) if (member.endedAt === undefined) member.finish(live.gen !== gen || rec.paused ? 'cancelled' : 'skipped');
         waveSpan?.finish(outcome, { waveWallMs: measured(waveSpan.elapsed()),
           ...(preparedMs === undefined ? {} : { wavePrepareMs: measured(preparedMs) }),
           ...(awaitMs === undefined ? {} : { waveAwaitMs: measured(awaitMs) }) }, { members: members.length });
