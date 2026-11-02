@@ -35,6 +35,7 @@ export async function post(
   let firstContent: number | undefined;
   let firstKind: FirstContentKind | undefined;
   let parseMs = 0;
+  let parsed = false;
   let bodyEnd: BodyEndKind | undefined;
   let bodyEndAt: number | undefined;
   let parsedOutputAt: number | undefined;
@@ -53,7 +54,8 @@ export async function post(
         headersMs: headersAt === undefined ? missing(reason) : measured(headersAt - active.started),
         firstBodyByteMs: firstByte === undefined ? missing(headersAt === undefined ? reason : response?.headers.get('content-type')?.includes('text/event-stream') ? contentMissing : 'not_observable') : measured(firstByte - active.started),
         firstStreamContentMs: firstContent === undefined ? missing(headersAt === undefined ? reason : response?.headers.get('content-type')?.includes('text/event-stream') ? contentMissing : 'not_applicable') : measured(firstContent - active.started),
-        bodyConsumeMs: headersAt === undefined ? missing(reason) : measured((bodyEndAt ?? end) - headersAt), parseMs: measured(parseMs),
+        bodyConsumeMs: headersAt === undefined ? missing(reason) : measured((bodyEndAt ?? end) - headersAt),
+        parseMs: parsed ? measured(parseMs) : missing(headersAt === undefined || signal.aborted || outcome === 'network_error' ? reason : 'not_applicable'),
         parsedOutputAvailableMs: parsedOutputAt === undefined ? missing(response?.headers.get('content-type')?.includes('text/event-stream') ? 'not_applicable' : reason) : measured(parsedOutputAt - active.started),
       }, ...(usage ? { usage: { ...usage.value(), sourceHttpAttemptId: active.id } } : {}) });
     active = undefined;
@@ -68,7 +70,7 @@ export async function post(
   for (let attempt = 0; ; attempt++) {
     signal.throwIfAborted();
     // Keep JSON.stringify inside the retry loop, at the original fetch argument position.
-    headersAt = firstByte = firstContent = bodyEndAt = parsedOutputAt = undefined; firstKind = undefined; bodyEnd = undefined; protocolEnded = false; parseMs = 0; response = undefined;
+    headersAt = firstByte = firstContent = bodyEndAt = parsedOutputAt = undefined; firstKind = undefined; bodyEnd = undefined; protocolEnded = false; parseMs = 0; parsed = false; response = undefined;
     usage = observation ? new UsageSnapshot(observation.protocol) : undefined;
     try {
       const serialize = observation?.observer.start('local_span', observation.request.id, { requestId: observation.request.id, operation: 'serialize', attemptIndex: attempt });
@@ -93,10 +95,17 @@ export async function post(
     break;
   }
   try {
-    if (!response.ok) { const text = await response.text(); bodyEnd = 'eof'; if (active) bodyEndAt = now(); throw new HttpError(response.status, text); }
+    if (!response.ok) {
+      const text = await response.text(); bodyEnd = 'eof'; if (active) bodyEndAt = now();
+      // The error body was already consumed by the original path.  Extract only
+      // numeric usage when observation is enabled, without changing HttpError.
+      if (active && usage) { try { recordUsage(JSON.parse(text)?.usage); } catch { /* non-JSON errors retain the original behavior */ } }
+      throw new HttpError(response.status, text);
+    }
     if (!response.headers.get('content-type')?.includes('text/event-stream')) {
       const text = await response.text(); bodyEnd = 'eof'; if (active) bodyEndAt = now();
       const parseStart = active ? now() : 0;
+      if (active) parsed = true;
       try {
         const result = JSON.parse(text);
         if (active) parsedOutputAt = now();
@@ -118,6 +127,7 @@ export async function post(
       if (text === '[DONE]') { done = true; return; }
       let event: Record<string, any>;
       const parseStart = active ? now() : 0;
+      if (active) parsed = true;
       try { event = JSON.parse(text); } catch { throw new HttpError(200, gameText(locale, '流式事件不是合法 JSON'), 'parse_error'); }
       finally { if (active) parseMs += now() - parseStart; }
       if (observation && active) {

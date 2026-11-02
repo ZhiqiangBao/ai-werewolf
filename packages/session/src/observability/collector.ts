@@ -105,7 +105,7 @@ export class RoomObservability {
       monotonicMs: () => { try { const value = options.clock?.monotonicMs() ?? performance.now(); if (Number.isFinite(value)) return value; } catch { this.stats.callbackErrors++; } return performance.now(); },
       wallTimeMs: () => { try { const value = options.clock?.wallTimeMs() ?? Date.now(); if (Number.isFinite(value)) return value; } catch { this.stats.callbackErrors++; } return Date.now(); },
     };
-    this.identities = new ObservationIdentities(options.mappingPath ?? 'data/diagnostics/identity-map.json', options.providerAlias);
+    this.identities = new ObservationIdentities(options.mappingPath ?? 'data/diagnostics/identity-map.json', options.providerAlias, options.providerAliases);
     this.run = this.begin('run', { schemaVersion: 1, runId: this.runId, roomRef: 'all' });
     this.expiry = setInterval(() => this.expire(), 1000);
     this.expiry.unref?.();

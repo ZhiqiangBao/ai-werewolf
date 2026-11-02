@@ -97,10 +97,30 @@ describe('数值观测旁路', () => {
     expect(fetch).toHaveBeenCalledTimes(3);
     const attempts = events.filter((e) => e.kind === 'http_attempt' && e.phase === 'end');
     expect(attempts.map((e) => e.status)).toEqual([429, 500, 200]);
+    expect(attempts.slice(0, 2).map((e) => e.metrics?.parseMs)).toEqual([{ valueMs: null, reason: 'not_applicable' }, { valueMs: null, reason: 'not_applicable' }]);
     expect(new Set(attempts.map((e) => e.id)).size).toBe(3);
     const waits = events.filter((e) => e.kind === 'backoff' && e.phase === 'end');
     expect(waits.map((e) => e.retryReason)).toEqual(['429', '5xx']);
     expect(waits.map((e) => e.metrics?.plannedWaitMs?.valueMs)).toEqual([800, 1600]);
+  });
+
+  it('记录最终 HTTP 错误已报告的 usage，不改变错误正文或对非 JSON 错误的处理', async () => {
+    const body = JSON.stringify({ error: { message: 'synthetic-error' }, usage: { prompt_tokens: 8, completion_tokens: 3 } });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 400, headers: { 'content-type': 'application/json' } })));
+    const control = await remoteAdapter('chat_completions').decide(request('chat_completions'));
+    const { observation, events } = port();
+    const observed = await remoteAdapter('chat_completions').decide(request('chat_completions', observation));
+    expect(observed).toMatchObject({ ok: control.ok, failureKind: control.failureKind, error: control.error });
+    expect(observed.failureKind).toBe('http');
+    const end = events.find((e) => e.kind === 'http_attempt' && e.phase === 'end')!;
+    expect(end.usage).toMatchObject({ inputTokens: 8, outputTokens: 3, cacheReadTokens: null, cacheWriteTokens: null, completeness: 'partial', sourceHttpAttemptId: end.id });
+    expect(end.metrics?.parseMs).toEqual({ valueMs: null, reason: 'not_applicable' });
+    expect(JSON.stringify(events)).not.toContain('synthetic-error');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('plain failure', { status: 400 })));
+    const other = port();
+    const plain = await remoteAdapter('chat_completions').decide(request('chat_completions', other.observation));
+    expect(plain.failureKind).toBe('http'); expect(plain.error).toContain('plain failure');
+    expect(other.events.find((e) => e.kind === 'http_attempt' && e.phase === 'end')?.usage?.completeness).toBe('unknown');
   });
 
   it('组合兼容回退与热记忆按实际请求变体分别记录', async () => {
@@ -144,6 +164,15 @@ describe('数值观测旁路', () => {
     for (const start of events.filter((e) => e.phase === 'start')) expect(events.filter((e) => e.phase === 'end' && e.id === start.id)).toHaveLength(1);
   });
 
+  it('响应头后流读取失败且未解析任何事件时，解析时长仍然未知', async () => {
+    const body = new ReadableStream<Uint8Array>({ start(controller) { controller.error(new Error('synthetic-disconnect')); } });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { headers: { 'content-type': 'text/event-stream' } })));
+    const { observation, events } = port();
+    expect((await remoteAdapter('responses').decide(request('responses', observation))).failureKind).toBe('network');
+    expect(events.find((event) => event.kind === 'http_attempt' && event.phase === 'end')?.metrics?.parseMs)
+      .toEqual({ valueMs: null, reason: 'failed_before_point' });
+  });
+
   it('流中取消保留已收到的 usage 和首内容，并以取消结束一次', async () => {
     const controller = new AbortController();
     vi.stubGlobal('fetch', vi.fn(async () => {
@@ -175,6 +204,7 @@ describe('数值观测旁路', () => {
     expect((await promise).ok).toBe(true);
     expect(events.filter((e) => e.kind === 'local_span' && e.phase === 'end' && e.operation === 'serialize')).toHaveLength(2);
     expect(events.filter((e) => e.kind === 'http_attempt' && e.phase === 'end').map((e) => e.outcome)).toEqual(['network_error', 'success']);
+    expect(events.find((e) => e.kind === 'http_attempt' && e.phase === 'end')?.metrics?.parseMs).toEqual({ valueMs: null, reason: 'failed_before_point' });
     expect(events.find((e) => e.kind === 'backoff' && e.phase === 'end')?.retryReason).toBe('network');
     expect(JSON.stringify(events)).not.toContain('private-network-error');
   });
@@ -188,6 +218,7 @@ describe('数值观测旁路', () => {
     expect(result.failureKind).toBe('timeout');
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(events.find((e) => e.kind === 'http_attempt' && e.phase === 'end')).toMatchObject({ outcome: 'timeout', metrics: { headersMs: { valueMs: null, reason: 'cancelled_before_point' } } });
+    expect(events.find((e) => e.kind === 'http_attempt' && e.phase === 'end')?.metrics?.parseMs).toEqual({ valueMs: null, reason: 'cancelled_before_point' });
     expect(events.find((e) => e.kind === 'http_request' && e.phase === 'end')?.outcome).toBe('timeout');
     expect(events.find((e) => e.kind === 'adapter_execution' && e.phase === 'end')?.outcome).toBe('timeout');
   });

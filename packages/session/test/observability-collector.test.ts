@@ -151,6 +151,17 @@ describe('bounded observation output', () => {
 });
 
 describe('provider and model identities', () => {
+  it('separates same-origin routes only through explicit non-sensitive grouping keys', () => {
+    const file = mappingFile();
+    const aliases = { 'https://private-host.invalid/private-route-a?credential=sentinel-a': 'group-a',
+      'https://private-host.invalid/private-route-b?credential=sentinel-b': 'group-b' };
+    const identities = new ObservationIdentities(file, undefined, aliases);
+    const [first, second] = Object.keys(aliases).map((url) => identities.provider(url));
+    expect(first).not.toBe(second);
+    expect(new ObservationIdentities(file, undefined, aliases).provider(Object.keys(aliases)[0])).toBe(first);
+    const saved = readFileSync(file, 'utf8');
+    expect(saved).not.toMatch(/private-route|credential|sentinel/);
+  });
   it('normalizes origins, keeps credentials/routes out of the mapping, and survives reloading', () => {
     const file = mappingFile();
     const first = new ObservationIdentities(file);

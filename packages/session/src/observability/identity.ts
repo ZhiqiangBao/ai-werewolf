@@ -7,7 +7,8 @@ interface IdentityFile { version: 1; providers: Record<string, string>; models: 
 /** 映射文件只在本机保留；正文、URL 路径和凭证从不成为分享标签。 */
 export class ObservationIdentities {
   private readonly data: IdentityFile;
-  constructor(private readonly file: string, private readonly alias?: (origin: string) => string | undefined) {
+  constructor(private readonly file: string, private readonly alias?: (origin: string) => string | undefined,
+    private readonly routeAliases?: Readonly<Record<string, string>>) {
     this.data = { version: 1, providers: {}, models: {} };
     try {
       if (existsSync(file)) {
@@ -48,7 +49,7 @@ export class ObservationIdentities {
   provider(baseUrl: string): string {
     let origin = 'local-mock';
     try { origin = new URL(baseUrl).origin; } catch { /* 本地无网络模型。 */ }
-    const alias = this.alias?.(origin);
+    const alias = this.routeAliases?.[baseUrl] ?? this.alias?.(origin);
     return this.id('providers', alias ? `${origin}|${alias}` : origin);
   }
 

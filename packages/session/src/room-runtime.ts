@@ -266,7 +266,7 @@ export class RoomRuntimeService {
     const previous = rec.state?.pending;
     let action: ObservationSpan | undefined;
     if (this.observability) {
-      const interrupt = !input.decisionId && !!causedBy?.callId;
+      const interrupt = projectSeat(rec.state!, rec.events, input.seat).interrupts.some((tool) => tool.name === input.call.tool);
       const ref = { ...causedBy, ...this.observability.ref(rec, input.seat, previous?.id) };
       const key = `${rec.id}:${input.seat}:${previous?.id}${interrupt ? ':interrupt' : ''}`;
       let actionId = causedBy?.actionId ?? this.actionIds.get(key);
@@ -684,7 +684,7 @@ export class RoomRuntimeService {
   }
 
   private invokeCall(live: RoomRuntimeState, adapter: Adapter, request: DecideRequest, controller: AbortController,
-    context: WorkObservation | undefined, legacyStarted: number): Promise<DecideResult> {
+    context: WorkObservation | undefined): Promise<DecideResult> {
     if (!context || !this.observability) return abortable(adapter.decide(request), controller.signal);
     const callId = this.observability.id('call');
     const ref: ObservationRef = { ...context.ref, callId };
@@ -697,7 +697,6 @@ export class RoomRuntimeService {
     context.outcome = undefined;
     const cancel = () => this.finishCall(context, 'cancelled', this.cancelReasons.get(controller.signal) ?? 'unknown');
     controller.signal.addEventListener('abort', cancel, { once: true });
-    const onDelta = request.onDelta;
     const call = context.call;
     const preDispatch = context.work ? measured(call.started - context.work.started) : missing('not_applicable');
     call.fields.metrics = { localPreDispatchMs: preDispatch };
@@ -707,10 +706,7 @@ export class RoomRuntimeService {
       pending = abortable(adapter.decide({ ...request, observation: { ...port, emit: (event) => {
         if (event.kind === 'adapter_execution' && event.phase === 'end') context.adapterOutcome = event.outcome;
         port.emit(event);
-      } }, onDelta: (delta) => {
-        context.firstDeltaMs ??= this.now() - legacyStarted;
-        onDelta?.(delta);
-      } }), controller.signal);
+      } } }), controller.signal);
     } catch (error) {
       controller.signal.removeEventListener('abort', cancel);
       context.endedAt = this.observability.clock.monotonicMs();
@@ -806,10 +802,11 @@ export class RoomRuntimeService {
           onRequest: (info) => { request = info; },
           onDelta: (delta) => {
             firstDeltaMs ??= this.now() - started;
+            if (context) context.firstDeltaMs = firstDeltaMs;
             thinkingChars += delta.thinking?.length ?? 0;
             replyChars += delta.reply?.length ?? 0;
           },
-        }, ctrl, context, started);
+        }, ctrl, context);
       } catch (e) {
         if (live.gen !== gen || ctrl.signal.aborted) return;
         result = { ok: false, fatal: true, error: redact((e as Error).message, config.apiKey), failureKind: 'network', toolCallIds: [], latencyMs: 0 };
@@ -911,11 +908,12 @@ export class RoomRuntimeService {
             onRequest: (info) => { request = info; },
             onDelta: (delta) => {
               firstDeltaMs ??= this.now() - started;
+            if (context) context.firstDeltaMs = firstDeltaMs;
               thinkingChars += delta.thinking?.length ?? 0;
               replyChars += delta.reply?.length ?? 0;
               if (stillWaiting() && !ctrl.signal.aborted) this.pushThought(live, seat, decision, delta);
             },
-          }, ctrl, context, started);
+          }, ctrl, context);
           last = result;
         } catch (e) {
           if (live.gen !== gen || ctrl.signal.aborted || rec.status !== 'running') return;

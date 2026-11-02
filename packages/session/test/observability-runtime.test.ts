@@ -34,9 +34,9 @@ function fixedRecord(id = 'fixed-room'): RoomRecord {
   return rec;
 }
 
-function managerFor(records: RoomRecord[], adapter: Adapter, sink?: { emit(event: ObservationEvent): void }) {
+function managerFor(records: RoomRecord[], adapter: Adapter, sink?: { emit(event: ObservationEvent): void }, now: () => number = () => 100_000) {
   const store = new MemoryStore(); for (const record of records) store.save(record);
-  const manager = new RoomManager({ store, secrets, tickMs: 0, now: () => 100_000, sleep: async () => {}, adapters: { mock: adapter },
+  const manager = new RoomManager({ store, secrets, tickMs: 0, now, sleep: async () => {}, adapters: { mock: adapter },
     ...(sink ? { observability: { clock: clock(), sink, mappingPath: mappingPath() } } : {}) });
   managers.push(manager); return { manager, store };
 }
@@ -76,6 +76,36 @@ describe('room runtime observation', () => {
     expect(failedSink.business).toEqual(disabled.business);
     assertOneEndPerCall(enabled.events);
     expect(JSON.stringify(enabled.events)).not.toMatch(/private-host-token|private-seat-token|private-provider|private-path|private-query|private-model/);
+  }, 30000);
+
+  it('does not read the existing wall clock extra times for firstDelta or deadlines', async () => {
+    const rec = fixedRecord();
+    async function run(enabled: boolean) {
+      let wall = 100_000;
+      const events: ObservationEvent[] = [], requests: unknown[] = [];
+      const adapter: Adapter = { async decide(req) {
+        requests.push(requestSnapshot(req));
+        req.onDelta?.({ thinking: 'synthetic-delta' });
+        return mockAdapter.decide(req);
+      } };
+      const { manager, store } = managerFor([rec], adapter, enabled ? { emit: (event) => events.push(event) } : undefined, () => wall++);
+      manager.control(rec.id, rec.hostToken, 'resume');
+      await manager.whenIdle(rec.id);
+      const audit = withoutObservations(manager.audit(rec.id, rec.hostToken));
+      manager.dispose();
+      const saved = store.loadAll()[0];
+      return { audit, requests, state: saved.state, events: saved.events, actions: saved.actions, wall, observations: events };
+    }
+    const disabled = await run(false), enabled = await run(true);
+    expect(enabled.audit).toEqual(disabled.audit);
+    expect(enabled.requests).toEqual(disabled.requests);
+    expect(enabled.state).toEqual(disabled.state);
+    expect(enabled.events).toEqual(disabled.events);
+    expect(enabled.actions).toEqual(disabled.actions);
+    expect(enabled.wall).toBe(disabled.wall);
+    const audit = enabled.audit as { firstDeltaMs?: number; deadline?: number }[];
+    expect(audit.some((entry) => entry.firstDeltaMs !== undefined && entry.deadline !== undefined)).toBe(true);
+    expect(enabled.observations.some((event) => event.kind === 'model_call' && event.phase === 'end' && typeof event.metrics?.legacyFirstDeltaMs?.valueMs === 'number')).toBe(true);
   }, 30000);
 
   it('isolates two rooms and attributes per-attempt usage to the originating call', async () => {
@@ -191,6 +221,8 @@ describe('room runtime observation', () => {
     await settle(() => !!pending);
     const projection = manager.view(rec.id, rec.seatTokens[wolf - 1]).projection as Projection;
     expect(manager.act(rec.id, rec.seatTokens[wolf - 1], { decisionId: projection.actionWindowId, tool: 'wolf_explode', args: {} }).ok).toBe(true);
+    expect(observed.some((event) => event.kind === 'engine_action' && event.phase === 'end' &&
+      event.seatRef === `s${wolf}` && event.actionKind === 'interrupt' && event.outcome === 'accepted' && event.causedByCallId === undefined)).toBe(true);
     await manager.whenIdle(rec.id);
     const result = await mockAdapter.decide(pending!.req);
     pending!.resolve(result);

@@ -149,4 +149,6 @@ export interface ObservabilityOptions {
   mappingPath?: string;
   /** 同源不同接入路由只能通过显式的非敏感分组键区分。 */
   providerAlias?: (normalizedOrigin: string) => string | undefined;
+  /** 显式的配置地址→非敏感分组键；原地址只在本机匹配，不进入标签或映射文件。 */
+  providerAliases?: Readonly<Record<string, string>>;
 }
