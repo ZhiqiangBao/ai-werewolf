@@ -24,7 +24,7 @@ export const responsesAdapter: Adapter = {
     return runRequest(req, async (signal, started, onDelta) => {
       const config = { ...req.config, apiProtocol: 'responses' as const };
       const json = config.toolMode === 'json' && req.toolChoice !== 'auto';
-      const messages: TranscriptMessage[] = json ? [...req.messages, { role: 'user', content: jsonInstruction(req.tools) }] : req.messages;
+      const messages: TranscriptMessage[] = json ? [...req.messages, { role: 'user', content: jsonInstruction(req.tools, req.projection?.locale) }] : req.messages;
       const body: Record<string, unknown> = {
         model: config.model, input: responsesInput(messages, config), store: false,
         include: ['reasoning.encrypted_content'],
@@ -32,7 +32,7 @@ export const responsesAdapter: Adapter = {
         max_output_tokens: config.maxOutputTokens ?? 32768,
         ...(req.cacheKey ? { prompt_cache_key: `${req.cacheKey}:${protocolBinding(config).slice(0, 16)}` } : {}),
         ...(json ? { text: { format: { type: 'json_object' } } } : {
-          tools: req.tools.map((t) => ({ type: 'function', name: t.name, description: `${t.title}：${t.description}`, parameters: toolToJsonSchema(t), strict: true })),
+          tools: req.tools.map((t) => ({ type: 'function', name: t.name, description: `${t.title}：${t.description}`, parameters: toolToJsonSchema(t, req.projection?.locale), strict: true })),
           tool_choice: req.toolChoice === 'auto' || (isDashscopeEndpoint(config.baseUrl) && req.tools.length > 1) ? 'auto' : 'required', parallel_tool_calls: false,
         }),
         ...(req.stream ? { stream: true } : {}),
@@ -41,7 +41,7 @@ export const responsesAdapter: Adapter = {
       if (!/^(?:gpt-[56]|o[134])(?:[.-]|$)/i.test(config.model)) body.temperature = config.temperature;
       let completed: any;
       const items = new Map<number, Record<string, any>>();
-      req.onRequest?.({ apiProtocol: 'responses', tools: structuredClone(body.tools as unknown[] ?? []), toolChoice: body.tool_choice, ...(json ? { toolInstruction: jsonInstruction(req.tools) } : {}) });
+      req.onRequest?.({ apiProtocol: 'responses', tools: structuredClone(body.tools as unknown[] ?? []), toolChoice: body.tool_choice, ...(json ? { toolInstruction: jsonInstruction(req.tools, req.projection?.locale) } : {}) });
       const result = await post(apiUrl(config.baseUrl, 'responses'), body, config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}, signal, (e) => {
         if (e.type === 'error' || e.type === 'response.failed') throw new HttpError(200, JSON.stringify(e.error ?? e.response?.error ?? e));
         if (e.type === 'response.output_text.delta') onDelta({ reply: e.delta ?? '' });
@@ -59,7 +59,7 @@ export const responsesAdapter: Adapter = {
         calls: output.filter((i: any) => i.type === 'function_call').map((i: any) => ({ id: i.call_id, name: i.name, arguments: i.arguments })),
         native: { protocol: 'responses' as const, binding: protocolBinding(config), items: output },
       };
-      return { ...(json ? parseJson(started, assistant, req.tools, data) : parseAssistant(started, assistant, req.tools, data, req.toolChoice === 'auto')),
+      return { ...(json ? parseJson(started, assistant, req.tools, data, req.projection?.locale) : parseAssistant(started, assistant, req.tools, data, req.toolChoice === 'auto', req.projection?.locale)),
         reply: reply || undefined, thinking: thinking || undefined, usage: tokenUsage(data.usage, 'responses'),
       };
     });

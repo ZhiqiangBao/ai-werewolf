@@ -1,3 +1,4 @@
+import { gameText } from './locale';
 import type { GameEvent, GodProjection, RoomBrief, Seat, Thought } from './index';
 
 /** 从实际事实回填旧思考卡片的警徽结果；不从思考文本猜目标。 */
@@ -21,26 +22,26 @@ export function eventPurpose(e: GameEvent): 'gameplay' | 'agent' | 'diagnostic' 
 }
 
 /** 只接收调用方已按权限过滤的事件；不改变原始日志或 Agent 上下文。 */
-export function gameRecordEvents(events: GameEvent[]): GameEvent[] {
+export function gameRecordEvents(events: GameEvent[], locale: string | undefined = 'zh-CN'): GameEvent[] {
   return events.flatMap((e) => {
     if (eventPurpose(e) !== 'gameplay' || e.payload.announced === true || ['wolf.team', 'night.resolution'].includes(e.type)) return [];
     const p = e.payload;
-    const actor = Array.isArray(e.audience) && e.audience.length === 1 ? `（${e.audience[0]}号）` : '';
+    const actor = Array.isArray(e.audience) && e.audience.length === 1 ? gameText(locale, "（{0}号）", e.audience[0]) : '';
     let text = e.text;
     // 旧存档曾把行动问话合并到事实正文里，展示时还原为简短、客观的事实。
-    if (e.type === 'sheriff.start') text = '警长竞选开始。';
-    if (e.type === 'witch.knife') text = typeof p.knife === 'number' ? `女巫${actor}获知刀口：${p.knife}号。` : '女巫获知今夜没有刀口。';
+    if (e.type === 'sheriff.start') text = gameText(locale, "警长竞选开始。");
+    if (e.type === 'witch.knife') text = typeof p.knife === 'number' ? gameText(locale, "女巫{0}获知刀口：{1}号。", actor, p.knife) : gameText(locale, "女巫获知今夜没有刀口。");
     if (e.type === 'wolf.kill.split') {
       const picks = Array.isArray(p.picks) ? p.picks as [Seat, Seat | null][] : [];
-      text = `狼队刀口并列${picks.length ? `（${picks.map(([s, t]) => `${s}号→${t === null ? '空刀' : `${t}号`}`).join('、')}）` : ''}。`;
+      text = gameText(locale, "狼队刀口并列{0}。", picks.length ? `（${picks.map(([s, t]) => gameText(locale, "{0}号→{1}", s, t === null ? gameText(locale, "空刀") : gameText(locale, "{0}号", t))).join('、')}）` : '');
     }
-    if (e.type === 'guard.protect') text = `守卫${actor}守护${p.target}号。`;
-    if (e.type === 'guard.skip') text = `守卫${actor}选择空守。`;
-    if (e.type === 'seer.result') text = `预言家${actor}查验${p.target}号：${p.result === 'wolf' ? '狼人' : '好人'}。`;
-    if (e.type === 'seer.skip') text = `预言家${actor}本夜没有查验。`;
-    if (e.type === 'witch.save') text = `女巫${actor}对${p.target}号使用解药。`;
-    if (e.type === 'witch.poison') text = `女巫${actor}对${p.target}号使用毒药。`;
-    if (e.type === 'witch.idle') text = `女巫${actor}本夜没有用药。`;
+    if (e.type === 'guard.protect') text = gameText(locale, "守卫{0}守护{1}号。", actor, p.target);
+    if (e.type === 'guard.skip') text = gameText(locale, "守卫{0}选择空守。", actor);
+    if (e.type === 'seer.result') text = gameText(locale, "预言家{0}查验{1}号：{2}。", actor, p.target, p.result === 'wolf' ? gameText(locale, "狼人") : gameText(locale, "好人"));
+    if (e.type === 'seer.skip') text = gameText(locale, "预言家{0}本夜没有查验。", actor);
+    if (e.type === 'witch.save') text = gameText(locale, "女巫{0}对{1}号使用解药。", actor, p.target);
+    if (e.type === 'witch.poison') text = gameText(locale, "女巫{0}对{1}号使用毒药。", actor, p.target);
+    if (e.type === 'witch.idle') text = gameText(locale, "女巫{0}本夜没有用药。", actor);
     return [{ ...e, text }];
   });
 }
@@ -59,15 +60,15 @@ export interface VideoScriptEntry {
 
 /** 未配音的剪辑稿，不把模型网络等待时间冒充成片时间。 */
 export function buildVideoScript(p: GodProjection, room: RoomBrief) {
-  if (p.viewer.kind !== 'god' || room.viewer !== 'host') throw new Error('只有上帝视角可以导出完整剪辑稿');
+  if (p.viewer.kind !== 'god' || room.viewer !== 'host') throw new Error(gameText(p.locale, "只有上帝视角可以导出完整剪辑稿"));
   const chapters: { day: number; phase: GameEvent['phase']; title: string; entries: VideoScriptEntry[] }[] = [];
-  const narrated = gameRecordEvents(p.events);
+  const narrated = gameRecordEvents(p.events, p.locale);
   const narratedBySeq = new Map(narrated.map((e) => [e.seq, e]));
   for (const e of narrated) {
     const key = `${e.day}:${e.phase}`;
     let chapter = chapters.at(-1);
     if (!chapter || `${chapter.day}:${chapter.phase}` !== key) {
-      chapter = { day: e.day, phase: e.phase, title: e.phase === 'setup' ? '开局' : e.phase === 'end' ? '终局' : `第${e.day}${e.phase === 'night' ? '夜' : '天'}`, entries: [] };
+      chapter = { day: e.day, phase: e.phase, title: e.phase === 'setup' ? gameText(p.locale, "开局") : e.phase === 'end' ? gameText(p.locale, "终局") : gameText(p.locale, "第{0}{1}", e.day, e.phase === 'night' ? gameText(p.locale, "夜") : gameText(p.locale, "天")), entries: [] };
       chapters.push(chapter);
     }
     const speech = e.type === 'speech' || e.type === 'wolf.chat';
@@ -79,7 +80,7 @@ export function buildVideoScript(p: GodProjection, room: RoomBrief) {
         (actingSeat !== undefined && Array.isArray(previous.audience) && previous.audience.includes(actingSeat)))) data.systemFallback = true;
     chapter.entries.push({
       sourceSeq: e.seq, type: e.type,
-      speaker: seat === undefined ? '法官' : `${seat}号${e.type === 'wolf.chat' ? '（狼队密谈）' : ''}`,
+      speaker: seat === undefined ? gameText(p.locale, "法官") : gameText(p.locale, "{0}号{1}", seat, e.type === 'wolf.chat' ? gameText(p.locale, "（狼队密谈）") : ''),
       voiceKey: seat === undefined ? 'judge' : `seat-${seat}`,
       ...(seat === undefined ? {} : { seat }),
       text: speech && typeof e.payload.content === 'string' ? e.payload.content : e.text,
@@ -88,9 +89,9 @@ export function buildVideoScript(p: GodProjection, room: RoomBrief) {
   }
   return {
     format: 'werewolf-video-script', version: 1, perspective: 'god', timing: 'untimed',
-    roomId: room.roomId, presetName: p.presetName, status: p.status,
+    locale: p.locale ?? 'zh-CN', roomId: room.roomId, presetName: p.presetName, status: p.status,
     ruleCard: p.ruleCard,
-    cast: p.god.roles.map((r) => ({ seat: r.seat, name: p.seats.find((s) => s.seat === r.seat)?.name ?? `${r.seat}号`, role: r.role, roleName: r.roleName, factionName: r.factionName, voiceKey: `seat-${r.seat}` })),
+    cast: p.god.roles.map((r) => ({ seat: r.seat, name: p.seats.find((s) => s.seat === r.seat)?.name ?? gameText(p.locale, "{0}号", r.seat), role: r.role, roleName: r.roleName, factionName: r.factionName, voiceKey: `seat-${r.seat}` })),
     // 已被合并播报的出局等事实仍供画面重建，spoken=false 避免重复配音。
     events: p.events.filter((e) => eventPurpose(e) === 'gameplay' && e.type !== 'wolf.team').map((e) => {
       const { decisionId: _decision, step: _step, prompt: _prompt, announced: _announced, ...data } = e.payload;

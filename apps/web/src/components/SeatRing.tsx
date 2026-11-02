@@ -1,3 +1,5 @@
+import { deathLabel, type SeatDeathView } from '@werewolf/protocol';
+import { DeathMark } from './DeathMark';
 import { useLayoutEffect, useState, type CSSProperties } from 'react';
 import type { Catalog, GodSeatInfo, Projection, RoomBrief } from '@werewolf/protocol';
 import { publicActivity, publicElection, seatIdentity, seatPosition } from '../game-ui';
@@ -10,11 +12,12 @@ interface Props {
   room: RoomBrief;
   catalog: Catalog | null;
   roles?: GodSeatInfo[];
+  deaths?: SeatDeathView[];
 }
 
 const art = '/art/moon-village/';
 
-export function SeatRing({ projection: p, room, catalog, roles }: Props) {
+export function SeatRing({ projection: p, room, catalog, roles, deaths = [] }: Props) {
   const [picked, setPicked] = useState<number | null>(null);
   useLayoutEffect(() => { window.scrollTo(0, 0); }, [p.gameId]);
   const n = p.seats.length;
@@ -28,6 +31,7 @@ export function SeatRing({ projection: p, room, catalog, roles }: Props) {
     return info ? seatIdentity(p, info, roles) : {};
   };
   const selectedRole = selected ? roleFor(selected.seat) : null;
+  const deathFor = (seat: number) => deaths.find((d) => d.seat === seat)?.causes ?? ['other' as const];
 
   return (
     <section className={['council-scene', p.phase, room.paused ? 'is-paused' : ''].join(' ')} aria-label="对局圆桌" data-players={n}>
@@ -54,7 +58,7 @@ export function SeatRing({ projection: p, room, catalog, roles }: Props) {
           const activity = publicActivity(p, s);
           const candidate = election.phase === 'running' && election.candidates.has(s.seat) && !election.withdrawn.has(s.seat);
           const withdrawn = election.phase === 'running' && election.withdrawn.has(s.seat);
-          const states = [s.alive ? '存活' : '出局', s.sheriff ? '警长' : '', candidate ? '已上警' : '', withdrawn ? '已退水' : '', activity === 'speech' ? '正在发言' : activity === 'action' ? p.stage : '', roleName ?? '', s.seat === me ? '我' : ''].filter(Boolean);
+          const states = [s.alive ? '存活' : deathLabel(deathFor(s.seat), p.locale), s.sheriff ? '警长' : '', candidate ? '已上警' : '', withdrawn ? '已退水' : '', activity === 'speech' ? '正在发言' : activity === 'action' ? p.stage : '', roleName ?? '', s.seat === me ? '我' : ''].filter(Boolean);
           const cls = ['council-seat', position.cos > .8 ? 'seat-side-right' : position.cos < -.8 ? 'seat-side-left' : '', !s.alive ? 'dead' : '', s.seat === me ? 'me' : '', activity === 'speech' ? 'speaking' : activity === 'action' ? 'acting' : '', s.sheriff ? 'is-sheriff' : '', picked === s.seat ? 'selected' : ''].filter(Boolean).join(' ');
           return (
             <button key={s.seat} className={cls} style={{ '--cos': position.cos, '--sin': position.sin, '--speech-side-offset': '0px', '--seat-outset-y': position.sin < -.7 ? '-10px' : '14px', '--mobile-outset-y': position.sin < -.7 ? '-6px' : '0px', '--mx': position.mobileX + '%', '--my': position.mobileY + '%', ...seatStyle(s.seat) } as CSSProperties}
@@ -65,7 +69,7 @@ export function SeatRing({ projection: p, room, catalog, roles }: Props) {
                 {s.seat === me && <span className="self-badge">我</span>}
                 {roleName && <span className={'seat-role role-corner ' + (identity.tone ?? roleTone(catalog, role))} title={(identity.source === 'inspection' ? '查验结果：' : identity.source === 'teammate' ? '狼队同伴：' : '') + roleName + (identity.source === 'god' ? '' : '（仅你可见）')}>{roleName}</span>}
                 {candidate ? <span className="candidate-mark seat-election" title="已上警"><Icon name="flag" size={11} />上警</span> : withdrawn ? <span className="withdrawn-mark seat-election" title="已退水"><Icon name="withdraw" size={11} />退水</span> : null}
-                {!s.alive && <span className="dead-badge"><Icon name="close" size={10} />出局</span>}
+                {!s.alive && <span className="dead-badge"><DeathMark causes={deathFor(s.seat)} locale={p.locale} /></span>}
               </span>
               <span className="seat-name" title={s.name === s.seat + '号' ? '可在开局前设置昵称' : s.name}>{s.name === s.seat + '号' ? '未命名' : s.name}</span>
             </button>
@@ -73,7 +77,7 @@ export function SeatRing({ projection: p, room, catalog, roles }: Props) {
         })}
       </div>
       {selected && <div className="seat-inspector" aria-label={selected.seat + '号座位详情'}>
-        <RoleIcon role={selectedRole?.role} size={24} /><div><b>{selected.seat} 号 · {selected.name}</b><span>{selected.alive ? '存活' : '已出局'}{selected.sheriff ? ' · 警长' : ''} · {selectedRole?.name ?? '身份隐藏'} · {room.seats.find((s) => s.seat === selected.seat)?.controller === 'human' ? '真人操作' : 'AI 控制'}</span></div>
+        <RoleIcon role={selectedRole?.role} size={24} /><div><b>{selected.seat} 号 · {selected.name}</b><span>{selected.alive ? '存活' : deathLabel(deathFor(selected.seat), p.locale)}{selected.sheriff ? ' · 警长' : ''} · {selectedRole?.name ?? '身份隐藏'} · {room.seats.find((s) => s.seat === selected.seat)?.controller === 'human' ? '真人操作' : 'AI 控制'}</span></div>
         <button className="icon-button" aria-label="关闭座位详情" onClick={() => setPicked(null)}><Icon name="close" size={17} /></button>
       </div>}
       <footer className="scene-footer"><span><i className="live-dot" />存活 <b>{alive}</b><span className="dim"> / {n}</span></span><span className="scene-legend"><Icon name="mic" size={12} />发言<Icon name="flag" size={12} />上警<Icon name="sheriff" size={14} />警长</span><span className="scene-hint">点按座位查看详情</span></footer>

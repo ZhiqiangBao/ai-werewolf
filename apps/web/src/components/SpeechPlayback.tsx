@@ -16,7 +16,7 @@ export function useSpeechPlayback(roomId: string, token: string, projection: Pro
   const sourceRef = useRef(source), stopRef = useRef<() => void>(() => {});
   sourceRef.current = source;
   rateRef.current = rate;
-  const items = audibleSpeech(projection?.events ?? []);
+  const items = audibleSpeech(projection?.events ?? [], projection?.locale);
 
   useEffect(() => {
     if (!native) return;
@@ -54,7 +54,7 @@ export function useSpeechPlayback(roomId: string, token: string, projection: Pro
   }, [roomId, token, native]);
   useEffect(() => {
     if (!projection) return;
-    const fresh = cursor.current.sync(audibleSpeech(projection.events), enabledRef.current);
+    const fresh = cursor.current.sync(audibleSpeech(projection.events, projection.locale), enabledRef.current);
     if (fresh.length) setQueue((q) => [...q, ...fresh]);
   }, [projection]);
   useEffect(() => {
@@ -92,7 +92,7 @@ export function useSpeechPlayback(roomId: string, token: string, projection: Pro
   };
   stopRef.current = stop;
   const read = (event: GameEvent) => {
-    const item = audibleSpeech([event])[0];
+    const item = audibleSpeech([event], projection?.locale)[0];
     if (!item) return;
     if (!source) { setError('请先选择可用的朗读来源。'); return; }
     pausedRef.current = false; setPaused(false); setQueue([]); setCurrent({ ...item });

@@ -1,3 +1,4 @@
+import { gameText, localizeTool } from '@werewolf/protocol';
 import type { GameEvent, GodProjection, Projection, Seat, SeatInfo, Viewer } from '@werewolf/protocol';
 import { Ctx } from './context';
 import { getRole, interruptsIn } from './registry';
@@ -17,7 +18,7 @@ function seatsInfo(state: GameState): SeatInfo[] {
     const info: SeatInfo = { seat: p.seat, name: p.name, alive: p.alive, sheriff: state.sheriff === p.seat };
     if (p.revealed || showRoles) {
       info.revealedRole = showRoles ? p.role : (p.revealedAs ?? p.role);
-      info.revealedRoleName = getRole(info.revealedRole).name;
+      info.revealedRoleName = gameText(state.rules.locale, getRole(info.revealedRole).name);
     }
     if (state.pending?.publicActor === p.seat) info.active = true;
     return info;
@@ -27,6 +28,7 @@ function seatsInfo(state: GameState): SeatInfo[] {
 function base(state: GameState, events: GameEvent[], viewer: Viewer): Projection {
   return {
     viewer,
+    locale: state.rules.locale ?? 'zh-CN',
     gameId: state.id,
     version: viewer.kind === 'god' ? state.seq : events.length,
     status: state.result ? 'ended' : 'running',
@@ -49,12 +51,12 @@ export function buildAppendix(state: GameState, seat: Seat): string {
   const p = ctx.player(seat);
   const mod = ctx.roleOf(seat);
   const lines = [
-    `你是 ${seat}号${p.name === `${seat}号` ? '' : `「${p.name}」`}，身份：${mod.name}（${factionName(mod.faction)} · ${categoryName(mod.category)}）。`,
-    `技能：${mod.summary}`,
+    gameText(state.rules.locale, "你是 {0}号{1}，身份：{2}（{3} · {4}）。", seat, p.name === `${seat}号` ? '' : `「${p.name}」`, gameText(state.rules.locale, mod.name), factionName(mod.faction, state.rules.locale), categoryName(mod.category, state.rules.locale)),
+    gameText(state.rules.locale, "技能：{0}", gameText(state.rules.locale, mod.summary)),
     ...(mod.appendix?.(ctx, seat) ?? []),
   ];
-  if (state.sheriff === seat) lines.push('你是警长：放逐投票记 1.5 票，白天由你选择发言方向并最后发言。');
-  if (!p.alive) lines.push('你已出局。除了法官单独询问的出局职责（遗言、开枪、警徽），你只接收公开信息。');
+  if (state.sheriff === seat) lines.push(gameText(state.rules.locale, "你是警长：放逐投票记 1.5 票，白天由你选择发言方向并最后发言。"));
+  if (!p.alive) lines.push(gameText(state.rules.locale, "你已出局。除了法官单独询问的出局职责（遗言、开枪、警徽），你只接收公开信息。"));
   return lines.join('\n');
 }
 
@@ -69,9 +71,9 @@ export function projectSeat(state: GameState, events: GameEvent[], seat: Seat): 
     seat,
     name: p.name,
     role: p.role,
-    roleName: mod.name,
+    roleName: gameText(state.rules.locale, mod.name),
     faction: mod.faction,
-    factionName: factionName(mod.faction),
+    factionName: factionName(mod.faction, state.rules.locale),
     alive: p.alive,
     ...(teammates ? { teammates } : {}),
     knownIdentities: [
@@ -96,7 +98,7 @@ export function projectSeat(state: GameState, events: GameEvent[], seat: Seat): 
     const taskTools = new Set(proj.task && !proj.task.submitted ? proj.task.tools.map((t) => t.name) : []);
     proj.interrupts = interruptsIn(state.rules)
       .filter((i) => !taskTools.has(i.tool) && i.available(ctx, seat))
-      .map((i) => i.spec(ctx, seat));
+      .map((i) => localizeTool(i.spec(ctx, seat), state.rules.locale));
     if (proj.interrupts.length && d) proj.actionWindowId = d.id;
   }
   return proj;
@@ -113,7 +115,7 @@ export function projectGod(state: GameState, events: GameEvent[]): GodProjection
     seed: state.seed,
     roles: state.players.map((p) => {
       const mod = getRole(p.role);
-      return { seat: p.seat, role: p.role, roleName: mod.name, factionName: factionName(mod.faction), alive: p.alive };
+      return { seat: p.seat, role: p.role, roleName: gameText(state.rules.locale, mod.name), factionName: factionName(mod.faction, state.rules.locale), alive: p.alive };
     }),
     pending: d
       ? {

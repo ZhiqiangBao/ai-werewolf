@@ -1,3 +1,5 @@
+import { gameLanguages } from '@werewolf/protocol';
+import { TimingSettings } from '../components/TimingSettings';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { thinkingOptions, defaultThinkingMode, API_PROTOCOLS, API_PROTOCOL_LABELS, type ApiProtocol } from '@werewolf/protocol';
 import type {
@@ -37,6 +39,8 @@ function applyLocal(s: RoomSetupView, input: RoomSetupInput): RoomSetupView {
   return {
     ...s,
     avatarStyle: input.avatarStyle ?? s.avatarStyle,
+    locale: input.locale ?? s.locale,
+    timing: input.timing ?? s.timing,
     ruleValues: { ...s.ruleValues, ...input.ruleValues },
     humanTimeoutSec: input.humanTimeoutSec ?? s.humanTimeoutSec,
     aiPacingMs: input.aiPacingMs ?? s.aiPacingMs,
@@ -167,6 +171,7 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
       <div className="setup-grid">
         <div className="setup-main">
           <PresetPicker catalog={catalog} value={setup.presetId} onChange={(id) => void changePreset(id)} />
+          <div className="panel row"><label htmlFor="game-language">对局语言</label><select id="game-language" value={setup.locale ?? 'zh-CN'} onChange={(e) => patch({ locale: e.target.value }, 0)}>{(catalog.languages ?? gameLanguages()).map((language) => <option key={language.id} value={language.id}>{language.label}</option>)}</select><span className="small muted">规则卡、法官通知与模型发言使用此语言，开局后固定。</span></div>
           <SeatsPanel
             setup={setup}
             catalog={catalog}
@@ -389,27 +394,7 @@ function SeatsPanel({ setup, catalog, models, roomId, token, patchSeat, patch, f
           ))}
         </select>
       </h3>
-      <div className="row small muted" style={{ marginBottom: 10 }}>
-        <span>真人行动时限（秒，0 为不限时）</span>
-        <input
-          type="number"
-          style={{ width: 90 }}
-          value={setup.humanTimeoutSec}
-          min={0}
-          max={3600}
-          onChange={(e) => patch({ humanTimeoutSec: Number(e.target.value) })}
-        />
-        <span style={{ marginLeft: 12 }}>AI 行动间隔（毫秒）</span>
-        <input
-          type="number"
-          style={{ width: 90 }}
-          value={setup.aiPacingMs}
-          min={0}
-          max={10000}
-          step={100}
-          onChange={(e) => patch({ aiPacingMs: Number(e.target.value) })}
-        />
-      </div>
+      <TimingSettings value={setup.timing} onChange={(timing) => patch({ timing }, 200)} />
       <div className="seat-table">
         {setup.seats.map((s) => (
           <SeatRow

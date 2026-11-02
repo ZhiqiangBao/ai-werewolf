@@ -1,10 +1,13 @@
 {
   "format": "werewolf-video-skill-bundle",
-  "version": 9,
-  "pipelineFiles": 37,
+  "version": 10,
+  "pipelineFiles": 39,
   "artFiles": 10,
   "source": "scripts/video/",
   "features": [
+    "video-ui-languages",
+    "perspective-safe-death-glyphs",
+    "tts-language-hints",
     "project-owned-model-credentials",
     "preproduction-review",
     "reviewed-materials-gate",
@@ -24,5 +27,5 @@
     "native-compact-export",
     "strict-gpu-encoding"
   ],
-  "generatedAt": "2026-11-02T04:05:01.701Z"
+  "generatedAt": "2026-11-02T09:04:46.913Z"
 }

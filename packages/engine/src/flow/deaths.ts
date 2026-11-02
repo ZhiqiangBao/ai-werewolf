@@ -1,3 +1,4 @@
+import { gameText } from '@werewolf/protocol';
 import type { Seat } from '@werewolf/protocol';
 import type { Ctx } from '../context';
 import { seatLabel, seatList } from '../text';
@@ -48,7 +49,7 @@ export const deathSteps: Record<string, StepHandler> = {
       const s = ctx.state;
       s.ending = true;
       s.agenda = [{ type: 'game.end', winner: result.winner, reason: result.reason }];
-      ctx.pub('game.decided', '胜负已分。', {});
+      ctx.pub('game.decided', gameText(ctx.rules.locale, "胜负已分。"), {});
     },
   },
 
@@ -69,16 +70,16 @@ export const deathSteps: Record<string, StepHandler> = {
         tools: () => [
           {
             name: 'badge_dispose',
-            title: '处理警徽',
-            description: '你已出局。把警徽移交给一名存活玩家，或撕毁警徽。',
-            params: [seatParam('target', '移交给', targets, '撕毁警徽')],
+            title: gameText(ctx.rules.locale, "处理警徽"),
+            description: gameText(ctx.rules.locale, "你已出局。把警徽移交给一名存活玩家，或撕毁警徽。"),
+            params: [seatParam('target', gameText(ctx.rules.locale, "移交给"), targets, gameText(ctx.rules.locale, "撕毁警徽"))],
           },
         ],
-        prompt: () => `你是警长并且已经出局。请把警徽移交给一名存活玩家，或者撕毁警徽。可移交座位：${seatList(targets)}。` +
-          (s.rules.toolsetVersion === 2 ? '移交时调用 badge_transfer，recipientSeat 填最终接收者的整数座位号；撕毁时调用 badge_tear，填写 {}。' : 'target 填最终选择的座位号，null 表示撕毁。') +
-          '移交不限阵营，不能移交给自己。',
-        title: `第${s.day}天 · 警徽`,
-        publicStage: `${seatLabel(sheriff)}处理警徽`,
+        prompt: () => gameText(ctx.rules.locale, "你是警长并且已经出局。请把警徽移交给一名存活玩家，或者撕毁警徽。可移交座位：{0}。", seatList(targets, ctx.rules.locale)) +
+          (s.rules.toolsetVersion === 2 ? gameText(ctx.rules.locale, "移交时调用 badge_transfer，recipientSeat 填最终接收者的整数座位号；撕毁时调用 badge_tear，填写 {}。") : gameText(ctx.rules.locale, "target 填最终选择的座位号，null 表示撕毁。")) +
+          gameText(ctx.rules.locale, "移交不限阵营，不能移交给自己。"),
+        title: gameText(ctx.rules.locale, "第{0}天 · 警徽", s.day),
+        publicStage: gameText(ctx.rules.locale, "{0}处理警徽", seatLabel(sheriff, ctx.rules.locale)),
         publicActor: sheriff,
         hear: 'actors',
       });
@@ -89,11 +90,11 @@ export const deathSteps: Record<string, StepHandler> = {
       if (target === null) tearBadge(ctx, sheriff);
       else {
         ctx.state.sheriff = target;
-        ctx.state.history.badge.push(`第${ctx.state.day}天 ${seatLabel(sheriff)}将警徽移交给${seatLabel(target)}`);
-        ctx.pub('badge.transfer', `${seatLabel(sheriff)}将警徽移交给${seatLabel(target)}。`, { from: sheriff, to: target });
+        ctx.state.history.badge.push(gameText(ctx.rules.locale, "第{0}天 {1}将警徽移交给{2}", ctx.state.day, seatLabel(sheriff, ctx.rules.locale), seatLabel(target, ctx.rules.locale)));
+        ctx.pub('badge.transfer', gameText(ctx.rules.locale, "{0}将警徽移交给{1}。", seatLabel(sheriff, ctx.rules.locale), seatLabel(target, ctx.rules.locale)), { from: sheriff, to: target });
       }
     },
-    fallback: () => ({ tool: 'badge_dispose', args: { target: null } }),
+    fallback: (ctx) => ({ tool: 'badge_dispose', args: { target: null } }),
   },
 
   lastwords: {
@@ -117,17 +118,17 @@ export const deathSteps: Record<string, StepHandler> = {
     run(ctx, step) {
       const s = ctx.state;
       const winner = step.winner as string;
-      const winnerName = winner === 'good' ? '好人阵营' : winner === 'wolf' ? '狼人阵营' : '无人';
+      const winnerName = winner === 'good' ? gameText(ctx.rules.locale, "好人阵营") : winner === 'wolf' ? gameText(ctx.rules.locale, "狼人阵营") : gameText(ctx.rules.locale, "无人");
       const reason = step.reason as string;
       s.phase = 'end';
-      s.stage = '游戏结束';
+      s.stage = gameText(ctx.rules.locale, "游戏结束");
       s.ending = false;
       s.agenda = [];
       s.pending = null;
       s.result = { winner, winnerName, reason };
       ctx.pub(
         'game.end',
-        winner === 'draw' ? `游戏结束：流局。${reason}` : `游戏结束：${winnerName}获胜。${reason}`,
+        winner === 'draw' ? gameText(ctx.rules.locale, "游戏结束：流局。{0}", reason) : gameText(ctx.rules.locale, "游戏结束：{0}获胜。{1}", winnerName, reason),
         { result: s.result },
       );
       const review = buildReview(ctx);
@@ -138,18 +139,18 @@ export const deathSteps: Record<string, StepHandler> = {
 
 export function tearBadge(ctx: Ctx, sheriff: Seat): void {
   ctx.state.sheriff = null;
-  ctx.state.history.badge.push(`第${ctx.state.day}天 ${seatLabel(sheriff)}撕毁警徽`);
-  ctx.pub('badge.tear', `${seatLabel(sheriff)}撕毁了警徽，本局不再有警长。`, { from: sheriff });
+  ctx.state.history.badge.push(gameText(ctx.rules.locale, "第{0}天 {1}撕毁警徽", ctx.state.day, seatLabel(sheriff, ctx.rules.locale)));
+  ctx.pub('badge.tear', gameText(ctx.rules.locale, "{0}撕毁了警徽，本局不再有警长。", seatLabel(sheriff, ctx.rules.locale)), { from: sheriff });
 }
 
 function buildReview(ctx: Ctx) {
   const s = ctx.state;
-  const roles = s.players.map((p) => ({ seat: p.seat, role: p.role, roleName: ctx.roleOf(p.seat).name, alive: p.alive }));
-  const lines: string[] = ['【终局复盘】'];
-  lines.push(`身份：${roles.map((r) => `${seatLabel(r.seat)}${r.roleName}`).join('，')}。`);
-  for (const n of s.history.nights) lines.push(`第${n.n}夜：${n.lines.join('；')}。`);
-  if (s.history.badge.length) lines.push(`警徽：${s.history.badge.join('；')}。`);
-  if (s.history.shots.length) lines.push(`开枪：${s.history.shots.join('；')}。`);
+  const roles = s.players.map((p) => ({ seat: p.seat, role: p.role, roleName: gameText(ctx.rules.locale, ctx.roleOf(p.seat).name), alive: p.alive }));
+  const lines: string[] = [gameText(ctx.rules.locale, "【终局复盘】")];
+  lines.push(gameText(ctx.rules.locale, "身份：{0}。", roles.map((r) => `${seatLabel(r.seat, ctx.rules.locale)}${r.roleName}`).join('，')));
+  for (const n of s.history.nights) lines.push(gameText(ctx.rules.locale, "第{0}夜：{1}。", n.n, n.lines.join('；')));
+  if (s.history.badge.length) lines.push(gameText(ctx.rules.locale, "警徽：{0}。", s.history.badge.join('；')));
+  if (s.history.shots.length) lines.push(gameText(ctx.rules.locale, "开枪：{0}。", s.history.shots.join('；')));
   return {
     text: lines.join('\n'),
     payload: { roles, nights: s.history.nights, badge: s.history.badge, shots: s.history.shots },

@@ -151,11 +151,12 @@ interface Props {
   projection: Projection;
   human: boolean;
   paused: boolean;
+  availableAt?: number;
   onAct: (call: ToolCall, decisionId: string) => Promise<string | null>;
 }
 
 /** 座位的行动区：当前任务 + 随时可用的插入行动（例如自爆）。 */
-export function TaskPanel({ projection: p, human, paused, onAct }: Props) {
+export function TaskPanel({ projection: p, human, paused, availableAt, onAct }: Props) {
   const task = p.task;
   const current = task?.decisionId ?? p.actionWindowId ?? '';
   const [picked, setPicked] = useState({ id: '', idx: 0 });
@@ -164,11 +165,12 @@ export function TaskPanel({ projection: p, human, paused, onAct }: Props) {
   const inflight = useRef(false);
   const [receipt, setReceipt] = useState('');
   const now = useNow(500);
+  const waiting = availableAt !== undefined && now < availableAt;
   const toolIdx = picked.id === current ? picked.idx : 0;
   const error = failure.id === current ? failure.msg : '';
 
   const run = async (call: ToolCall, decisionId: string) => {
-    if (inflight.current) return;
+    if (inflight.current || waiting) return;
     inflight.current = true;
     setBusy(true);
     setFailure({ id: current, msg: '' });
@@ -203,6 +205,7 @@ export function TaskPanel({ projection: p, human, paused, onAct }: Props) {
   return (
     <div className="panel task" id="player-action" aria-label="我的行动">
       {receipt && <div className="note-box small" role="status">{receipt}</div>}
+      {waiting && <div className="note-box small" role="status">推进间隔中，约 {Math.max(0, (availableAt! - now) / 1000).toFixed(1)} 秒后开放行动。</div>}
       {task && (
         <>
           <h3>
@@ -240,7 +243,7 @@ export function TaskPanel({ projection: p, human, paused, onAct }: Props) {
                   tool={tool}
                   draftKey={`werewolf.draft:${p.gameId}:${p.me?.seat}:${task.decisionId}:${tool.name}`}
                   busy={busy}
-                  disabled={paused}
+                  disabled={paused || waiting}
                   onSubmit={(call) => run(call, task.decisionId)}
                 />
               )}
@@ -252,7 +255,7 @@ export function TaskPanel({ projection: p, human, paused, onAct }: Props) {
       {interrupts.map((t) => (
         <div key={t.name} style={{ marginTop: task ? 14 : 0, paddingTop: task ? 12 : 0, borderTop: task ? '1px dashed var(--line)' : 0 }}>
           <div className="small muted" style={{ marginBottom: 6 }}>当前可用{t.name === 'sheriff_withdraw' ? '：退出竞选，不打断当前发言' : ''}</div>
-          <ToolForm key={`intr:${p.actionWindowId ?? ''}:${t.name}`} tool={t} busy={busy} disabled={paused || !p.actionWindowId} onSubmit={(call) => { if (p.actionWindowId) return run(call, p.actionWindowId); }} />
+          <ToolForm key={`intr:${p.actionWindowId ?? ''}:${t.name}`} tool={t} busy={busy} disabled={paused || waiting || !p.actionWindowId} onSubmit={(call) => { if (p.actionWindowId) return run(call, p.actionWindowId); }} />
         </div>
       ))}
       {error && (

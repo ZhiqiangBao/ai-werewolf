@@ -1,3 +1,4 @@
+import { gameText } from '@werewolf/protocol';
 import { actionMenu, eventPurpose, gameRecordEvents, type GameEvent, type Seat, type ToolSpec } from '@werewolf/protocol';
 import { migrateTranscript, type TranscriptMessage } from '@werewolf/llm';
 
@@ -5,6 +6,7 @@ import { migrateTranscript, type TranscriptMessage } from '@werewolf/llm';
 export const NOT_TOOL_TURN = '不是工具调用轮次，请勿调用。';
 
 export interface SeatThread {
+  locale?: string;
   formatVersion?: 2;
   seat: Seat;
   /** 已经写进对话的最后一条事件序号。 */
@@ -25,6 +27,7 @@ export function migrateThread(thread: SeatThread): SeatThread {
 
 /** 写结尾时用。下一步是谁、是什么。 */
 export interface TurnHint {
+  locale?: string;
   nextSeat: number | null;
   nextStep: string | null;
   /** 同步这一条时，如果它就是当前行动，用行动结尾，不用「不要调用工具」。 */
@@ -33,6 +36,7 @@ export interface TurnHint {
 
 /** 这一步要不要单独补一句法官提示。发言的结尾已经写在上一条里时不必再补。 */
 export interface ActionCue {
+  locale?: string;
   allowedTools?: Record<number, ToolSpec[]>;
   /** 非本人发言时的当前行动许可，不包含局势或身份提示。 */
   interruptTools?: Record<number, ToolSpec[]>;
@@ -86,28 +90,28 @@ function speechKind(e: GameEvent): string {
 }
 
 /** 警上发言、白天发言、遗言、狼队密谈。name 仍是座位号。 */
-function speechMark(e: GameEvent, speaker: number): string {
-  if (e.type === 'wolf.chat') return `第${e.day}夜${speaker}号狼队密谈`;
+function speechMark(e: GameEvent, speaker: number, locale: string | undefined = 'zh-CN'): string {
+  if (e.type === 'wolf.chat') return gameText(locale, "第{0}夜{1}号狼队密谈", e.day, speaker);
   const kind = speechKind(e);
-  if (kind === 'campaign') return `警上${speaker}号发言`;
-  if (kind === 'sheriff_pk') return `警上${speaker}号PK发言`;
-  if (kind === 'lastwords') return `第${e.day}天${speaker}号遗言`;
-  if (kind === 'pk') return `第${e.day}天${speaker}号PK发言`;
-  return `第${e.day}天${speaker}号发言`;
+  if (kind === 'campaign') return gameText(locale, "警上{0}号发言", speaker);
+  if (kind === 'sheriff_pk') return gameText(locale, "警上{0}号PK发言", speaker);
+  if (kind === 'lastwords') return gameText(locale, "第{0}天{1}号遗言", e.day, speaker);
+  if (kind === 'pk') return gameText(locale, "第{0}天{1}号PK发言", e.day, speaker);
+  return gameText(locale, "第{0}天{1}号发言", e.day, speaker);
 }
 
 /** 这条消息的结尾。轮到这个座位，就告诉他可以用什么；不是他，就让他停。 */
-export function turnSuffix(kind: string, yours: boolean, wolf = false): string {
+export function turnSuffix(kind: string, yours: boolean, wolf = false, locale: string | undefined = 'zh-CN'): string {
   if (wolf) {
-    return yours ? '接下来是你的发言轮次，可以调用狼队密谈工具。' : '不是你的发言轮次，不要调用工具。';
+    return yours ? gameText(locale, "接下来是你的发言轮次，可以调用狼队密谈工具。") : gameText(locale, "不是你的发言轮次，不要调用工具。");
   }
   if (kind === 'campaign' || kind === 'sheriff_pk') {
-    return yours ? '接下来是你的发言轮次，请选择本轮允许的一个工具调用。' : '不是你的发言轮次，不可以调用。';
+    return yours ? gameText(locale, "接下来是你的发言轮次，请选择本轮允许的一个工具调用。") : gameText(locale, "不是你的发言轮次，不可以调用。");
   }
   if (kind === 'discussion' || kind === 'pk' || kind === 'lastwords' || kind === 'speech') {
-    return yours ? '接下来是你的发言轮次，可以使用工具。' : '不是你的发言轮次，不要调用工具。';
+    return yours ? gameText(locale, "接下来是你的发言轮次，可以使用工具。") : gameText(locale, "不是你的发言轮次，不要调用工具。");
   }
-  return yours ? (TOOL_TAIL[kind] ?? '你现在可以使用工具。') : '不要调用工具。';
+  return yours ? (gameText(locale, TOOL_TAIL[kind] ?? '你现在可以使用工具。')) : gameText(locale, "不要调用工具。");
 }
 
 function firstSeat(e: GameEvent): number | null {
@@ -166,17 +170,17 @@ export function eventToMessage(
       hint.nextSeat === me &&
       ((wolf && hint.nextStep === 'wolf.discuss') || (!wolf && hint.nextStep === 'speech'));
     const tail = latestTalk && hint.cue && (yours || hint.cue.interruptTools?.[me]?.length)
-      ? cueTail(hint.cue, me) : turnSuffix(wolf ? 'wolf' : speechKind(e), yours, wolf);
-    return { role: 'user', name: String(speaker), content: `${speechMark(e, speaker)}（玩家原话）：\n「${content}」\n${tail}` };
+      ? cueTail(hint.cue, me) : turnSuffix(wolf ? 'wolf' : speechKind(e), yours, wolf, hint.locale);
+    return { role: 'user', name: String(speaker), content: gameText(hint.locale, "{0}（玩家原话）：\n「{1}」\n{2}", speechMark(e, speaker, hint.locale), content, tail) };
   }
   const invite = inviteKind(e);
   if (invite) {
     const first = firstSeat(e);
     const yours = latestTalk && first === me && hint.nextStep === 'speech' && hint.nextSeat === me;
-    const who = latestTalk && first && hint.nextStep === 'speech' && hint.nextSeat === first ? `有请${first}号玩家发言。` : '';
+    const who = latestTalk && first && hint.nextStep === 'speech' && hint.nextSeat === first ? gameText(hint.locale, "有请{0}号玩家发言。", first) : '';
     const tail = latestTalk && hint.cue && (yours || hint.cue.interruptTools?.[me]?.length)
-      ? cueTail(hint.cue, me) : turnSuffix(invite, yours);
-    return { role: 'user', name: 'judge', content: `法官：${e.text}${who}\n${tail}` };
+      ? cueTail(hint.cue, me) : turnSuffix(invite, yours, undefined, hint.locale);
+    return { role: 'user', name: 'judge', content: gameText(hint.locale, "法官：{0}{1}\n{2}", e.text, who, tail) };
   }
   const opened = openAction(e, me, hint);
   if (opened) return opened;
@@ -186,15 +190,15 @@ export function eventToMessage(
         (e.payload.decisionId ? e.payload.decisionId === cue.id : e.seq === cue.afterSeq)) {
       const actor = cue.actors.includes(me);
       const prompt = (actor ? cue.prompts[me] : e.text) || e.text;
-      return { role: 'user', name: 'judge', content: `法官：${prompt}\n${cueTail(cue, me)}` };
+      return { role: 'user', name: 'judge', content: gameText(hint.locale, "法官：{0}\n{1}", prompt, cueTail(cue, me)) };
     }
     // 过期问话不是新事实，不能把「轮到你」与「不要调用」一起重播。
     return null;
   }
-  const fact = ['witch.knife', 'sheriff.start', 'wolf.kill.split'].includes(e.type) ? gameRecordEvents([e])[0]?.text ?? e.text : e.text;
+  const fact = ['witch.knife', 'sheriff.start', 'wolf.kill.split'].includes(e.type) ? gameRecordEvents([e], hint.locale)[0]?.text ?? e.text : e.text;
   const tail = hint.cue?.interruptTools?.[me]?.length && e.seq >= (hint.cue.afterSeq ?? 0)
-    ? cueTail(hint.cue, me) : '不要调用工具。';
-  return { role: 'user', name: 'judge', content: `法官：${fact}\n${tail}` };
+    ? cueTail(hint.cue, me) : gameText(hint.locale, "不要调用工具。");
+  return { role: 'user', name: 'judge', content: gameText(hint.locale, "法官：{0}\n{1}", fact, tail) };
 }
 
 /** 这条事件就是当前行动。写成一句，带上能不能用工具，不再先停再追问。 */
@@ -210,7 +214,7 @@ function openAction(e: GameEvent, me: Seat, hint: TurnHint): TranscriptMessage |
   const actor = cue.actors.includes(me);
   if (!actor && !(cue.broadcast && e.type === 'sheriff.start')) return null;
   const prompt = (actor ? cue.prompts[me] : Object.values(cue.prompts).find(Boolean)) || e.text;
-  return { role: 'user', name: 'judge', content: `法官：${prompt}\n${cueTail(cue, me)}` };
+  return { role: 'user', name: 'judge', content: gameText(hint.locale, "法官：{0}\n{1}", prompt, cueTail(cue, me)) };
 }
 
 /** 把该座位还没见过、且不超过 maxSeq 的事件接在对话后面。系统消息只在第一句写入，之后不改。 */
@@ -226,7 +230,7 @@ export function syncThread(
   const previousUser = thread.messages.findLast((m) => m.role === 'user');
   // 当前决策的行动许可不能倒灌到尚未送完的历史消息里。
   const complete = !hint.cue?.afterSeq || maxSeq >= hint.cue.afterSeq;
-  const turn = complete ? hint : { nextSeat: null, nextStep: null, cue: null };
+  const turn = complete ? hint : { nextSeat: null, nextStep: null, cue: null, locale: hint.locale };
   const pending = events.filter((e) => e.seq > thread.seen && e.seq <= maxSeq);
   let lastTalk = -1;
   let lastNew = -1;
@@ -270,12 +274,12 @@ export function cueTail(cue: ActionCue, seat: number): string {
   const actor = cue.actors.includes(seat);
   const interrupts = cue.interruptTools?.[seat] ?? [];
   if (!actor && interrupts.length) {
-    return `${actionMenu(interrupts)}\n当前不是你的发言轮次；可以选择上述即时行动，或继续旁听。`;
+    return gameText(cue?.locale, "{0}\n当前不是你的发言轮次；可以选择上述即时行动，或继续旁听。", actionMenu(interrupts, cue?.locale));
   }
   const wolf = cue.step === 'wolf.discuss';
-  const suffix = cue.step === 'speech' || wolf ? turnSuffix(wolf ? 'wolf' : (cue.kind ?? 'discussion'), actor, wolf) : actor ? (TOOL_TAIL[cue.tool] ?? '你现在可以使用工具。') : '不要调用工具。';
-  const menu = actor ? actionMenu(cue.allowedTools?.[seat] ?? []) : '';
-  return menu ? `${menu}\n现在轮到你行动，请调用本轮菜单中的一个工具。` : suffix;
+  const suffix = cue.step === 'speech' || wolf ? turnSuffix(wolf ? 'wolf' : (cue.kind ?? 'discussion'), actor, wolf, cue?.locale) : actor ? (gameText(cue.locale, TOOL_TAIL[cue.tool] ?? '你现在可以使用工具。')) : gameText(cue?.locale, "不要调用工具。");
+  const menu = actor ? actionMenu(cue.allowedTools?.[seat] ?? [], cue?.locale) : '';
+  return menu ? gameText(cue?.locale, "{0}\n现在轮到你行动，请调用本轮菜单中的一个工具。", menu) : suffix;
 }
 
 /** 已收到当前决策的行动许可与此前消息。重试反馈不会撤销同一决策的许可。 */
@@ -311,24 +315,24 @@ export function ensureCue(thread: SeatThread, cue: ActionCue | null): void {
     return;
   }
   const repeat = actor && thread.cueFor === cue.id && prev.includes(body);
-  thread.messages.push({ role: 'user', name: 'judge', content: `法官：${repeat ? '' : `${body}\n`}${tail}` });
+  thread.messages.push({ role: 'user', name: 'judge', content: gameText(cue?.locale, "法官：{0}{1}", repeat ? '' : `${body}\n`, tail) });
   thread.cueFor = cue.id;
 }
 
 /** 行动成功后记在自己的上下文里。发言用原话，方便和广播去重。 */
-export function ownLine(tool: string, args: Record<string, unknown>): string {
+export function ownLine(tool: string, args: Record<string, unknown>, locale: string | undefined = 'zh-CN'): string {
   if (typeof args.content === 'string' && args.content) return args.content;
-  if ('target' in args) return args.target == null ? `${tool}：放弃` : `${tool}：${args.target}号`;
-  for (const field of ['targetSeat', 'recipientSeat', 'candidateSeat']) if (field in args) return `${tool}：${args[field]}号`;
-  if ('explode' in args) return args.explode ? '自爆' : '不自爆';
+  if ('target' in args) return args.target == null ? gameText(locale, "{0}：放弃", tool) : gameText(locale, "{0}：{1}号", tool, args.target);
+  for (const field of ['targetSeat', 'recipientSeat', 'candidateSeat']) if (field in args) return gameText(locale, "{0}：{1}号", tool, args[field]);
+  if ('explode' in args) return args.explode ? gameText(locale, "自爆") : gameText(locale, "不自爆");
   return tool;
 }
 
-export function notToolTurnMessages(previous: { assistant?: TranscriptMessage; toolCallIds: string[] }): TranscriptMessage[] {
-  if (!previous.assistant) return [{ role: 'user', content: NOT_TOOL_TURN }];
+export function notToolTurnMessages(previous: { assistant?: TranscriptMessage; toolCallIds: string[] }, locale: string | undefined = 'zh-CN'): TranscriptMessage[] {
+  if (!previous.assistant) return [{ role: 'user', content: gameText(locale, NOT_TOOL_TURN) }];
   const out: TranscriptMessage[] = [previous.assistant];
   if (previous.toolCallIds.length) {
-    for (const id of previous.toolCallIds) out.push({ role: 'tool', callId: id, content: NOT_TOOL_TURN, isError: true });
-  } else out.push({ role: 'user', content: NOT_TOOL_TURN });
+    for (const id of previous.toolCallIds) out.push({ role: 'tool', callId: id, content: gameText(locale, NOT_TOOL_TURN), isError: true });
+  } else out.push({ role: 'user', content: gameText(locale, NOT_TOOL_TURN) });
   return out;
 }

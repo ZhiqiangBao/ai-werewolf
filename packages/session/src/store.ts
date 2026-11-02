@@ -14,6 +14,13 @@ export interface SeatRecord extends Omit<SeatConfigView, 'apiKeyMasked'> {
 }
 
 export interface RoomRecord {
+  timing?: import('@werewolf/protocol').GameTiming;
+  actionAvailableAt?: number;
+  /** 暂停中的推进间隔余量，重载后继续保留。 */
+  actionGateRemainingMs?: number;
+  /** 暂停时各座位尚余的行动时间；用于恢复和重载。 */
+  deadlineRemainingMs?: Record<string, number>;
+  locale?: string;
   id: string;
   avatarStyle?: AvatarStyleId;
   createdAt: number;

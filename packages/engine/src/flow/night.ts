@@ -1,3 +1,4 @@
+import { gameText } from '@werewolf/protocol';
 import type { Seat } from '@werewolf/protocol';
 import { seatLabel, seatList } from '../text';
 import type { ResolutionRow, StepHandler } from '../types';
@@ -14,15 +15,15 @@ export const nightSteps: Record<string, StepHandler> = {
       const s = ctx.state;
       const maxDays = ctx.opt<number>('limits.maxDays');
       if (s.phase !== 'setup' && s.day >= maxDays) {
-        ctx.pushFront({ type: 'game.end', winner: 'draw', reason: `超过 ${maxDays} 个白天仍未分出胜负。` });
+        ctx.pushFront({ type: 'game.end', winner: 'draw', reason: gameText(ctx.rules.locale, "超过 {0} 个白天仍未分出胜负。", maxDays) });
         return;
       }
       s.day = s.phase === 'setup' ? 1 : s.day + 1;
       s.phase = 'night';
-      s.stage = `第${s.day}夜`;
+      s.stage = gameText(ctx.rules.locale, "第{0}夜", s.day);
       s.night = { n: s.day, attacks: [], protections: [], lines: [] };
       s.dayState = { direction: null, firstSpeaker: null, anchor: null, electionToday: false };
-      ctx.pub('phase', `第${s.day}夜，天黑请闭眼。`, { phase: 'night' });
+      ctx.pub('phase', gameText(ctx.rules.locale, "第{0}夜，天黑请闭眼。", s.day), { phase: 'night' });
       for (const mod of ctx.modulesInGame()) mod.nightStart?.(ctx);
       ctx.pushFront(
         ...s.rules.nightOrder.map((id) => ({ type: `night:${id}` })),
@@ -37,7 +38,7 @@ export const nightSteps: Record<string, StepHandler> = {
     run(ctx) {
       const s = ctx.state;
       const night = s.night;
-      if (!night) throw new Error('night.resolve 缺少夜晚状态');
+      if (!night) throw new Error(gameText(ctx.rules.locale, "night.resolve 缺少夜晚状态"));
       const rows: ResolutionRow[] = night.attacks.map((attack) => {
         const blockers = night.protections.filter((p) => p.target === attack.target && p.blocks.includes(attack.kind));
         return { attack, blockers, blocked: blockers.length > 0, causes: [attack.kind] };
@@ -58,11 +59,11 @@ export const nightSteps: Record<string, StepHandler> = {
 
       s.pendingDeaths = { night: night.n, deaths, knife: night.knife ?? null };
       const summary = deaths.length
-        ? deaths.map((d) => `${seatLabel(d.seat)}（${d.causes.map((c) => CAUSE_LABEL[c] ?? c).join('+')}）`).join('、')
-        : '无人出局';
-      night.lines.push(`结算：${summary}`);
+        ? deaths.map((d) => `${seatLabel(d.seat, ctx.rules.locale)}（${d.causes.map((c) => gameText(ctx.rules.locale, CAUSE_LABEL[c] ?? c)).join('+')}）`).join('、')
+        : gameText(ctx.rules.locale, "无人出局");
+      night.lines.push(gameText(ctx.rules.locale, "结算：{0}", summary));
       s.history.nights.push({ n: night.n, lines: [...night.lines], deaths: deaths.map((d) => d.seat) });
-      ctx.god('night.resolution', `第${night.n}夜结算：${summary}`, {
+      ctx.god('night.resolution', gameText(ctx.rules.locale, "第{0}夜结算：{1}", night.n, summary), {
         rows: rows.map((r) => ({ ...r.attack, blocked: r.blocked, blockers: r.blockers.map((b) => b.kind), causes: r.causes })),
         deaths,
       });
@@ -72,4 +73,4 @@ export const nightSteps: Record<string, StepHandler> = {
   },
 };
 
-export const describeDeaths = (seats: Seat[]): string => (seats.length ? seatList(seats) : '无');
+export const describeDeaths = (seats: Seat[], locale: string | undefined = 'zh-CN'): string => (seats.length ? seatList(seats, locale) : gameText(locale, "无"));

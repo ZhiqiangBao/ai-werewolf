@@ -1,3 +1,4 @@
+import { gameLanguage } from '@werewolf/protocol';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
@@ -56,18 +57,19 @@ export class SpeechService {
     return { providers: [...this.providers, ...additional].map(({ id, label }) => ({ id, label })), defaultProviderId: this.defaultId ?? additional[0]?.id ?? null, ...(this.configError ? { error: this.configError } : {}) };
   }
 
-  render(text: string, providerId?: string, additional: SpeechProvider[] = []): Promise<{ bytes: Buffer; mimeType: string }> {
+  render(text: string, providerId?: string, additional: SpeechProvider[] = [], locale = 'zh-CN'): Promise<{ bytes: Buffer; mimeType: string }> {
+    gameLanguage(locale);
     const selected = providerId ?? this.defaultId ?? additional[0]?.id;
     const provider = [...this.providers, ...additional].find((p) => p.id === selected);
     if (!provider) return Promise.reject(new Error('Unknown speech provider'));
-    const key = createHash('sha256').update(JSON.stringify({ version: 1, provider: provider.cacheIdentity, id: provider.id, text })).digest('hex');
+    const key = createHash('sha256').update(JSON.stringify({ version: 1, provider: provider.cacheIdentity, id: provider.id, text, ...(locale === 'zh-CN' ? {} : { locale }) })).digest('hex');
     const running = this.pending.get(key);
     if (running) return running;
-    const task = this.synthesize(provider, text, key).finally(() => this.pending.delete(key));
+    const task = this.synthesize(provider, text, key, locale).finally(() => this.pending.delete(key));
     this.pending.set(key, task);
     return task;
   }
-  private async synthesize(provider: SpeechProvider, text: string, key: string) {
+  private async synthesize(provider: SpeechProvider, text: string, key: string, locale: string) {
     const output = join(this.directory, key + '.audio');
     try {
       const meta = JSON.parse(await readFile(output + '.json', 'utf8'));
@@ -81,7 +83,7 @@ export class SpeechService {
       let aborted: (() => void) | undefined;
       const timeout = new Promise<never>((_, reject) => { aborted = () => reject(Error('Speech synthesis timed out')); signal.addEventListener('abort', aborted, { once: true }); });
       let audio: ReturnType<typeof normalize>;
-      try { audio = normalize(await Promise.race([provider.synthesize(text, signal), timeout])); }
+      try { audio = normalize(await Promise.race([provider.synthesize(text, signal, { locale }), timeout])); }
       finally { if (aborted) signal.removeEventListener('abort', aborted); }
       await mkdir(this.directory, { recursive: true });
       await writeFile(output + '.partial', audio.bytes); await rename(output + '.partial', output);

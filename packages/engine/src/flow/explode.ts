@@ -1,3 +1,4 @@
+import { gameText } from '@werewolf/protocol';
 import type { Seat } from '@werewolf/protocol';
 import type { Ctx } from '../context';
 import { seatLabel } from '../text';
@@ -55,18 +56,18 @@ export const explodeSteps: Record<string, StepHandler> = {
         tools: () => [
           {
             name: 'wolf_explode_decision',
-            title: '是否自爆',
-            description: resume ? '警长延期续选投票前，决定是否自爆。再次自爆则警徽流失，并取消当天剩余流程。' : '下一段发言开始前，决定是否自爆。自爆会立刻出局并公开狼人身份，当天剩余流程取消。',
-            params: [{ kind: 'boolean', name: 'explode', label: '是否自爆', trueLabel: '自爆', falseLabel: '不自爆' }],
+            title: gameText(ctx.rules.locale, "是否自爆"),
+            description: resume ? gameText(ctx.rules.locale, "警长延期续选投票前，决定是否自爆。再次自爆则警徽流失，并取消当天剩余流程。") : gameText(ctx.rules.locale, "下一段发言开始前，决定是否自爆。自爆会立刻出局并公开狼人身份，当天剩余流程取消。"),
+            params: [{ kind: 'boolean', name: 'explode', label: gameText(ctx.rules.locale, "是否自爆"), trueLabel: gameText(ctx.rules.locale, "自爆"), falseLabel: gameText(ctx.rules.locale, "不自爆") }],
           },
         ],
-        prompt: () => resume ? '警长延期续选即将直接投票，不再竞选发言。是否现在自爆？再次自爆将使警徽流失。' : '下一段发言即将开始。是否现在自爆？',
-        title: `第${ctx.state.day}天 · 自爆询问`,
-        publicStage: resume ? '警长续选：投票前确认' : ctx.state.stage,
+        prompt: () => resume ? gameText(ctx.rules.locale, "警长延期续选即将直接投票，不再竞选发言。是否现在自爆？再次自爆将使警徽流失。") : gameText(ctx.rules.locale, "下一段发言即将开始。是否现在自爆？"),
+        title: gameText(ctx.rules.locale, "第{0}天 · 自爆询问", ctx.state.day),
+        publicStage: resume ? gameText(ctx.rules.locale, "警长续选：投票前确认") : ctx.state.stage,
         speechWindow: false,
       });
     },
-    ack: (_c, _s, _seat, call) => (call.args.explode ? '你选择了自爆。' : '你选择不自爆。'),
+    ack: (_c, _s, _seat, call) => (call.args.explode ? gameText(_c.rules.locale, "你选择了自爆。") : gameText(_c.rules.locale, "你选择不自爆。")),
     decide(ctx, _step, subs) {
       const choosers = Object.entries(subs)
         .filter(([, call]) => call.args.explode === true)
@@ -75,11 +76,11 @@ export const explodeSteps: Record<string, StepHandler> = {
       if (!choosers.length) return;
       const [first, ...rest] = choosers;
       for (const r of rest) {
-        ctx.priv([r], 'explode.preempted', `本次由座位号更小的${seatLabel(first)}执行自爆，你仍然存活。`, { by: first });
+        ctx.priv([r], 'explode.preempted', gameText(ctx.rules.locale, "本次由座位号更小的{0}执行自爆，你仍然存活。", seatLabel(first, ctx.rules.locale)), { by: first });
       }
       applyExplosion(ctx, first);
     },
-    fallback: () => ({ tool: 'wolf_explode_decision', args: { explode: false } }),
+    fallback: (ctx) => ({ tool: 'wolf_explode_decision', args: { explode: false } }),
   },
 };
 
@@ -93,7 +94,7 @@ export function applyExplosion(ctx: Ctx, seat: Seat): void {
   const p = ctx.player(seat);
   p.revealed = true;
   ctx.kill(seat, { via: 'explode', causes: ['explode'], batch });
-  ctx.pub('explode', `${seatLabel(seat)}自爆出局。`, { seat, role: p.role, roleName: ctx.roleOf(seat).name });
+  ctx.pub('explode', gameText(ctx.rules.locale, "{0}自爆出局。", seatLabel(seat, ctx.rules.locale)), { seat, role: p.role, roleName: ctx.roleOf(seat).name });
 
   const el = s.election;
   if (ctx.opt<boolean>('sheriff.enabled') && s.dayState.electionToday && el.status !== 'done') {
@@ -109,15 +110,15 @@ export function applyExplosion(ctx: Ctx, seat: Seat): void {
         el.postponedVote = { round, candidates: (round === 2 ? vote!.tied as Seat[] : remaining).filter((c) => c !== seat && !el.withdrawn.includes(c)) };
       }
       const postponedText = (s.rules.electionVersion ?? 1) >= 2
-        ? '首次警上自爆，竞选延期；下一白天先确认自爆并直接续投，不再竞选发言，警徽落地或再次自爆后才通报昨夜情况；再次竞选自爆则警徽流失。'
-        : '首次警上自爆，竞选延期；下一白天公布昨夜情况后直接续投，不再竞选发言，再次竞选自爆则警徽流失。';
-      ctx.pub('sheriff.postponed', policy === 'postpone_vote' ? postponedText : '警长竞选尚未结束有人自爆，竞选推迟到下一个白天。', {});
+        ? gameText(ctx.rules.locale, "首次警上自爆，竞选延期；下一白天先确认自爆并直接续投，不再竞选发言，警徽落地或再次自爆后才通报昨夜情况；再次竞选自爆则警徽流失。")
+        : gameText(ctx.rules.locale, "首次警上自爆，竞选延期；下一白天公布昨夜情况后直接续投，不再竞选发言，再次竞选自爆则警徽流失。");
+      ctx.pub('sheriff.postponed', policy === 'postpone_vote' ? postponedText : gameText(ctx.rules.locale, "警长竞选尚未结束有人自爆，竞选推迟到下一个白天。"), {});
     } else {
       el.explosions += 1;
       el.status = 'done';
       el.postponed = false;
       delete el.postponedVote;
-      ctx.pub('sheriff.lost', '警长竞选尚未产生警长时有人自爆，警徽流失，本局没有警长。', {});
+      ctx.pub('sheriff.lost', gameText(ctx.rules.locale, "警长竞选尚未产生警长时有人自爆，警徽流失，本局没有警长。"), {});
     }
   }
   // 新规则把尚未公布的夜间死亡合入同一批：先公布，再复用猎枪职责，最后处理遗言。

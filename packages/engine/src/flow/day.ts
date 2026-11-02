@@ -1,3 +1,4 @@
+import { gameText } from '@werewolf/protocol';
 import type { Seat, ToolSpec } from '@werewolf/protocol';
 import type { Ctx } from '../context';
 import { directionLabel, orderList, seatLabel, seatList } from '../text';
@@ -41,16 +42,16 @@ function speechPrompt(ctx: Ctx, seat: Seat, kind: SpeechKind): string {
   switch (kind) {
     case 'discussion':
       return s.sheriff === seat
-        ? '轮到你发言。你是警长，最后一个发言，可以在发言里归票。'
-        : '轮到你发言。请分析局势、表明立场。';
+        ? gameText(ctx.rules.locale, "轮到你发言。你是警长，最后一个发言，可以在发言里归票。")
+        : gameText(ctx.rules.locale, "轮到你发言。请分析局势、表明立场。");
     case 'campaign':
-      return '轮到你竞选发言。你也可以选择退水（退出竞选）。';
+      return gameText(ctx.rules.locale, "轮到你竞选发言。你也可以选择退水（退出竞选）。");
     case 'sheriff_pk':
-      return '竞选平票，你在 PK 台上，请发言争取警徽。';
+      return gameText(ctx.rules.locale, "竞选平票，你在 PK 台上，请发言争取警徽。");
     case 'pk':
-      return '放逐投票平票，你在 PK 台上，请发言。';
+      return gameText(ctx.rules.locale, "放逐投票平票，你在 PK 台上，请发言。");
     case 'lastwords':
-      return '你已出局，请发表遗言。遗言公开给所有人。';
+      return gameText(ctx.rules.locale, "你已出局，请发表遗言。遗言公开给所有人。");
   }
 }
 
@@ -59,8 +60,8 @@ export const daySteps: Record<string, StepHandler> = {
     run(ctx) {
       const s = ctx.state;
       s.phase = 'day';
-      s.stage = `第${s.day}天`;
-      ctx.pub('phase', `第${s.day}天，天亮了。`, { phase: 'day' });
+      s.stage = gameText(ctx.rules.locale, "第{0}天", s.day);
+      ctx.pub('phase', gameText(ctx.rules.locale, "第{0}天，天亮了。", s.day), { phase: 'day' });
       const el = s.election;
       const electionToday =
         ctx.opt<boolean>('sheriff.enabled') && el.status === 'pending' && (s.day === 1 || el.postponed);
@@ -85,10 +86,10 @@ export const daySteps: Record<string, StepHandler> = {
       const s = ctx.state;
       const pd = s.pendingDeaths;
       s.pendingDeaths = null;
-      s.stage = `第${s.day}天`;
+      s.stage = gameText(ctx.rules.locale, "第{0}天", s.day);
       if (!pd || !pd.deaths.length) {
         s.dayState.anchor = null;
-        ctx.pub('dawn', '昨夜平安，无人出局。', { deaths: [] });
+        ctx.pub('dawn', gameText(ctx.rules.locale, "昨夜平安，无人出局。"), { deaths: [] });
         if (typeof step.batch === 'number') ctx.pushFront({ type: 'deaths.batch', batch: step.batch, mode: step.deathMode, firstLastWords: step.firstLastWords });
         return;
       }
@@ -96,7 +97,7 @@ export const daySteps: Record<string, StepHandler> = {
       const seats = pd.deaths.map((d) => d.seat);
       for (const d of pd.deaths) ctx.kill(d.seat, { via: 'night', causes: d.causes, batch, day: pd.night });
       s.dayState.anchor = pickAnchor(ctx, pd);
-      ctx.pub('dawn', `昨夜出局：${seatList(seats)}。`, { deaths: seats });
+      ctx.pub('dawn', gameText(ctx.rules.locale, "昨夜出局：{0}。", seatList(seats, ctx.rules.locale)), { deaths: seats });
       ctx.pushFront({ type: 'deaths.batch', batch, mode: step.deathMode ?? 'standard', firstLastWords: step.firstLastWords });
     },
   },
@@ -104,35 +105,35 @@ export const daySteps: Record<string, StepHandler> = {
   'day.discussion': {
     run(ctx, step) {
       const s = ctx.state;
-      s.stage = `第${s.day}天 · 发言`;
+      s.stage = gameText(ctx.rules.locale, "第{0}天 · 发言", s.day);
       const sh = s.sheriff;
       if (sh !== null && ctx.isAlive(sh)) {
         const dirs: Direction[] = ['clockwise', 'counterclockwise'];
-        const orders = dirs.map((d) => orderList(sheriffOrder(ctx, sh, d)));
+        const orders = dirs.map((d) => orderList(sheriffOrder(ctx, sh, d), ctx.rules.locale));
         ctx.ask({
           step,
           actors: [sh],
           tools: () => [
             {
               name: 'set_speak_direction',
-              title: '选择发言方向',
-              description: '警长选择发言方向，从警长相邻的存活玩家开始，警长最后发言。',
+              title: gameText(ctx.rules.locale, "选择发言方向"),
+              description: gameText(ctx.rules.locale, "警长选择发言方向，从警长相邻的存活玩家开始，警长最后发言。"),
               params: [
                 {
                   kind: 'choice',
                   name: 'direction',
-                  label: '发言方向',
+                  label: gameText(ctx.rules.locale, "发言方向"),
                   options: [
-                    { value: 'clockwise', label: '顺时针（号码增大）', hint: orders[0] },
-                    { value: 'counterclockwise', label: '逆时针（号码减小）', hint: orders[1] },
+                    { value: 'clockwise', label: gameText(ctx.rules.locale, "顺时针（号码增大）"), hint: orders[0] },
+                    { value: 'counterclockwise', label: gameText(ctx.rules.locale, "逆时针（号码减小）"), hint: orders[1] },
                   ],
                 },
               ],
             },
           ],
-          prompt: () => `你是警长，请选择发言方向。顺时针顺序：${orders[0]}；逆时针顺序：${orders[1]}。`,
-          title: `第${s.day}天 · 发言方向`,
-          publicStage: `警长${seatLabel(sh)}选择发言方向`,
+          prompt: () => gameText(ctx.rules.locale, "你是警长，请选择发言方向。顺时针顺序：{0}；逆时针顺序：{1}。", orders[0], orders[1]),
+          title: gameText(ctx.rules.locale, "第{0}天 · 发言方向", s.day),
+          publicStage: gameText(ctx.rules.locale, "警长{0}选择发言方向", seatLabel(sh, ctx.rules.locale)),
           publicActor: sh,
           hear: 'actors',
         });
@@ -142,19 +143,19 @@ export const daySteps: Record<string, StepHandler> = {
       const anchor = s.dayState.anchor;
       if (anchor !== null) {
         const first = nextAlive(ctx, anchor, dir) as Seat;
-        startDiscussion(ctx, first, dir, `从${seatLabel(anchor)}的下一位开始，${directionLabel(dir)}`);
+        startDiscussion(ctx, first, dir, gameText(ctx.rules.locale, "从{0}的下一位开始，{1}", seatLabel(anchor, ctx.rules.locale), directionLabel(dir, ctx.rules.locale)));
       } else {
         const first = ctx.pick(ctx.alive());
-        startDiscussion(ctx, first, dir, `法官指定${seatLabel(first)}开始，${directionLabel(dir)}`);
+        startDiscussion(ctx, first, dir, gameText(ctx.rules.locale, "法官指定{0}开始，{1}", seatLabel(first, ctx.rules.locale), directionLabel(dir, ctx.rules.locale)));
       }
     },
     decide(ctx, _step, subs) {
       const sh = ctx.state.sheriff as Seat;
       const dir = subs[sh].args.direction as Direction;
       const first = nextAlive(ctx, sh, dir) ?? sh;
-      startDiscussion(ctx, first, dir, `警长${seatLabel(sh)}选择${directionLabel(dir)}`);
+      startDiscussion(ctx, first, dir, gameText(ctx.rules.locale, "警长{0}选择{1}", seatLabel(sh, ctx.rules.locale), directionLabel(dir, ctx.rules.locale)));
     },
-    fallback: () => ({ tool: 'set_speak_direction', args: { direction: 'clockwise' } }),
+    fallback: (ctx) => ({ tool: 'set_speak_direction', args: { direction: 'clockwise' } }),
   },
 
   speech: {
@@ -164,17 +165,17 @@ export const daySteps: Record<string, StepHandler> = {
       const kind = step.kind as SpeechKind;
       if (kind !== 'lastwords' && !ctx.isAlive(seat)) return;
       if (kind === 'campaign' && (!s.election.candidates.includes(seat) || s.election.withdrawn.includes(seat))) return;
-      const tools: ToolSpec[] = [speakTool(kind === 'lastwords' ? '发表遗言' : SPEECH_LABEL[kind])];
+      const tools: ToolSpec[] = [speakTool(kind === 'lastwords' ? gameText(ctx.rules.locale, "发表遗言") : gameText(ctx.rules.locale, SPEECH_LABEL[kind]))];
       if (kind === 'campaign') tools.push(withdrawTool);
       if (explodeOnOwnTurn(ctx, seat, kind)) tools.push(explodeTool);
-      const label = SPEECH_LABEL[kind];
+      const label = gameText(ctx.rules.locale, SPEECH_LABEL[kind]);
       ctx.ask({
         step,
         actors: [seat],
         tools: () => tools,
         prompt: () => speechPrompt(ctx, seat, kind),
-        title: `第${s.day}天 · ${label}`,
-        publicStage: `${seatLabel(seat)}${label}中`,
+        title: gameText(ctx.rules.locale, "第{0}天 · {1}", s.day, label),
+        publicStage: gameText(ctx.rules.locale, "{0}{1}中", seatLabel(seat, ctx.rules.locale), label),
         publicActor: seat,
         speechWindow: kind === 'lastwords' ? !!step.allowExplode : true,
       });
@@ -190,14 +191,14 @@ export const daySteps: Record<string, StepHandler> = {
       if (call.tool === 'sheriff_withdraw') {
         const content = String(call.args.content ?? '');
         ctx.state.election.withdrawn.push(seat);
-        if (content) ctx.pub('speech', `${seatLabel(seat)}${SPEECH_LABEL[kind]}：${content}`, { seat, kind, content });
-        ctx.pub('sheriff.withdraw', `${seatLabel(seat)}退水。`, { seat });
+        if (content) ctx.pub('speech', `${seatLabel(seat, ctx.rules.locale)}${gameText(ctx.rules.locale, SPEECH_LABEL[kind])}：${content}`, { seat, kind, content });
+        ctx.pub('sheriff.withdraw', gameText(ctx.rules.locale, "{0}退水。", seatLabel(seat, ctx.rules.locale)), { seat });
         return;
       }
       const content = String(call.args.content);
-      ctx.pub('speech', `${seatLabel(seat)}${SPEECH_LABEL[kind]}：${content}`, { seat, kind, content });
+      ctx.pub('speech', `${seatLabel(seat, ctx.rules.locale)}${gameText(ctx.rules.locale, SPEECH_LABEL[kind])}：${content}`, { seat, kind, content });
     },
-    fallback: () => ({ tool: 'speak', args: { content: '我这轮过。' } }),
+    fallback: (ctx) => ({ tool: 'speak', args: { content: gameText(ctx.rules.locale, "我这轮过。") } }),
   },
 
   'exile.vote': {
@@ -205,10 +206,10 @@ export const daySteps: Record<string, StepHandler> = {
       const s = ctx.state;
       const round = step.round as number;
       const candidates = (step.candidates as Seat[] | undefined) ?? null;
-      s.stage = `第${s.day}天 · ${round === 1 ? '放逐投票' : 'PK 投票'}`;
+      s.stage = gameText(ctx.rules.locale, "第{0}天 · {1}", s.day, round === 1 ? gameText(ctx.rules.locale, "放逐投票") : gameText(ctx.rules.locale, "PK 投票"));
       const voters = ctx.alive().filter((x) => ctx.canVote(x) && !(candidates ?? []).includes(x));
       if (!voters.length) {
-        ctx.pub('vote.none', '没有可以投票的玩家，今天无人出局。', {});
+        ctx.pub('vote.none', gameText(ctx.rules.locale, "没有可以投票的玩家，今天无人出局。"), {});
         return;
       }
       const allowAbstain = ctx.opt<boolean>('vote.allowAbstain');
@@ -222,22 +223,22 @@ export const daySteps: Record<string, StepHandler> = {
         tools: (voter) => [
           {
             name: 'vote',
-            title: round === 1 ? '放逐投票' : 'PK 投票',
-            description: '同时秘密投票，票齐后公开谁投了谁。警长的票记 1.5 票。',
-            params: [seatParam('target', '放逐目标', optionsFor(voter), allowAbstain ? '弃票' : undefined)],
+            title: round === 1 ? gameText(ctx.rules.locale, "放逐投票") : gameText(ctx.rules.locale, "PK 投票"),
+            description: gameText(ctx.rules.locale, "同时秘密投票，票齐后公开谁投了谁。警长的票记 1.5 票。"),
+            params: [seatParam('target', gameText(ctx.rules.locale, "放逐目标"), optionsFor(voter), allowAbstain ? gameText(ctx.rules.locale, "弃票") : undefined)],
           },
         ],
         prompt: () =>
           round === 1
-            ? '请投票放逐一名玩家。票齐之前看不到别人的票。'
-            : `请在 PK 的 ${seatList(candidates ?? [])} 中投票放逐一名玩家。`,
-        title: `第${s.day}天 · ${round === 1 ? '放逐投票' : 'PK 投票'}`,
-        publicStage: round === 1 ? '放逐投票中' : 'PK 投票中',
+            ? gameText(ctx.rules.locale, "请投票放逐一名玩家。票齐之前看不到别人的票。")
+            : gameText(ctx.rules.locale, "请在 PK 的 {0} 中投票放逐一名玩家。", seatList(candidates ?? [], ctx.rules.locale)),
+        title: gameText(ctx.rules.locale, "第{0}天 · {1}", s.day, round === 1 ? gameText(ctx.rules.locale, "放逐投票") : gameText(ctx.rules.locale, "PK 投票")),
+        publicStage: round === 1 ? gameText(ctx.rules.locale, "放逐投票中") : gameText(ctx.rules.locale, "PK 投票中"),
         hear: 'public',
       });
     },
     ack: (_ctx, _step, _seat, call) =>
-      call.args.target === null ? '你选择了弃票。' : `你投给了 ${seatLabel(call.args.target as Seat)}。`,
+      call.args.target === null ? gameText(_ctx.rules.locale, "你选择了弃票。") : gameText(_ctx.rules.locale, "你投给了 {0}。", seatLabel(call.args.target as Seat, _ctx.rules.locale)),
     decide(ctx, step, subs) {
       const s = ctx.state;
       const round = step.round as number;
@@ -253,11 +254,11 @@ export const daySteps: Record<string, StepHandler> = {
       const t = tally(ballots);
       const result = ctx.pub(
         'vote.result',
-        `${round === 1 ? '放逐投票' : 'PK 投票'}结果：${describeTally(t, s.sheriff)}。`,
+        gameText(ctx.rules.locale, "{0}结果：{1}。", round === 1 ? gameText(ctx.rules.locale, "放逐投票") : gameText(ctx.rules.locale, "PK 投票"), describeTally(t, s.sheriff, ctx.rules.locale)),
         tallyPayload('exile', round, t, s.sheriff),
       );
       if (!t.top.length) {
-        const conclusion = '无人得票，今天无人出局（平安日）。';
+        const conclusion = gameText(ctx.rules.locale, "无人得票，今天无人出局（平安日）。");
         result.text += conclusion;
         Object.assign(result.payload, { outcome: 'none', conclusion });
         return;
@@ -268,7 +269,7 @@ export const daySteps: Record<string, StepHandler> = {
       }
       if (round === 1) {
         const order = pkOrder(ctx, t.top);
-        const conclusion = `${seatList(t.top)}平票，进入 PK。PK 发言顺序：${orderList(order)}。`;
+        const conclusion = gameText(ctx.rules.locale, "{0}平票，进入 PK。PK 发言顺序：{1}。", seatList(t.top, ctx.rules.locale), orderList(order, ctx.rules.locale));
         result.text += conclusion;
         Object.assign(result.payload, { outcome: 'pk', conclusion, seats: t.top, order });
         ctx.pushFront(
@@ -277,11 +278,11 @@ export const daySteps: Record<string, StepHandler> = {
         );
         return;
       }
-      const conclusion = `${seatList(t.top)}再次平票，今天无人出局（平安日）。`;
+      const conclusion = gameText(ctx.rules.locale, "{0}再次平票，今天无人出局（平安日）。", seatList(t.top, ctx.rules.locale));
       result.text += conclusion;
       Object.assign(result.payload, { outcome: 'none', conclusion });
     },
-    fallback: () => ({ tool: 'vote', args: { target: null } }),
+    fallback: (ctx) => ({ tool: 'vote', args: { target: null } }),
   },
 
   'exile.apply': {
@@ -293,7 +294,7 @@ export const daySteps: Record<string, StepHandler> = {
       if (spared) {
         if (result) {
           const announcements = ctx.events.slice(before).filter((e) => e.audience === 'public');
-          const conclusion = announcements.map((e) => e.text).join('') || `${seatLabel(seat)}未被放逐。`;
+          const conclusion = announcements.map((e) => e.text).join('') || gameText(ctx.rules.locale, "{0}未被放逐。", seatLabel(seat, ctx.rules.locale));
           result.text += conclusion;
           Object.assign(result.payload, { outcome: 'revealed', conclusion, seat });
           for (const e of announcements) e.payload.announced = true;
@@ -302,7 +303,7 @@ export const daySteps: Record<string, StepHandler> = {
       }
       const batch = ctx.newBatch();
       ctx.kill(seat, { via: 'exile', causes: ['exile'], batch });
-      const conclusion = `${seatLabel(seat)}被投票放逐。`;
+      const conclusion = gameText(ctx.rules.locale, "{0}被投票放逐。", seatLabel(seat, ctx.rules.locale));
       ctx.pub('exile', conclusion, { seat, ...(result ? { announced: true } : {}) });
       if (result) {
         result.text += conclusion;
@@ -318,7 +319,7 @@ function startDiscussion(ctx: Ctx, first: Seat, dir: Direction, how: string): vo
   const order = ringOrder(ctx.playerCount, first, dir, ctx.alive());
   s.dayState.direction = dir;
   s.dayState.firstSpeaker = first;
-  ctx.pub('speech.order', `${how}。发言顺序：${orderList(order)}。`, { order, direction: dir, first });
+  ctx.pub('speech.order', gameText(ctx.rules.locale, "{0}。发言顺序：{1}。", how, orderList(order, ctx.rules.locale)), { order, direction: dir, first });
   ctx.pushFront(
     ...order.flatMap((seat) => speechSteps(ctx, seat, 'discussion')),
     { type: 'exile.vote', round: 1, cancelOnExplode: true },
@@ -335,6 +336,6 @@ function pickAnchor(ctx: Ctx, pd: PendingDeaths): Seat | null {
     return dead[0];
   }
   const anchor = ctx.pick(dead);
-  ctx.god('random.anchor', `随机发言锚点：${seatLabel(anchor)}`, { anchor });
+  ctx.god('random.anchor', gameText(ctx.rules.locale, "随机发言锚点：{0}", seatLabel(anchor, ctx.rules.locale)), { anchor });
   return anchor;
 }

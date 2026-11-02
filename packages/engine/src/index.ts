@@ -1,3 +1,4 @@
+import { gameLanguages } from '@werewolf/protocol';
 import type { PresetInfo, RoleInfo, RuleOptionInfo } from '@werewolf/protocol';
 import { registerBuiltins } from './builtin';
 import { allOptions, allPresets, allRoles } from './registry';
@@ -26,10 +27,11 @@ export { DEFAULT_PRESET } from './presets';
 export { seatParam, textParam, speakTool, explodeTool, err } from './tools';
 export type * from './types';
 
-export function engineCatalog(): { presets: PresetInfo[]; roles: RoleInfo[]; options: RuleOptionInfo[] } {
+export function engineCatalog(): { presets: PresetInfo[]; roles: RoleInfo[]; options: RuleOptionInfo[]; languages: import('@werewolf/protocol').GameLanguage[] } {
   const owner = new Map<string, string>();
   for (const r of allRoles()) for (const o of r.options ?? []) owner.set(o.key, r.id);
   return {
+    languages: gameLanguages(),
     presets: allPresets().map((p) => ({
       id: p.id,
       ...(p.version ? { version: p.version } : {}),

@@ -34,7 +34,7 @@ async function worker() {
   while (cursor < clips.length) {
     if (errors.some((e) => fatal(e.reason))) break;
     const clip = clips[cursor++];
-    const profile = clipVoiceProfile(voices, clip);
+    const profile = clipVoiceProfile(voices, clip, source.locale ?? 'zh-CN');
     let done = false;
     for (let attempt = 0; attempt < 3 && !done; attempt++) {
       try {

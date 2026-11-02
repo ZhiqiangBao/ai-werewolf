@@ -1,3 +1,4 @@
+import { gameLanguage } from '@werewolf/protocol';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
@@ -12,7 +13,7 @@ export interface SpeechProvider {
   id: string;
   label: string;
   cacheIdentity: unknown;
-  synthesize(text: string, signal: AbortSignal): Promise<SpeechAudio>;
+  synthesize(text: string, signal: AbortSignal, context?: { locale: string }): Promise<SpeechAudio>;
 }
 interface CommonConfig { id: string; label: string; cacheVersion?: string }
 interface QwenConfig extends CommonConfig { type: 'qwen-token-plan'; model?: string; voice?: string; rate?: number; instruction?: string }
@@ -43,10 +44,10 @@ export function defaultSpeechConfig(): SpeechConfig {
   return { providers, defaultProviderId: DEFAULT_SPEECH_CONFIG.defaultProviderId };
 }
 
-function interpolate(value: unknown, text: string): unknown {
-  if (typeof value === 'string') return value.replaceAll('{{text}}', () => text);
-  if (Array.isArray(value)) return value.map((item) => interpolate(item, text));
-  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, interpolate(v, text)]));
+function interpolate(value: unknown, text: string, locale = 'zh-CN'): unknown {
+  if (typeof value === 'string') return value.replace(/\{\{(text|locale|language)\}\}/g, (_match, key: string) => key === 'text' ? text : key === 'locale' ? locale : gameLanguage(locale).languageName);
+  if (Array.isArray(value)) return value.map((item) => interpolate(item, text, locale));
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, interpolate(v, text, locale)]));
   return value;
 }
 async function boundedAudio(response: Response, limit = 40 * 1024 * 1024): Promise<Buffer> {
@@ -72,7 +73,8 @@ export function speechProvider(config: SpeechProviderConfig, directory: string, 
     const connection = mimoConnection(config);
     mimoRequest('配置检查', profile, model);
     return { ...base, cacheIdentity: { ...config, connection, model, profile, version: 1 },
-      async synthesize(text, signal) { return { bytes: await synthesizeMimo(text, profile, model, { ...config, signal }), mimeType: 'audio/wav' }; } };
+      async synthesize(text, signal, context) {
+      const locale = context?.locale ?? 'zh-CN'; return { bytes: await synthesizeMimo(text, { ...profile, locale, instruction: config.instruction ?? (locale === 'zh-CN' ? profile.instruction : `Read the given text naturally in ${gameLanguage(locale).languageName}. Read player numbers accurately. Do not add or rewrite anything.`) }, model, { ...config, signal }), mimeType: 'audio/wav' }; } };
   }
   if (config.type === 'qwen-token-plan' || config.type === 'qwen-http') {
     if (config.type === 'qwen-http') {
@@ -86,10 +88,12 @@ export function speechProvider(config: SpeechProviderConfig, directory: string, 
     };
     if (!Number.isFinite(profile.rate) || profile.rate <= 0) throw Error('Invalid speech rate');
     const route = config.type === 'qwen-http' ? { endpoint: config.endpoint, credential: createHash('sha256').update(credentials!.apiKey).digest('hex') } : {};
-    return { ...base, cacheIdentity: { ...config, model, profile, ...route }, async synthesize(text, signal) {
-      const key = createHash('sha256').update(JSON.stringify({ ...route, model, profile, text })).digest('hex');
+    return { ...base, cacheIdentity: { ...config, model, profile, ...route }, async synthesize(text, signal, context) {
+      const locale = context?.locale ?? 'zh-CN';
+      const voiceProfile: VoiceProfile = { ...profile, locale, languageHints: [...gameLanguage(locale).ttsLanguageHints], instruction: config.instruction ?? (locale === 'zh-CN' ? profile.instruction : `Read the given text naturally in ${gameLanguage(locale).languageName}. Read player numbers accurately. Do not add or rewrite anything.`) };
+      const key = createHash('sha256').update(JSON.stringify({ ...route, model, profile: voiceProfile, text })).digest('hex');
       const output = join(directory, key + '.wav');
-      await synthesizeQwen(text, profile, model, output, { signal, ...(config.type === 'qwen-http' ? { endpoint: config.endpoint, apiKey: credentials!.apiKey } : {}) });
+      await synthesizeQwen(text, voiceProfile, model, output, { signal, ...(config.type === 'qwen-http' ? { endpoint: config.endpoint, apiKey: credentials!.apiKey } : {}) });
       return { bytes: await readFile(output), mimeType: 'audio/wav' };
     } };
   }
@@ -104,14 +108,15 @@ export function speechProvider(config: SpeechProviderConfig, directory: string, 
       if (config.completionPath) field({}, config.completionPath);
     }
     const credential = credentials || config.apiKeyEnv ? createHash('sha256').update(credentials?.apiKey ?? process.env[config.apiKeyEnv!] ?? '').digest('hex') : undefined;
-    return { ...base, cacheIdentity: { ...config, credential }, async synthesize(text, signal) {
+    return { ...base, cacheIdentity: { ...config, credential }, async synthesize(text, signal, context) {
+      const locale = context?.locale ?? 'zh-CN';
       const headers: Record<string, string> = { 'Content-Type': 'application/json', ...config.headers };
       if (credentials || config.apiKeyEnv) {
         const key = credentials?.apiKey ?? process.env[config.apiKeyEnv!];
         if (!key) throw Error('Speech credential is not configured');
         headers[config.apiKeyHeader ?? 'Authorization'] = `${config.apiKeyPrefix ?? 'Bearer '}${key}`;
       }
-      const response = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(interpolate(config.body, text)), signal, redirect: 'error' });
+      const response = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(interpolate(config.body, text, locale)), signal, redirect: 'error' });
       if (!response.ok) throw Error(`Speech provider HTTP ${response.status}`);
       if (config.type === 'http-json-audio') {
         let body: unknown;
@@ -129,13 +134,14 @@ export function speechProvider(config: SpeechProviderConfig, directory: string, 
   if (config.type === 'module') {
     if (typeof config.module !== 'string' || !config.module) throw Error('Missing speech adapter module');
     const url = pathToFileURL(resolve(configDirectory, config.module)).href;
-    let adapter: Promise<(input: { text: string; options: Record<string, unknown>; signal: AbortSignal }) => Promise<SpeechAudio>> | undefined;
-    return { ...base, async synthesize(text, signal) {
+    let adapter: Promise<(input: { text: string; options: Record<string, unknown>; signal: AbortSignal; locale?: string }) => Promise<SpeechAudio>> | undefined;
+    return { ...base, async synthesize(text, signal, context) {
+      const locale = context?.locale ?? 'zh-CN';
       adapter ??= import(url).then((module) => {
         if (typeof module.synthesize !== 'function') throw Error('Speech adapter must export synthesize');
         return module.synthesize;
       });
-      return (await adapter)({ text, options: config.options ?? {}, signal });
+      return (await adapter)({ text, options: config.options ?? {}, signal, locale });
     } };
   }
   throw Error('Unknown speech provider type');

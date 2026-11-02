@@ -1,3 +1,4 @@
+import { gameText } from '@werewolf/protocol';
 import { seatLabel } from '../text';
 import type { RoleModule } from '../types';
 
@@ -26,8 +27,8 @@ export const idiot: RoleModule = {
 
   ruleCard(rules) {
     return [
-      '白痴：被投票放逐时翻牌亮明身份，留在场上，此后不能投票但仍可发言；翻牌后再被放逐则出局。被刀、被毒、被枪正常出局。' +
-        (rules.values['idiot.badgeOnFlip'] === 'lost' ? '警长白痴翻牌后警徽流失。' : '警长白痴翻牌后保留警徽。'),
+      gameText(rules.locale, "白痴：被投票放逐时翻牌亮明身份，留在场上，此后不能投票但仍可发言；翻牌后再被放逐则出局。被刀、被毒、被枪正常出局。") +
+        (rules.values['idiot.badgeOnFlip'] === 'lost' ? gameText(rules.locale, "警长白痴翻牌后警徽流失。") : gameText(rules.locale, "警长白痴翻牌后保留警徽。")),
     ];
   },
 
@@ -36,7 +37,7 @@ export const idiot: RoleModule = {
   },
 
   appendix(ctx, seat) {
-    return [ctx.player(seat).data.flipped ? '你已翻牌，不能再投票，仍可发言。' : '你被投票放逐时会翻牌留在场上。'];
+    return [ctx.player(seat).data.flipped ? gameText(ctx.rules.locale, "你已翻牌，不能再投票，仍可发言。") : gameText(ctx.rules.locale, "你被投票放逐时会翻牌留在场上。")];
   },
 
   beforeExile(ctx, seat) {
@@ -44,11 +45,11 @@ export const idiot: RoleModule = {
     if (p.data.flipped) return false;
     p.data.flipped = true;
     p.revealed = true;
-    ctx.pub('idiot.flip', `${seatLabel(seat)}被投票放逐，翻牌：白痴。留在场上，此后不能投票。`, { seat, role: 'idiot' });
+    ctx.pub('idiot.flip', gameText(ctx.rules.locale, "{0}被投票放逐，翻牌：白痴。留在场上，此后不能投票。", seatLabel(seat, ctx.rules.locale)), { seat, role: 'idiot' });
     if (ctx.state.sheriff === seat && ctx.opt<string>('idiot.badgeOnFlip') === 'lost') {
       ctx.state.sheriff = null;
-      ctx.state.history.badge.push(`第${ctx.state.day}天 ${seatLabel(seat)}翻牌白痴，警徽流失`);
-      ctx.pub('badge.lost', `${seatLabel(seat)}翻牌后警徽流失。`, { from: seat });
+      ctx.state.history.badge.push(gameText(ctx.rules.locale, "第{0}天 {1}翻牌白痴，警徽流失", ctx.state.day, seatLabel(seat, ctx.rules.locale)));
+      ctx.pub('badge.lost', gameText(ctx.rules.locale, "{0}翻牌后警徽流失。", seatLabel(seat, ctx.rules.locale)), { from: seat });
     }
     return true;
   },

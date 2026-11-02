@@ -1,3 +1,4 @@
+import { gameText } from '@werewolf/protocol';
 import type { ToolSpec } from '@werewolf/protocol';
 import type { Seat } from '@werewolf/protocol';
 import { seatLabel } from '../text';
@@ -13,7 +14,7 @@ interface Check {
 
 export const seer: RoleModule = {
   id: 'seer',
-  tools: ({ seats, rules }) => [seerTool(seats)],
+  tools: ({ seats, rules }) => [seerTool(seats, rules.locale)],
   name: '预言家',
   faction: 'good',
   category: 'god',
@@ -21,7 +22,7 @@ export const seer: RoleModule = {
   summary: '每晚查验一名其他存活玩家，结果只区分好人或狼人。',
   nightPhase: { id: 'seer', order: 30 },
 
-  ruleCard: () => [`预言家：每晚查验一名其他存活玩家，结果只区分好人或狼人，不返回具体身份。${INSPECTION_PRIVACY_RULE}`],
+  ruleCard: (rules) => [gameText(rules.locale, "预言家：每晚查验一名其他存活玩家，结果只区分好人或狼人，不返回具体身份。{0}", gameText(rules.locale, INSPECTION_PRIVACY_RULE))],
 
   setup(ctx, seats) {
     for (const s of seats) ctx.player(s).data.checks = [];
@@ -35,9 +36,9 @@ export const seer: RoleModule = {
 
   appendix(ctx, seat) {
     const checks = (ctx.player(seat).data.checks ?? []) as Check[];
-    if (!checks.length) return ['你的查验记录：暂无。'];
+    if (!checks.length) return [gameText(ctx.rules.locale, "你的查验记录：暂无。")];
     return [
-      `你的查验记录：${checks.map((c) => `第${c.night}夜 ${seatLabel(c.target)}=${c.result === 'wolf' ? '狼人' : '好人'}`).join('；')}。`,
+      gameText(ctx.rules.locale, "你的查验记录：{0}。", checks.map((c) => gameText(ctx.rules.locale, "第{0}夜 {1}={2}", c.night, seatLabel(c.target, ctx.rules.locale), c.result === 'wolf' ? gameText(ctx.rules.locale, "狼人") : gameText(ctx.rules.locale, "好人"))).join('；')),
     ];
   },
 
@@ -52,18 +53,18 @@ export const seer: RoleModule = {
           tools: (seat) => [
             {
               name: 'seer_inspect',
-              title: '查验',
-              description: '查验一名其他存活玩家，立刻得知他是好人还是狼人。',
-              params: [seatParam('target', '查验目标', ctx.alive().filter((x) => x !== seat))],
+              title: gameText(ctx.rules.locale, "查验"),
+              description: gameText(ctx.rules.locale, "查验一名其他存活玩家，立刻得知他是好人还是狼人。"),
+              params: [seatParam('target', gameText(ctx.rules.locale, "查验目标"), ctx.alive().filter((x) => x !== seat), undefined)],
             },
           ],
-          prompt: () => '请选择今晚要查验的玩家。',
-          title: `第${ctx.state.day}夜 · 预言家`,
-          publicStage: '夜晚',
+          prompt: () => gameText(ctx.rules.locale, "请选择今晚要查验的玩家。"),
+          title: gameText(ctx.rules.locale, "第{0}夜 · 预言家", ctx.state.day),
+          publicStage: gameText(ctx.rules.locale, "夜晚"),
         });
       },
       validate(ctx, _step, seat, call) {
-        if (call.args.target === seat) return { code: 'TARGET_SELF_FORBIDDEN', reason: '预言家不能查验自己' };
+        if (call.args.target === seat) return { code: 'TARGET_SELF_FORBIDDEN', reason: gameText(ctx.rules.locale, "预言家不能查验自己") };
         return null;
       },
       decide(ctx, _step, subs) {
@@ -72,28 +73,28 @@ export const seer: RoleModule = {
           const seat = Number(seatKey);
           const target = call.args.target as Seat | null;
           if (target === null) {
-            ctx.priv([seat], 'seer.skip', '本夜没有查验。', {});
-            night?.lines.push(`预言家（${seatLabel(seat)}）未查验`);
+            ctx.priv([seat], 'seer.skip', gameText(ctx.rules.locale, "本夜没有查验。"), {});
+            night?.lines.push(gameText(ctx.rules.locale, "预言家（{0}）未查验", seatLabel(seat, ctx.rules.locale)));
             continue;
           }
           const mod = ctx.roleOf(target);
           const result: 'good' | 'wolf' = mod.inspectAs ?? (mod.faction === 'wolf' ? 'wolf' : 'good');
           (ctx.player(seat).data.checks as Check[]).push({ night: ctx.state.day, target, result });
-          const label = result === 'wolf' ? '狼人' : '好人';
-          ctx.priv([seat], 'seer.result', `查验结果：${seatLabel(target)}是${label}。`, { target, result });
-          night?.lines.push(`预言家（${seatLabel(seat)}）查验 ${seatLabel(target)}：${label}`);
+          const label = result === 'wolf' ? gameText(ctx.rules.locale, "狼人") : gameText(ctx.rules.locale, "好人");
+          ctx.priv([seat], 'seer.result', gameText(ctx.rules.locale, "查验结果：{0}是{1}。", seatLabel(target, ctx.rules.locale), label), { target, result });
+          night?.lines.push(gameText(ctx.rules.locale, "预言家（{0}）查验 {1}：{2}", seatLabel(seat, ctx.rules.locale), seatLabel(target, ctx.rules.locale), label));
         }
       },
-      fallback: () => ({ tool: 'seer_inspect', args: { target: null } }),
+      fallback: (ctx) => ({ tool: 'seer_inspect', args: { target: null } }),
     },
   },
 };
 
-function seerTool(seats: Seat[]): ToolSpec {
+function seerTool(seats: Seat[], locale: string | undefined = 'zh-CN'): ToolSpec {
   return {
     name: 'seer_inspect',
-    title: '查验',
-    description: '预言家夜间查验时使用。target 是一名其他存活玩家，不能查自己。target 必须为整数，不能填 null；例：{"target":3}（须为其他存活玩家）。可以重复查验。结果只区分好人或狼人，不返回具体神职，只有你能看到。其他阶段不要调用。',
-    params: [seatParam('target', '查验目标', seats)],
+    title: gameText(locale, "查验"),
+    description: gameText(locale, "预言家夜间查验时使用。target 是一名其他存活玩家，不能查自己。target 必须为整数，不能填 null；例：{\"target\":3}（须为其他存活玩家）。可以重复查验。结果只区分好人或狼人，不返回具体神职，只有你能看到。其他阶段不要调用。"),
+    params: [seatParam('target', gameText(locale, "查验目标"), seats, undefined)],
   };
 }

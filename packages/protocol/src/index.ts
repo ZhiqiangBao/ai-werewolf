@@ -1,3 +1,4 @@
+import { gameText } from './locale';
 export type Seat = number;
 export { AVATAR_STYLES, isAvatarStyleId, avatarDefaultName } from './avatars';
 export type { AvatarStyleId } from './avatars';
@@ -97,13 +98,13 @@ export interface SeatActionInput extends ToolCall { decisionId: string }
 
 export type JsonSchema = Record<string, unknown>;
 
-export function paramToJsonSchema(p: ParamSpec): JsonSchema {
+export function paramToJsonSchema(p: ParamSpec, locale?: string): JsonSchema {
   switch (p.kind) {
     case 'seat': {
       const values: (number | null)[] = [...p.options];
       if (p.nullable) values.push(null);
-      const label = `${p.label}。填写玩家的真实座位号（整数），不是候选列表下标；提交值须与最终选择一致`;
-      const desc = p.nullable ? `${label}。传 null 表示「${p.nullLabel ?? '不选'}」` : label;
+      const label = gameText(locale, '{0}。填写玩家的真实座位号（整数），不是候选列表下标；提交值须与最终选择一致', p.label);
+      const desc = p.nullable ? gameText(locale, '{0}。传 null 表示「{1}」', label, p.nullLabel ?? gameText(locale, '不选')) : label;
       return { type: p.nullable ? ['integer', 'null'] : 'integer', enum: values, description: desc };
     }
     case 'seats':
@@ -113,10 +114,10 @@ export function paramToJsonSchema(p: ParamSpec): JsonSchema {
         minItems: p.min,
         maxItems: p.max,
         uniqueItems: true,
-        description: `${p.label}。填写互不重复的真实整数座位号列表，不是列表下标；数量为 ${p.min}–${p.max} 个`,
+        description: gameText(locale, '{0}。填写互不重复的真实整数座位号列表，不是列表下标；数量为 {1}–{2} 个', p.label, p.min, p.max),
       };
     case 'boolean':
-      return { type: 'boolean', description: `${p.label}。true=${p.trueLabel ?? '是'}；false=${p.falseLabel ?? '否'}。填写布尔值，不要填写字符串` };
+      return { type: 'boolean', description: gameText(locale, '{0}。true={1}；false={2}。填写布尔值，不要填写字符串', p.label, p.trueLabel ?? gameText(locale, '是'), p.falseLabel ?? gameText(locale, '否')) };
     case 'text': {
       const schema: JsonSchema = { type: 'string', minLength: p.minLength, description: p.label };
       if (p.maxLength !== undefined) schema.maxLength = p.maxLength;
@@ -131,11 +132,11 @@ export function paramToJsonSchema(p: ParamSpec): JsonSchema {
   }
 }
 
-export function toolToJsonSchema(tool: ToolSpec): JsonSchema {
+export function toolToJsonSchema(tool: ToolSpec, locale?: string): JsonSchema {
   const properties: Record<string, JsonSchema> = {};
   const required: string[] = [];
   for (const p of tool.params) {
-    properties[p.name] = paramToJsonSchema(p);
+    properties[p.name] = paramToJsonSchema(p, locale);
     required.push(p.name);
   }
   return { type: 'object', properties, required, additionalProperties: false };
@@ -148,6 +149,8 @@ export function toolToJsonSchema(tool: ToolSpec): JsonSchema {
 export type RuleValue = string | number | boolean;
 
 export interface RuleSet {
+  /** 对局语言；旧存档缺省为 zh-CN。 */
+  locale?: string;
   /** 缺省为历史 v1；新开局使用显式单动作工具 v2。随规则存档，便于精确恢复与重放。 */
   toolsetVersion?: 1 | 2;
   /** 缺省／1 保留历史先公告再续投；2 为警上优先；新局 3 另增加普通竞选的发言后退水与最终确认。 */
@@ -202,6 +205,7 @@ export interface PresetInfo {
 }
 
 export interface Catalog {
+  languages?: import('./locale').GameLanguage[];
   presets: PresetInfo[];
   roles: RoleInfo[];
   options: RuleOptionInfo[];
@@ -276,6 +280,8 @@ export interface Thought {
 }
 
 export interface Projection {
+  /** 对局语言；旧存档缺省为 zh-CN。 */
+  locale?: string;
   viewer: Viewer;
   gameId: string;
   version: number;
@@ -395,6 +401,9 @@ export interface InviteNetworkView {
 }
 
 export interface RoomSetupView {
+  timing?: import('./timing').GameTiming;
+  /** 对局语言；旧存档缺省为 zh-CN。 */
+  locale?: string;
   roomId: string;
   avatarStyle?: AvatarStyleId;
   status: 'setup' | 'running' | 'ended';
@@ -414,6 +423,9 @@ export interface HumanParticipant { seat: Seat; joined: boolean; ready: boolean;
 export interface ParticipantInput { name?: string; ready?: boolean }
 
 export interface RoomSetupInput {
+  timing?: import('./timing').GameTiming;
+  /** 对局语言；旧存档缺省为 zh-CN。 */
+  locale?: string;
   avatarStyle?: AvatarStyleId;
   presetId?: string;
   ruleValues?: Record<string, RuleValue>;
@@ -436,6 +448,8 @@ export type ViewerRole = 'host' | 'seat' | 'spectator';
 
 /** 房间层面的公开信息：谁是真人、谁是模型，以及暂停状态。不含任何身份和配置细节。 */
 export interface RoomBrief {
+  /** 对局语言；旧存档缺省为 zh-CN。 */
+  locale?: string;
   roomId: string;
   avatarStyle?: AvatarStyleId;
   status: 'setup' | 'running' | 'ended';
@@ -450,6 +464,8 @@ export interface RoomBrief {
 }
 
 export interface ViewResponse {
+  /** 页面专用数据，不供模型调用和提示词构建使用。 */
+  presentation?: { deaths: import('./death-presentation').SeatDeathView[]; actionAvailableAt?: number };
   room: RoomBrief;
   /** 未开局时为 null。 */
   projection: Projection | GodProjection | null;
@@ -502,3 +518,11 @@ export interface AuditEntry {
   thinkingChars?: number;
   replyChars?: number;
 }
+
+export { DEFAULT_GAME_LOCALE, gameLanguage, gameLanguages, gameText, isGameLocale, localizeTool, registerGameLanguage } from './locale';
+export type { GameLocale, GameLanguage, GameLanguagePack } from './locale';
+
+export { ACTION_KINDS, DEFAULT_GAME_TIMING, actionKind, defaultGameTiming, parseGameTiming } from './timing';
+export type { ActionKind, ActionTiming, GameTiming } from './timing';
+export { deathCauses, deathLabel, deathShortLabel, DEATH_GLYPHS } from './death-presentation';
+export type { DeathCause, SeatDeathView } from './death-presentation';

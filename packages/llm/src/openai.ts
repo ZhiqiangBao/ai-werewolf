@@ -24,9 +24,9 @@ export const openaiAdapter: Adapter = {
         model: config.model, temperature: config.temperature,
         ...thinkingParameters(config.baseUrl, config.model, config.thinkingMode, 'chat_completions'),
         ...(config.maxOutputTokens ? { max_completion_tokens: config.maxOutputTokens } : {}),
-        messages: chatMessages(json ? [...req.messages, { role: 'system', content: jsonInstruction(tools) }] : req.messages),
+        messages: chatMessages(json ? [...req.messages, { role: 'system', content: jsonInstruction(tools, req.projection?.locale) }] : req.messages),
         ...(json ? (!noJsonFormat.has(memo) ? { response_format: { type: 'json_object' } } : {}) : {
-          tools: tools.map((t) => ({ type: 'function', function: { name: t.name, description: `${t.title}：${t.description}`, parameters: toolToJsonSchema(t) } })),
+          tools: tools.map((t) => ({ type: 'function', function: { name: t.name, description: `${t.title}：${t.description}`, parameters: toolToJsonSchema(t, req.projection?.locale) } })),
           tool_choice: listen || noRequired.has(memo) ? 'auto' : 'required',
         }),
       });
@@ -53,7 +53,7 @@ export const openaiAdapter: Adapter = {
         };
         try {
           const encoded = { ...body(), ...(useStream ? { stream: true } : {}) };
-          req.onRequest?.({ apiProtocol: 'chat_completions', tools: structuredClone('tools' in encoded ? encoded.tools ?? [] : []), ...('tool_choice' in encoded ? { toolChoice: encoded.tool_choice } : {}), ...(json ? { toolInstruction: jsonInstruction(tools) } : {}) });
+          req.onRequest?.({ apiProtocol: 'chat_completions', tools: structuredClone('tools' in encoded ? encoded.tools ?? [] : []), ...('tool_choice' in encoded ? { toolChoice: encoded.tool_choice } : {}), ...(json ? { toolInstruction: jsonInstruction(tools, req.projection?.locale) } : {}) });
           const result = await post(url, encoded, headers, signal, event);
           return result ?? { usage, choices: [{ message: { content: acc.content || null, reasoning_content: acc.reasoning_content,
             tool_calls: [...acc.calls.entries()].sort(([a], [b]) => a - b).map(([, c], i) => ({ id: c.id || `call_${i}`, type: 'function', function: { name: c.name, arguments: c.arguments } })),
@@ -77,7 +77,7 @@ export const openaiAdapter: Adapter = {
       if (!msg || typeof msg !== 'object') return failure(started, '返回里没有 choices[0].message', { raw: data });
       const calls = (Array.isArray(msg.tool_calls) ? msg.tool_calls : []).map((c: any, i: number) => ({ id: c.id || `call_${i}`, name: String(c.function?.name ?? ''), arguments: String(c.function?.arguments ?? '{}') }));
       const assistant = { role: 'assistant' as const, content: listen || json ? msg.content || null : null, ...(calls.length ? { calls } : {}) };
-      return { ...(json ? parseJson(started, assistant, tools, data) : parseAssistant(started, assistant, tools, data, listen)),
+      return { ...(json ? parseJson(started, assistant, tools, data, req.projection?.locale) : parseAssistant(started, assistant, tools, data, listen, req.projection?.locale)),
         thinking: msg.reasoning_content || msg.reasoning || msg.thinking || undefined, reply: msg.content || undefined,
         usage: tokenUsage(data.usage, 'chat_completions'),
       };

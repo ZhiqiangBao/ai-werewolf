@@ -1,17 +1,23 @@
 import { getRole } from '../../packages/engine/src/index';
 import type { Script } from './project';
+import { videoLocale, videoRole, videoText } from './video-locale';
 
 /** All roles in this match, using complete public rules or the actual role module summary. */
-export function allRoleRules(script: Script) {
+export function allRoleRules(script: Script, locale = videoLocale(script.locale)) {
   const lines = (script.ruleCard ?? '').split('\n');
-  const find = (label: string) => lines.filter((l) => l.startsWith(`· ${label}：`)).map((l) => l.replace(`· ${label}：`, '')).join('\n');
+  const find = (label: string) => lines.flatMap((line) => {
+    for (const separator of ['：', ': ']) if (line.startsWith(`· ${label}${separator}`)) return [line.slice(`· ${label}${separator}`.length)];
+    return [];
+  }).join('\n');
   const present = [...new Set(script.cast.map((c) => c.role))];
   const order = [...new Set(['werewolf', 'seer', 'witch', 'guard', 'hunter', 'villager', ...present])].filter((id) => present.includes(id));
   const cards = order.map((id) => {
     const role = getRole(id), count = script.cast.filter((c) => c.role === id).length;
-    return { title: `${role.name} · ${count}人`, text: find(role.name) || role.summary, role: id };
+    const sourceName = script.cast.find((c) => c.role === id)?.roleName ?? role.name;
+    const actual = find(sourceName) || find(role.name) || (id === 'werewolf' ? find('普通狼人') || find('Ordinary Werewolves') || find('通常人狼') : '');
+    return { title: videoText(locale, '{0} · {1}人', videoRole(locale, id, sourceName), count), text: actual || videoText(locale, '默认身份简介（zh-CN）：') + role.summary, role: id };
   });
-  const badge = find('警徽');
-  if (badge) cards.push({ title: '警徽与警长', text: badge, role: 'sheriff' });
+  const badge = find('警徽') || find('Badge');
+  if (badge) cards.push({ title: videoText(locale, '警徽与警长'), text: badge, role: 'sheriff' });
   return cards;
 }

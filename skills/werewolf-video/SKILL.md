@@ -70,11 +70,14 @@ node node_modules/tsx/dist/cli.mjs scripts/video/workflow.ts --room=ROOM_ID --re
 - `--project-dir=绝对路径`：独立版本目录，保留旧片；不要把样品和完整视频混在同一目录。
 - `--video-kbps=750 --max-video-kbps=1200 --audio-kbps=96`：直接限制分段和整片码率，1080p/30fps；先试做昼夜片段再据清晰度调整。
 - `--theme=campus|storybook|gufeng|fantasy|urban|future`：六套人物；更换后核对声音与人物是否相符。
+- `--video-locale=zh-CN|en|ja`：覆盖画面标签语言；也可设置环境变量 `VIDEO_LOCALE`。未覆盖时优先使用原局语言，旧记录缺失语言时使用 `zh-CN`。其他语言或方言可通过 `scripts/video/video-locale.ts` 的注册表扩展，并在制作进程中加载。
 - `--voices=绝对路径`、`--narration=绝对路径`：显式使用已整理的配置。
 - `--tts-provider=ID --tts-adapter=文件路径`：显式接入其他 TTS；内置仍为 `qwen-token-plan`，不自动换服务或计费线路。
 - `--repair-audio`：波形检测失败时，仅重配异常片段，保留原文、固定声线与成功缓存，最多尝试三次；当前自动重配支持 Qwen Token Plan。
 - `--check-only`：导出并刷新材料，执行配音前检查后停止，不调用 TTS 或渲染；缺项写入 `output/materials-check.json`。
 - `--through=plan|preflight|tts|audit-audio|timeline|render|preview|verify`：停在完整的阶段检查点；旧文件再压缩是独立工具，不在默认流程中。
+
+画面语言覆盖只改变程序绘制的标签，不翻译历史玩家原话、音频或本局规则正文。规则正文与画面语言不同时，画面标明正文原语言；没有本局对应条款时标明中文默认身份简介。视频仍只支持上帝视角，不能把画面语言切换当作权限过滤。
 
 默认单路编码；显存与性能判断读 [硬件说明](references/hardware.md)。批量配音、Qwen 特例和接入其他服务时，读 [批量 TTS 与适配器修改](references/tts-batch.md)，其中逐项说明改哪些文件、输出什么、怎么配置和验证。维护程序或适配新日志读 [程序设计](references/automation.md)；小体积交付见 [压缩方案](references/compression.md)。
 

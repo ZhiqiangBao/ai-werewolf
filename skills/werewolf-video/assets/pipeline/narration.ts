@@ -1,8 +1,9 @@
+import { getRole } from '../../packages/engine/src/index';
 import type { Script } from './project';
 export interface NarrationEdit { omit?: boolean; text?: string; voiceKey?: string; reason: string; after?: { text: string; reason: string }[] }
 export function draftNarration(script: Script) {
   const edits: Record<string, NarrationEdit> = {};
-  const wolf = (seat: number) => /狼/.test(script.cast.find((c) => c.seat === seat)?.factionName ?? '');
+  const wolf = (seat: number) => { const cast = script.cast.find((c) => c.seat === seat); return !!cast && getRole(cast.role).faction === 'wolf'; };
   const role = (seat: number) => script.cast.find((c) => c.seat === seat)?.role;
   const all = script.chapters.flatMap((c) => c.entries);
   for (const e of all) {

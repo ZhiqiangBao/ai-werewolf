@@ -1,3 +1,4 @@
+import { gameLanguage, gameText } from '@werewolf/protocol';
 import type { SpeechItem } from './speech';
 
 export interface SpeechOutputEvents { ready(): void; ended(): void; blocked(message: string): void; failed(message: string): void }
@@ -17,10 +18,12 @@ export function browserSpeechOutput(synthesis: SpeechSynthesis, utterance: () =>
     async play(item, rate, events) {
       stop(); const own = generation; const u = utterance(); current = u;
       if (synthesis.paused) synthesis.resume();
-      u.text = `${item.seat}号发言。${item.text}`; u.rate = rate;
-      const voice = synthesis.getVoices().find((v) => v.voiceURI === voiceURI);
+      u.text = gameText(item.locale, '{0}号发言。{1}', item.seat, item.text); u.rate = rate;
+      const language = gameLanguage(item.locale);
+      const voices = synthesis.getVoices();
+      const voice = voices.find((v) => v.voiceURI === voiceURI) ?? voices.find((v) => v.lang === language.speechLang) ?? voices.find((v) => v.lang.split('-')[0] === language.speechLang.split('-')[0]);
       if (voice) u.voice = voice;
-      u.lang = voice?.lang ?? 'zh-CN';
+      u.lang = voice?.lang ?? language.speechLang;
       u.onstart = () => { clear(); if (own === generation) events.ready(); };
       u.onend = () => { clear(); if (own === generation) events.ended(); };
       u.onerror = (e) => { clear(); if (own === generation) events.failed(`浏览器原生朗读失败（${e.error}），请检查系统音色或选择其他来源。`); };

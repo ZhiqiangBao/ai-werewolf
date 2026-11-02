@@ -1,12 +1,13 @@
+import { gameText } from '@werewolf/protocol';
 import type { ToolSpec } from '@werewolf/protocol';
 import type { Seat } from '@werewolf/protocol';
 import { seatLabel } from '../text';
 import { seatParam } from '../tools';
 import type { DeathRecord, RoleModule } from '../types';
 
-const bool = (key: string, label: string, def: boolean) => ({
+const bool = (key: string, label: string, def: boolean, locale: string | undefined = 'zh-CN') => ({
   key,
-  group: '猎人',
+  group: gameText(locale, "猎人"),
   label,
   type: 'boolean' as const,
   default: def,
@@ -15,7 +16,7 @@ const bool = (key: string, label: string, def: boolean) => ({
 
 export const hunter: RoleModule = {
   id: 'hunter',
-  tools: ({ seats, rules }) => [hunterTool(seats)],
+  tools: ({ seats, rules }) => [hunterTool(seats, rules.locale)],
   name: '猎人',
   faction: 'good',
   category: 'god',
@@ -32,18 +33,18 @@ export const hunter: RoleModule = {
   ruleCard(rules) {
     const v = rules.values;
     const can = [
-      v['hunter.shootOnKnife'] && '被狼刀',
-      v['hunter.shootOnVote'] && '被放逐',
-      v['hunter.shootOnGuardAndSave'] && rules.roles.includes('guard') && '同守同救',
+      v['hunter.shootOnKnife'] && gameText(rules.locale, "被狼刀"),
+      v['hunter.shootOnVote'] && gameText(rules.locale, "被放逐"),
+      v['hunter.shootOnGuardAndSave'] && rules.roles.includes('guard') && gameText(rules.locale, "同守同救"),
     ].filter(Boolean);
     return [
-      `猎人：${can.join('、')}出局时可以开枪带走一名存活玩家，也可以放弃。` +
-        (v['hunter.shootOnPoison'] ? '' : '死因里包含毒药时不能开枪。') +
-        `符合发动条件时，法官私下询问本人；开枪结果和猎人表现公开。${v['hunter.declineReveals'] ? '放弃开枪也会公开身份。' : '放弃开枪不公开身份。'}`,
+      gameText(rules.locale, "猎人：{0}出局时可以开枪带走一名存活玩家，也可以放弃。", can.join('、')) +
+        (v['hunter.shootOnPoison'] ? '' : gameText(rules.locale, "死因里包含毒药时不能开枪。")) +
+        gameText(rules.locale, "符合发动条件时，法官私下询问本人；开枪结果和猎人表现公开。{0}", v['hunter.declineReveals'] ? gameText(rules.locale, "放弃开枪也会公开身份。") : gameText(rules.locale, "放弃开枪不公开身份。")),
     ];
   },
 
-  appendix: () => ['你出局时如果死因不含毒药，法官会私下询问你是否开枪。开枪会公开你的身份。'],
+  appendix: (ctx) => [gameText(ctx.rules.locale, "你出局时如果死因不含毒药，法官会私下询问你是否开枪。开枪会公开你的身份。")],
 
   onDeath(ctx, death: DeathRecord) {
     const c = death.causes;
@@ -69,25 +70,25 @@ export const hunter: RoleModule = {
           tools: () => [
             {
               name: 'hunter_shoot',
-              title: '开枪',
-              description: '带走一名存活玩家，或放弃开枪。开枪会公开你的猎人身份。',
-              params: [seatParam('target', '开枪目标', targets, '放弃开枪')],
+              title: gameText(ctx.rules.locale, "开枪"),
+              description: gameText(ctx.rules.locale, "带走一名存活玩家，或放弃开枪。开枪会公开你的猎人身份。"),
+              params: [seatParam('target', gameText(ctx.rules.locale, "开枪目标"), targets, gameText(ctx.rules.locale, "放弃开枪"))],
             },
           ],
-          prompt: () => '你已出局，可以开枪带走一名存活玩家，也可以放弃。',
-          title: `第${ctx.state.day}天 · 猎人开枪`,
-          publicStage: '法官结算中',
+          prompt: () => gameText(ctx.rules.locale, "你已出局，可以开枪带走一名存活玩家，也可以放弃。"),
+          title: gameText(ctx.rules.locale, "第{0}天 · 猎人开枪", ctx.state.day),
+          publicStage: gameText(ctx.rules.locale, "法官结算中"),
         });
       },
       decide(ctx, step, subs) {
         const seat = step.seat as Seat;
         const target = (subs[seat].args.target as Seat | null) ?? null;
         if (target === null) {
-          ctx.priv([seat], 'hunter.decline', '你放弃了开枪。', {});
+          ctx.priv([seat], 'hunter.decline', gameText(ctx.rules.locale, "你放弃了开枪。"), {});
           if (ctx.opt<boolean>('hunter.declineReveals')) {
             ctx.player(seat).revealed = true;
             ctx.player(seat).revealedAs = 'hunter';
-            ctx.pub('hunter.decline', `${seatLabel(seat)}是猎人，放弃开枪。`, { seat });
+            ctx.pub('hunter.decline', gameText(ctx.rules.locale, "{0}是猎人，放弃开枪。", seatLabel(seat, ctx.rules.locale)), { seat });
           }
           return;
         }
@@ -101,19 +102,19 @@ export const hunter: RoleModule = {
           shooterVia: own?.via,
           batch: step.batch as number,
         });
-        ctx.state.history.shots.push(`第${ctx.state.day}天 ${seatLabel(seat)}开枪带走${seatLabel(target)}`);
-        ctx.pub('hunter.shot', `${seatLabel(seat)}开枪，${seatLabel(target)}出局。`, { shooter: seat, target, role: 'hunter' });
+        ctx.state.history.shots.push(gameText(ctx.rules.locale, "第{0}天 {1}开枪带走{2}", ctx.state.day, seatLabel(seat, ctx.rules.locale), seatLabel(target, ctx.rules.locale)));
+        ctx.pub('hunter.shot', gameText(ctx.rules.locale, "{0}开枪，{1}出局。", seatLabel(seat, ctx.rules.locale), seatLabel(target, ctx.rules.locale)), { shooter: seat, target, role: 'hunter' });
       },
-      fallback: () => ({ tool: 'hunter_shoot', args: { target: null } }),
+      fallback: (ctx) => ({ tool: 'hunter_shoot', args: { target: null } }),
     },
   },
 };
 
-function hunterTool(seats: Seat[]): ToolSpec {
+function hunterTool(seats: Seat[], locale: string | undefined = 'zh-CN'): ToolSpec {
   return {
     name: 'hunter_shoot',
-    title: '开枪',
-    description: '猎人出局且法官允许开枪时使用。target 是要带走的存活玩家，null 表示放弃开枪。开枪会公开猎人身份。不能射自己。例：{"target":3} 为带走3号，{"target":null} 为放弃。是否能发动由死因和本局规则决定，以法官询问为准。其他阶段不要调用。',
-    params: [seatParam('target', '开枪目标', seats, '放弃开枪')],
+    title: gameText(locale, "开枪"),
+    description: gameText(locale, "猎人出局且法官允许开枪时使用。target 是要带走的存活玩家，null 表示放弃开枪。开枪会公开猎人身份。不能射自己。例：{\"target\":3} 为带走3号，{\"target\":null} 为放弃。是否能发动由死因和本局规则决定，以法官询问为准。其他阶段不要调用。"),
+    params: [seatParam('target', gameText(locale, "开枪目标"), seats, gameText(locale, "放弃开枪"))],
   };
 }

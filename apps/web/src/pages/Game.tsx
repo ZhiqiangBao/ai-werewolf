@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { GodProjection, Projection, RoomBrief, RoomSetupView, ToolCall } from '@werewolf/protocol';
+import type { GodProjection, Projection, RoomBrief, RoomSetupView, ToolCall, ViewResponse } from '@werewolf/protocol';
 import { api, exportUrl, rememberRoom } from '../api';
 import { go, useCatalog, useView } from '../hooks';
 import { AuditPanel } from '../components/AuditPanel';
@@ -87,10 +87,10 @@ export function HostPage({ roomId, token }: { roomId: string; token: string }) {
       </>
     );
   }
-  return <HostGame roomId={roomId} token={token} room={data.room} projection={data.projection as GodProjection} refresh={refresh} />;
+  return <HostGame roomId={roomId} token={token} room={data.room} projection={data.projection as GodProjection} presentation={data.presentation} refresh={refresh} />;
 }
 
-function HostGame({ roomId, token, room, projection: p, refresh }: { roomId: string; token: string; room: RoomBrief; projection: GodProjection; refresh: () => Promise<void> }) {
+function HostGame({ roomId, token, room, projection: p, presentation, refresh }: { roomId: string; token: string; room: RoomBrief; projection: GodProjection; presentation?: ViewResponse['presentation']; refresh: () => Promise<void> }) {
   const catalog = useCatalog();
   const [tab, setTab] = useState<'god' | 'audit' | 'links' | 'rules'>('god');
   const [setup, setSetup] = useState<RoomSetupView | null>(null);
@@ -171,7 +171,7 @@ function HostGame({ roomId, token, room, projection: p, refresh }: { roomId: str
             {p.result && <ResultBanner result={p.result} />}
             <HumanStatus participants={room.participants ?? []} seats={room.seats} />
             <div className="panel">
-              <SeatRing projection={p} room={room} catalog={catalog} roles={p.god.roles} />
+              <SeatRing projection={p} room={room} catalog={catalog} roles={p.god.roles} deaths={presentation?.deaths} />
             </div>
             <div className="panel">
               <div className="tabs">
@@ -188,7 +188,7 @@ function HostGame({ roomId, token, room, projection: p, refresh }: { roomId: str
                   </button>
                 ))}
               </div>
-              {tab === 'god' && <GodPanel projection={p} room={room} catalog={catalog} />}
+              {tab === 'god' && <GodPanel projection={p} room={room} catalog={catalog} deaths={presentation?.deaths} />}
               {tab === 'audit' && <AuditPanel roomId={roomId} token={token} />}
               {tab === 'links' && (
                 <div style={{ display: 'grid', gap: 12 }}>
@@ -274,9 +274,9 @@ export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
           <div className="game-left">
             {p.result && <ResultBanner result={p.result} />}
             <div className="panel">
-              <SeatRing projection={p} room={room} catalog={catalog} />
+              <SeatRing projection={p} room={room} catalog={catalog} deaths={data.presentation?.deaths} />
             </div>
-            <TaskPanel projection={p} human={human} paused={room.paused} onAct={act} />
+            <TaskPanel projection={p} human={human} paused={room.paused} availableAt={data.presentation?.actionAvailableAt} onAct={act} />
             {p.me && <IdentityCard me={p.me} catalog={catalog} />}
             <RuleCard text={p.ruleCard} />
           </div>
@@ -323,7 +323,7 @@ export function WatchPage({ roomId, token }: { roomId: string; token: string }) 
           <div className="game-left">
             {p.result && <ResultBanner result={p.result} />}
             <div className="panel">
-              <SeatRing projection={p} room={room} catalog={catalog} />
+              <SeatRing projection={p} room={room} catalog={catalog} deaths={data.presentation?.deaths} />
             </div>
             <div className="note-box small">观战只能看到公开信息：发言、投票、公布的出局和翻开的身份。</div>
             <RuleCard text={p.ruleCard} />

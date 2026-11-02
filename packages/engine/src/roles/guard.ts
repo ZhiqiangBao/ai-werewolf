@@ -1,3 +1,4 @@
+import { gameText } from '@werewolf/protocol';
 import type { RuleSet, ToolSpec } from '@werewolf/protocol';
 import type { Seat } from '@werewolf/protocol';
 import type { Ctx } from '../context';
@@ -17,7 +18,7 @@ function targetsFor(ctx: Ctx, seat: Seat): Seat[] {
 
 export const guard: RoleModule = {
   id: 'guard',
-  tools: ({ seats, rules }) => [guardTool(seats, rules.values)],
+  tools: ({ seats, rules }) => [guardTool(seats, rules.values, rules.locale)],
   name: '守卫',
   faction: 'good',
   category: 'god',
@@ -33,13 +34,13 @@ export const guard: RoleModule = {
   ruleCard(rules) {
     const v = rules.values;
     return [
-      `守卫：每晚守护一名存活玩家，也可以空守。${v['guard.allowSelf'] ? '可以守护自己。' : '不能守护自己。'}` +
+      gameText(rules.locale, "守卫：每晚守护一名存活玩家，也可以空守。{0}", v['guard.allowSelf'] ? gameText(rules.locale, "可以守护自己。") : gameText(rules.locale, "不能守护自己。")) +
         (v['guard.noConsecutive']
-          ? '不能连续两晚守护同一人；上一晚空守的话，下一晚可以守护任何人。'
-          : '可以连续守护同一人。') +
-        '守护只挡狼刀，挡不住毒药。' +
-        '法官仅向守卫本人反馈守护选择，不告知刀口或是否挡住攻击，不向被守护者另发通知。' +
-        (v['resolve.guardAndSaveKills'] ? '同一晚守卫守护了刀口、女巫也救了刀口，该玩家出局（同守同救）。' : ''),
+          ? gameText(rules.locale, "不能连续两晚守护同一人；上一晚空守的话，下一晚可以守护任何人。")
+          : gameText(rules.locale, "可以连续守护同一人。")) +
+        gameText(rules.locale, "守护只挡狼刀，挡不住毒药。") +
+        gameText(rules.locale, "法官仅向守卫本人反馈守护选择，不告知刀口或是否挡住攻击，不向被守护者另发通知。") +
+        (v['resolve.guardAndSaveKills'] ? gameText(rules.locale, "同一晚守卫守护了刀口、女巫也救了刀口，该玩家出局（同守同救）。") : ''),
     ];
   },
 
@@ -49,13 +50,13 @@ export const guard: RoleModule = {
 
   appendix(ctx, seat) {
     const log = (ctx.player(seat).data.log ?? []) as { night: number; target: Seat | null }[];
-    if (!log.length) return ['你还没有守护记录。'];
+    if (!log.length) return [gameText(ctx.rules.locale, "你还没有守护记录。")];
     const last = log[log.length - 1];
     return [
-      `你的守护记录：${log.map((r) => `第${r.night}夜 ${r.target === null ? '空守' : seatLabel(r.target)}`).join('；')}。`,
+      gameText(ctx.rules.locale, "你的守护记录：{0}。", log.map((r) => gameText(ctx.rules.locale, "第{0}夜 {1}", r.night, r.target === null ? gameText(ctx.rules.locale, "空守") : seatLabel(r.target, ctx.rules.locale))).join('；')),
       last.target === null || !ctx.opt<boolean>('guard.noConsecutive')
-        ? '下一晚没有禁守座位。'
-        : `下一晚不能再守护 ${seatLabel(last.target)}。`,
+        ? gameText(ctx.rules.locale, "下一晚没有禁守座位。")
+        : gameText(ctx.rules.locale, "下一晚不能再守护 {0}。", seatLabel(last.target, ctx.rules.locale)),
     ];
   },
 
@@ -70,33 +71,33 @@ export const guard: RoleModule = {
           tools: (seat) => [
             {
               name: 'guard_protect',
-              title: '守护',
-              description: '守护一名存活玩家免受今晚的狼刀，或空守。',
-              params: [seatParam('target', '守护目标', targetsFor(ctx, seat), '空守')],
+              title: gameText(ctx.rules.locale, "守护"),
+              description: gameText(ctx.rules.locale, "守护一名存活玩家免受今晚的狼刀，或空守。"),
+              params: [seatParam('target', gameText(ctx.rules.locale, "守护目标"), targetsFor(ctx, seat), gameText(ctx.rules.locale, "空守"))],
             },
           ],
           prompt: (seat) => {
             const last = lastOf(ctx, seat);
             return last !== null && ctx.opt<boolean>('guard.noConsecutive')
-              ? `请选择今晚守护的玩家，或空守。上一晚你守护了 ${seatLabel(last)}，今晚不能再守他。`
-              : '请选择今晚守护的玩家，或空守。';
+              ? gameText(ctx.rules.locale, "请选择今晚守护的玩家，或空守。上一晚你守护了 {0}，今晚不能再守他。", seatLabel(last, ctx.rules.locale))
+              : gameText(ctx.rules.locale, "请选择今晚守护的玩家，或空守。");
           },
-          title: `第${ctx.state.day}夜 · 守卫`,
-          publicStage: '夜晚',
+          title: gameText(ctx.rules.locale, "第{0}夜 · 守卫", ctx.state.day),
+          publicStage: gameText(ctx.rules.locale, "夜晚"),
         });
       },
       validate(ctx, _step, seat, call) {
         const t = call.args.target;
         if (t === null || t === undefined) return null;
         if (t === lastOf(ctx, seat) && ctx.opt<boolean>('guard.noConsecutive')) {
-          return err('GUARD_REPEAT', '不能连续两晚守护同一名玩家');
+          return err('GUARD_REPEAT', gameText(ctx.rules.locale, "不能连续两晚守护同一名玩家"));
         }
-        if (t === seat && !ctx.opt<boolean>('guard.allowSelf')) return err('TARGET_SELF_FORBIDDEN', '本局规则不允许守护自己');
+        if (t === seat && !ctx.opt<boolean>('guard.allowSelf')) return err('TARGET_SELF_FORBIDDEN', gameText(ctx.rules.locale, "本局规则不允许守护自己"));
         return null;
       },
       decide(ctx, _step, subs) {
         const night = ctx.state.night;
-        if (!night) throw new Error('守卫行动缺少夜晚状态');
+        if (!night) throw new Error(gameText(ctx.rules.locale, "守卫行动缺少夜晚状态"));
         for (const [key, call] of Object.entries(subs)) {
           const seat = Number(key);
           const target = (call.args.target as Seat | null) ?? null;
@@ -104,16 +105,16 @@ export const guard: RoleModule = {
           data.last = target;
           data.log.push({ night: ctx.state.day, target });
           if (target === null) {
-            ctx.priv([seat], 'guard.skip', '你今晚空守。', {});
-            night.lines.push(`守卫（${seatLabel(seat)}）空守`);
+            ctx.priv([seat], 'guard.skip', gameText(ctx.rules.locale, "你今晚空守。"), {});
+            night.lines.push(gameText(ctx.rules.locale, "守卫（{0}）空守", seatLabel(seat, ctx.rules.locale)));
           } else {
             night.protections.push({ target, kind: 'guard', blocks: ['wolf'], by: seat });
-            ctx.priv([seat], 'guard.protect', `你今晚守护了 ${seatLabel(target)}。`, { target });
-            night.lines.push(`守卫（${seatLabel(seat)}）守护 ${seatLabel(target)}`);
+            ctx.priv([seat], 'guard.protect', gameText(ctx.rules.locale, "你今晚守护了 {0}。", seatLabel(target, ctx.rules.locale)), { target });
+            night.lines.push(gameText(ctx.rules.locale, "守卫（{0}）守护 {1}", seatLabel(seat, ctx.rules.locale), seatLabel(target, ctx.rules.locale)));
           }
         }
       },
-      fallback: () => ({ tool: 'guard_protect', args: { target: null } }),
+      fallback: (ctx) => ({ tool: 'guard_protect', args: { target: null } }),
     },
   },
 
@@ -131,11 +132,11 @@ export const guard: RoleModule = {
   },
 };
 
-function guardTool(seats: Seat[], v: RuleSet['values']): ToolSpec {
+function guardTool(seats: Seat[], v: RuleSet['values'], locale: string | undefined = 'zh-CN'): ToolSpec {
   return {
     name: 'guard_protect',
-    title: '守护',
-    description: `守卫夜间守护时使用。target 是今晚守护的存活玩家，null 表示空守。${v['guard.allowSelf'] === true ? '可以守护自己。' : '不能守护自己。'}${v['guard.noConsecutive'] === true ? '不能连续两晚守护同一人。' : ''}守护只挡狼刀，挡不住毒药；上一晚空守会解除连续守护限制。例：{"target":3} 为守3号，{"target":null} 为空守，目标以本轮限制为准。其他阶段不要调用。`,
-    params: [seatParam('target', '守护目标', seats, '空守')],
+    title: gameText(locale, "守护"),
+    description: gameText(locale, "守卫夜间守护时使用。target 是今晚守护的存活玩家，null 表示空守。{0}{1}守护只挡狼刀，挡不住毒药；上一晚空守会解除连续守护限制。例：{\"target\":3} 为守3号，{\"target\":null} 为空守，目标以本轮限制为准。其他阶段不要调用。", v['guard.allowSelf'] === true ? gameText(locale, "可以守护自己。") : gameText(locale, "不能守护自己。"), v['guard.noConsecutive'] === true ? gameText(locale, "不能连续两晚守护同一人。") : ''),
+    params: [seatParam('target', gameText(locale, "守护目标"), seats, gameText(locale, "空守"))],
   };
 }

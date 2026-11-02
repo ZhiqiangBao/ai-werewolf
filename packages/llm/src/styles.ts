@@ -1,3 +1,4 @@
+import { gameText } from '@werewolf/protocol';
 export interface Style {
   id: string;
   name: string;
@@ -14,7 +15,7 @@ export const STYLES: Style[] = [
 
 export const DEFAULT_STYLE = 'balanced';
 
-export function styleText(id: string, persona = ''): string {
+export function styleText(id: string, persona = '', locale: string | undefined = 'zh-CN'): string {
   const s = STYLES.find((x) => x.id === id) ?? STYLES[0];
-  return persona.trim() ? `${s.text}\n补充性格：${persona.trim()}` : s.text;
+  return persona.trim() ? gameText(locale, "{0}\n补充性格：{1}", gameText(locale, s.text), persona.trim()) : gameText(locale, s.text);
 }

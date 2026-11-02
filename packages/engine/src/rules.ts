@@ -1,3 +1,4 @@
+import { DEFAULT_GAME_LOCALE, gameText, isGameLocale } from '@werewolf/protocol';
 import type { RuleSet, RuleValue } from '@werewolf/protocol';
 import { allOptions, getOption, getPreset, getRole, hasRole } from './registry';
 import type { OptionDef } from './types';
@@ -32,6 +33,7 @@ export function deriveNightOrder(roles: string[]): string[] {
 }
 
 export interface BuildRulesOptions {
+  locale?: string;
   toolsetVersion?: 1 | 2;
   electionVersion?: 1 | 2 | 3;
   /** 允许改动开局页不可改的选项（测试与自定义版型用）。 */
@@ -47,6 +49,8 @@ export function buildRules(
   opts: BuildRulesOptions = {},
 ): RuleSet {
   const preset = getPreset(presetId);
+  const locale = opts.locale ?? DEFAULT_GAME_LOCALE;
+  if (!isGameLocale(locale)) throw new Error(`Unsupported game language: ${locale}`);
   const roles = opts.roles ? [...opts.roles] : [...preset.roles];
   const values: Record<string, RuleValue> = { ...defaultValues(), ...(preset.overrides ?? {}) };
   for (const [key, raw] of Object.entries(userValues)) {
@@ -56,11 +60,12 @@ export function buildRules(
     if (v !== undefined) values[key] = v;
   }
   return {
+    locale,
     toolsetVersion: opts.toolsetVersion ?? 2,
     electionVersion: opts.electionVersion ?? 3,
     presetId: preset.id,
     ...(preset.version ? { presetVersion: preset.version } : {}),
-    presetName: opts.name ?? preset.name,
+    presetName: opts.name ?? gameText(locale, preset.name),
     playerCount: roles.length,
     roles,
     nightOrder: deriveNightOrder(roles),
@@ -71,6 +76,7 @@ export function buildRules(
 /** 版型校验。返回中文原因列表，空列表表示可以开局。 */
 export function validateRules(rules: RuleSet): string[] {
   const errors: string[] = [];
+  if (rules.locale !== undefined && !isGameLocale(rules.locale)) errors.push('Unsupported game language');
   if (rules.toolsetVersion !== undefined && rules.toolsetVersion !== 1 && rules.toolsetVersion !== 2) errors.push('工具版本只支持 1 或 2');
   if (rules.electionVersion !== undefined && ![1, 2, 3].includes(rules.electionVersion)) errors.push('竞选流程版本只支持 1、2 或 3');
   if (rules.roles.length !== rules.playerCount) errors.push(`人数 ${rules.playerCount} 与身份数量 ${rules.roles.length} 不一致`);

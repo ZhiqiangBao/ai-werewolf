@@ -1,3 +1,4 @@
+import { DEATH_GLYPHS } from '../../packages/protocol/src/death-glyphs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
@@ -7,6 +8,7 @@ import { replay, type ReplayState } from './replay';
 import type { Cast, Script, TimedClip } from './project';
 import { palettes } from './palette';
 import { createRuleStrip, RULE_SCROLL_SPEED, RULE_VIEW } from './rule-strip';
+import { videoChapter, videoLocale, videoRole, videoText } from './video-locale';
 
 const require = createRequire(import.meta.url);
 const { createCanvas, loadImage, GlobalFonts, Path2D } = require(process.env.VIDEO_CANVAS_MODULE || '@napi-rs/canvas');
@@ -30,8 +32,9 @@ const paths: Record<string, string> = {
   gavel: 'm4 9 8-7 6 7-8 7-6-7Z M11 13l10 11 M2 23h11 M4 20h7',
   sparkle: 'M13 2 16 10 24 13 16 16 13 24 10 16 2 13 10 10 13 2Z',
 };
-export const sceneVersion = 'moon-village-video-v7-speaker-portrait';
+export const sceneVersion = 'moon-village-video-v10-localized-labels';
 export async function createSceneRenderer(script: Script) {
+  const locale = videoLocale(script.locale), t = (key: string, ...values: unknown[]) => videoText(locale, key, ...values);
   const art = resolve('apps/web/public/art/moon-village');
   const theme = process.env.VIDEO_AVATAR_STYLE || 'campus';
   const themes: Record<string, string> = { campus: '日式校园', storybook: '童话绘本', gufeng: '中式古风', fantasy: '剑与魔法', urban: '现代都市', future: '未来科技' };
@@ -72,7 +75,7 @@ export async function createSceneRenderer(script: Script) {
   }
   function roleIcon(c: Cast) { return c.role === 'werewolf' ? 'wolf' : c.role === 'seer' ? 'eye' : c.role === 'guard' ? 'shield' : c.role === 'witch' ? 'potion' : c.role === 'hunter' ? 'target' : 'person'; }
   function speakerPanel(clip: TimedClip, state: ReplayState) {
-    const identity = speakerIdentity(script, clip), { panel, avatar, identity: label, divider } = subtitleLayout;
+    const identity = speakerIdentity(script, clip, locale), { panel, avatar, identity: label, divider } = subtitleLayout;
     const tint = identity.kind === 'commentator' ? (clip.phase === 'night' ? '#d3bfff' : '#79549a') : ui.accent;
     round(panel.x, panel.y, panel.width, panel.height, 25, ui.subtitle, ui.borderSoft);
     round(avatar.x - 2, avatar.y - 2, avatar.size + 4, avatar.size + 4, 20, ui.chip, tint, 1.5);
@@ -104,23 +107,38 @@ export async function createSceneRenderer(script: Script) {
     round(left - 4, top + 88, 35, 31, 11, '#122a37', '#d7ba80', 1.4);
     text(String(c.seat), left + 13, top + 103, 21, '#fff1c9', true, 'center');
     round(left + 40, top + 90, 81, 29, 10, '#132d37', tint, 1);
-    icon(roleIcon(c), left + 44, top + 94, 20, tint); text(c.roleName, left + 86, top + 105, 16, tint, true, 'center', 50);
+    icon(roleIcon(c), left + 44, top + 94, 20, tint); text(videoRole(locale, c.role, c.roleName), left + 86, top + 105, 16, tint, true, 'center', 50);
     round(left - 10, top + 125, 136, 33, 12, 'rgba(12,31,41,.93)', 'rgba(225,198,150,.38)');
     text(c.name, x, top + 141, 21, alive ? '#fff2d9' : '#a6adb3', true, 'center', 122);
-    if (!alive) { round(left + 31, top + 24, 60, 30, 12, '#26323ae6', '#a4b4bb'); text('出局', x + 3, top + 39, 17, '#d8e0df', false, 'center'); }
+    if (!alive) {
+      const causes = state.deaths.get(c.seat) ?? ['other' as const];
+      const width = causes.length * 48 + 12, start = x - width / 2;
+      round(start, top + 22, width, 56, 11, '#352733ed', '#ce9b91');
+      causes.forEach((cause, i) => {
+        const glyph = DEATH_GLYPHS[cause];
+        g.save(); g.translate(start + 16 + i * 48, top + 27); g.scale(28 / 24, 28 / 24);
+        g.lineCap = 'round'; g.lineJoin = 'round';
+        for (const layer of glyph.layers) {
+          const shape = new Path2D(layer.path);
+          if (layer.fill) { g.fillStyle = layer.fill; g.fill(shape); }
+          g.strokeStyle = layer.stroke ?? '#ffe0d4'; g.lineWidth = layer.width ?? 1.4; g.stroke(shape);
+        }
+        g.restore(); text(t(glyph.shortLabel), start + 30 + i * 48, top + 66, 12, '#ffe8d5', false, 'center', 46);
+      });
+    }
     if (state.sheriff === c.seat) { round(left - 25, top - 29, 58, 58, 18, '#f6d693', '#fff3c7', 2.5); icon('badge', left - 16, top - 21, 41, '#70511e'); }
     if (state.election && state.candidates.has(c.seat)) {
       const withdrawn = state.withdrawn.has(c.seat); round(left + 48, top - 34, 94, 38, 12, withdrawn ? '#54616c' : '#284d78', withdrawn ? '#b6c2cb' : '#a2cfff', 1.5);
-      icon('flag', left + 56, top - 28, 26, '#d2e9ff'); text(withdrawn ? '退水' : '上警', left + 111, top - 15, 21, '#e7f3ff', true, 'center');
+      icon('flag', left + 56, top - 28, 26, '#d2e9ff'); text(t(withdrawn ? '退水' : '上警'), left + 111, top - 15, 21, '#e7f3ff', true, 'center', 61);
     }
     if (active) {
       const pillX = cos > .8 ? left - 128 : cos < -.8 ? left + 128 : left - 2;
       const pillY = Math.abs(cos) > .8 ? top + 36 : sin < 0 ? top + 166 : top - (state.election && state.candidates.has(c.seat) ? 83 : 53);
-      round(pillX, pillY, 122, 40, 16, '#225c50', '#a0f5d1', 2); icon('mic', pillX + 8, pillY + 7, 27, '#b9ffe4'); text('发言中', pillX + 78, pillY + 21, 21, '#dcffed', true, 'center');
+      round(pillX, pillY, 122, 40, 16, '#225c50', '#a0f5d1', 2); icon('mic', pillX + 8, pillY + 7, 27, '#b9ffe4'); text(t('发言中'), pillX + 78, pillY + 21, 21, '#dcffed', true, 'center', 80);
     }
     const target = typeof clip.data.target === 'number' ? clip.data.target : clip.type === 'wolf.kill.result' ? clip.data.knife : undefined;
     const actionType = script.events.find((event) => event.sourceSeq === clip.sourceSeq)?.type ?? clip.type;
-    if (target === c.seat) { round(left + 10, top + 47, 95, 28, 12, '#102d3aee', '#f6d48f', 1.5); text(actionType.startsWith('guard.') ? '守护目标' : actionType.startsWith('seer.') ? '查验目标' : actionType === 'witch.save' ? '使用解药' : actionType === 'witch.poison' ? '使用毒药' : '狼刀目标', x, top + 61, 16, '#ffe2a0', true, 'center'); }
+    if (target === c.seat) { round(left + 10, top + 47, 95, 28, 12, '#102d3aee', '#f6d48f', 1.5); text(t(actionType.startsWith('guard.') ? '守护目标' : actionType.startsWith('seer.') ? '查验目标' : actionType === 'witch.save' ? '使用解药' : actionType === 'witch.poison' ? '使用毒药' : '狼刀目标'), x, top + 61, 16, '#ffe2a0', true, 'center', 88); }
   }
   function central(clip: TimedClip, state: ReplayState) {
     const voting = clip.type === 'vote.result', ending = clip.phase === 'end', event = state.lastVote?.sourceSeq === clip.sourceSeq ? state.lastVote : undefined;
@@ -128,17 +146,17 @@ export async function createSceneRenderer(script: Script) {
     const h = voting ? layout.height : 142, top = voting ? layout.y : 431, left = voting ? layout.x : 518, width = voting ? layout.width : 392;
     round(left, top, width, h, 24, ui.panel, ui.border, 1.5);
     if (voting && event) {
-      icon('badge', left + 20, top + 16, 26, ui.accent); text(event.data.kind === 'sheriff' ? '警长投票' : '放逐投票', left + 59, top + 30, 24, ui.accent, true);
+      icon('badge', left + 20, top + 16, 26, ui.accent); text(t(event.data.kind === 'sheriff' ? '警长投票' : '放逐投票'), left + 59, top + 30, 24, ui.accent, true);
       (event.data.rows ?? []).slice(0, 4).forEach((r: any, i: number) => {
-        const y = top + 67 + i * 52; text(`${r.target}号`, left + 20, y, 24, ui.text, true); text(`${r.weight} 票`, left + width - 20, y, 24, ui.accent, true, 'right');
+        const y = top + 67 + i * 52; text(t('{0}号', r.target), left + 20, y, 24, ui.text, true); text(t('{0} 票', r.weight), left + width - 20, y, 24, ui.accent, true, 'right');
         text((r.voters ?? []).map((n: number) => `${n}`).join(' · '), left + 20, y + 27, 23, ui.text, true, 'left', width - 40);
       });
       text(event.data.conclusion ?? '', CX, top + h - 20, 20, ui.text, false, 'center', width - 36);
     } else {
       icon(ending ? 'badge' : clip.phase === 'night' ? 'moon' : 'sun', left + 25, top + 17, 27, ui.accent);
-      text(ending ? `终局 · ${state.result?.winnerName ?? '胜利阵营'}获胜` : clip.chapter, left + 64, top + 32, 23, ui.accent, true, 'left', 300);
-      text(clip.seat ? `${clip.seat}号 · ${script.cast.find((c) => c.seat === clip.seat)?.name}` : clip.voiceKey === 'commentator' ? '上帝解说' : '法官播报', CX, top + 77, 26, ui.text, true, 'center', 340);
-      text(ending ? '对局已结束' : clip.data.systemFallback ? '系统托管 · 非模型自主发言' : clip.type === 'hosting.choice' ? '行动转述 · 依据对局记录' : clip.type === 'wolf.chat' ? '狼队密谈 · 上帝观众可见' : clip.seat ? '正在发言' : clip.data.presentationKey === 'vote-open' ? '请投票 · 结果尚未公布' : '对局进行中', CX, top + 112, 17, ui.muted, false, 'center');
+      text(ending ? t('终局 · {0}获胜', state.result?.winnerName ?? t('胜利阵营')) : videoChapter(locale, clip.day, clip.phase, clip.chapter), left + 64, top + 32, 23, ui.accent, true, 'left', 300);
+      text(clip.seat ? t('{0}号 · {1}', clip.seat, script.cast.find((c) => c.seat === clip.seat)?.name) : t(clip.voiceKey === 'commentator' ? '上帝解说' : '法官播报'), CX, top + 77, 26, ui.text, true, 'center', 340);
+      text(t(ending ? '对局已结束' : clip.data.systemFallback ? '系统托管 · 非模型自主发言' : clip.type === 'hosting.choice' ? '行动转述 · 依据对局记录' : clip.type === 'wolf.chat' ? '狼队密谈 · 上帝观众可见' : clip.seat ? '正在发言' : clip.data.presentationKey === 'vote-open' ? '请投票 · 结果尚未公布' : '对局进行中'), CX, top + 112, 17, ui.muted, false, 'center', 360);
     }
     round(594, voting ? layout.waveY : 588, 240, 40, 14, ui.panel, ui.borderSoft);
   }
@@ -149,26 +167,26 @@ export async function createSceneRenderer(script: Script) {
     const scale = Math.max(W / bg.width, H / bg.height); g.drawImage(bg, (W - bg.width * scale) / 2, (H - bg.height * scale) / 2, bg.width * scale, bg.height * scale);
     const shade = g.createLinearGradient(0, 0, W, H); shade.addColorStop(0, isNight ? '#07132440' : '#173b3d25'); shade.addColorStop(1, '#081425ce'); g.fillStyle = shade; g.fillRect(0, 0, W, H);
     round(28, 25, 1864, 80, 26, ui.panel, ui.borderSoft);
-    icon('wolf', 50, 40, 51, ui.accent); text('月影议事厅', 116, 63, 29, ui.text, true); text(script.presetName, 333, 64, 21, ui.muted);
-    round(760, 42, 210, 44, 20, ui.chip, ui.borderSoft); icon(isNight ? 'moon' : 'sun', 778, 51, 25, ui.accent); text(clip.chapter, 869, 64, 22, ui.text, true, 'center');
-    icon('eye', 1457, 51, 28, ui.accent); text(script.sample ? '上帝视角 · 非连续节选样品' : '上帝视角 · 完整对局', 1500, 64, 22, ui.text);
+    icon('wolf', 50, 40, 51, ui.accent); text(t('月影议事厅'), 116, 63, 29, ui.text, true, 'left', 208); text(script.presetName, 333, 64, 21, ui.muted, false, 'left', 390);
+    round(760, 42, 210, 44, 20, ui.chip, ui.borderSoft); icon(isNight ? 'moon' : 'sun', 778, 51, 25, ui.accent); text(videoChapter(locale, clip.day, clip.phase, clip.chapter), 869, 64, 22, ui.text, true, 'center', 145);
+    icon('eye', 1457, 51, 28, ui.accent); text(t(script.sample ? '上帝视角 · 非连续节选样品' : '上帝视角 · 完整对局'), 1500, 64, 22, ui.text, false, 'left', 370);
     round(28, 126, 1375, 799, 30, ui.panelSoft, ui.borderSoft);
     const tw = 1042, th = tw * tableDay.height / tableDay.width; g.save(); g.shadowBlur = 32; g.shadowColor = '#07131a99'; g.shadowOffsetY = 20;
     g.drawImage(isNight ? tableNight : tableDay, CX - tw / 2, CY - th / 2 + 10, tw, th); g.restore();
     central(clip, state); script.cast.forEach((c, i) => seat(c, i, state, clip));
     round(1430, 126, 462, 799, 29, ui.panel, ui.borderSoft);
-    icon('badge', 1459, 145, 28, ui.accent); text('本局技能卡', 1502, 159, 27, ui.text, true);
-    text('全部身份 · 自动循环滚动', 1459, 190, 15, ui.muted);
+    icon('badge', 1459, 145, 28, ui.accent); text(t('本局技能卡'), 1502, 159, 27, ui.text, true, 'left', 350);
+    text(t('全部身份 · 自动循环滚动'), 1459, 190, 15, ui.muted);
     const rules = isNight ? nightRules : dayRules;
     const offset = Math.floor((clip.startFrame / 30 * RULE_SCROLL_SPEED) % rules.cycleHeight);
     g.drawImage(rules.image, 0, offset, RULE_VIEW.width, RULE_VIEW.height, RULE_VIEW.x, RULE_VIEW.y, RULE_VIEW.width, RULE_VIEW.height);
-    text('来自本局规则 · 连续滚动不随发言重置', 1458, 842, 15, ui.muted);
+    text(locale === (script.locale ?? 'zh-CN') ? t('来自本局规则 · 连续滚动不随发言重置') : t('规则正文原语言：{0}', script.locale ?? 'zh-CN'), 1458, 842, 15, ui.muted, false, 'left', 405);
     const aliveWolves = script.cast.filter((c) => c.role === 'werewolf' && state.alive.has(c.seat)).length;
-    round(1456, 866, 408, 35, 12, ui.chip); text(`存活 ${state.alive.size} 人     狼人 ${aliveWolves}     好人 ${state.alive.size - aliveWolves}`, 1660, 883, 17, ui.muted, false, 'center');
+    round(1456, 866, 408, 35, 12, ui.chip); text(t('存活 {0} 人     狼人 {1}     好人 {2}', state.alive.size, aliveWolves, state.alive.size - aliveWolves), 1660, 883, 17, ui.muted, false, 'center', 396);
     speakerPanel(clip, state);
     // Timestamped subtitles are burned in this empty strip by the encoder.
-    text(`对局 ${script.roomId}  ·  ${themes[theme]}人物`, 30, 1071, 12, '#c7d7d6');
-    text(script.sample ? 'AI 配音 · 画面修改样品' : 'AI 配音 · 对局实录', 1888, 1071, 12, '#c7d7d6', false, 'right');
+    text(t('对局 {0}  ·  {1}人物', script.roomId, t(themes[theme])), 30, 1071, 12, '#c7d7d6');
+    text(t(script.sample ? 'AI 配音 · 画面修改样品' : 'AI 配音 · 对局实录'), 1888, 1071, 12, '#c7d7d6', false, 'right');
     return canvas.encode('jpeg', 94);
   };
 }

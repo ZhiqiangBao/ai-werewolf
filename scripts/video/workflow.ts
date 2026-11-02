@@ -4,13 +4,14 @@ import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import { startGpuMonitor } from './metrics';
+import { videoLocale } from './video-locale';
 
 const root = resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const args = new Map(process.argv.slice(2).map((a) => { const i = a.indexOf('='); return [a.slice(0, i < 0 ? undefined : i), i < 0 ? 'true' : a.slice(i + 1)]; }));
 const stages = ['export', 'plan', 'preflight', 'tts', 'audit-audio', 'timeline', 'render', 'preview', 'verify'] as const;
-const supported = new Set(['--help', '--room', '--prepare-only', '--check-only', '--through', '--encoder', '--theme', '--voices', '--narration', '--data-dir', '--project-dir', '--resume', '--repair-audio', '--tts-provider', '--tts-adapter', '--video-kbps', '--max-video-kbps', '--audio-kbps']);
+const supported = new Set(['--help', '--room', '--prepare-only', '--check-only', '--through', '--encoder', '--theme', '--video-locale', '--voices', '--narration', '--data-dir', '--project-dir', '--resume', '--repair-audio', '--tts-provider', '--tts-adapter', '--video-kbps', '--max-video-kbps', '--audio-kbps']);
 for (const key of args.keys()) if (!supported.has(key)) throw Error(`Unknown option ${key}`);
-if (args.has('--help')) { console.log('video:make --room=latest|ID [--prepare-only | --check-only] [--through=STAGE] [--project-dir=DIR] [--encoder=auto|cpu|gpu] [--repair-audio] [--video-kbps=750 --max-video-kbps=1200 --audio-kbps=96] [--theme=campus|storybook|gufeng|fantasy|urban|future] [--voices=FILE] [--narration=FILE] [--tts-provider=ID --tts-adapter=FILE]'); process.exit(0); }
+if (args.has('--help')) { console.log('video:make --room=latest|ID [--prepare-only | --check-only] [--through=STAGE] [--project-dir=DIR] [--encoder=auto|cpu|gpu] [--video-locale=zh-CN|en|ja] [--repair-audio] [--video-kbps=750 --max-video-kbps=1200 --audio-kbps=96] [--theme=campus|storybook|gufeng|fantasy|urban|future] [--voices=FILE] [--narration=FILE] [--tts-provider=ID --tts-adapter=FILE]'); process.exit(0); }
 if (args.has('--prepare-only') && args.has('--check-only')) throw Error('Choose --prepare-only or --check-only');
 const dataRoot = resolve(root, args.get('--data-dir') || 'data');
 const roomsDir = join(dataRoot, 'rooms');
@@ -31,6 +32,7 @@ if (!/^[a-zA-Z0-9_-]+$/.test(room)) throw Error('Invalid room ID');
 const dir = args.has('--project-dir') ? resolve(root, args.get('--project-dir')!) : resolve(dataRoot, 'video', room); await mkdir(dir, { recursive: true });
 for (const key of ['--voices', '--narration', '--tts-adapter']) if (args.has(key) && !existsSync(resolve(root, args.get(key)!))) throw Error(`Missing ${key} file`);
 const theme = args.get('--theme') || 'campus'; if (!['campus', 'storybook', 'gufeng', 'fantasy', 'urban', 'future'].includes(theme)) throw Error('Unsupported avatar theme');
+if (args.has('--video-locale')) videoLocale(undefined, args.get('--video-locale'));
 const encoderOption = args.get('--encoder') || 'auto'; if (!['auto', 'cpu', 'gpu'].includes(encoderOption)) throw Error('Unsupported encoder');
 let encoder = 'libx264';
 if (encoderOption !== 'cpu') {
@@ -40,6 +42,7 @@ if (encoderOption !== 'cpu') {
 const last = args.has('--prepare-only') ? 'plan' : args.has('--check-only') ? 'preflight' : args.get('--through') || 'verify';
 if (!stages.includes(last as any)) throw Error('Invalid final stage');
 const env = { ...process.env, WEREWOLF_DATA: dataRoot, VIDEO_DATA_DIR: dataRoot, VIDEO_ROOM: room, VIDEO_PROJECT_DIR: dir, VIDEO_AVATAR_STYLE: theme, VIDEO_ENCODER: encoder,
+  ...(args.has('--video-locale') ? { VIDEO_LOCALE: args.get('--video-locale')! } : {}),
   VIDEO_REQUIRE_GPU: encoderOption === 'gpu' ? '1' : '0',
   ...(args.has('--video-kbps') ? { VIDEO_BITRATE_KBPS: args.get('--video-kbps')! } : {}),
   ...(args.has('--max-video-kbps') ? { VIDEO_MAXRATE_KBPS: args.get('--max-video-kbps')! } : {}),

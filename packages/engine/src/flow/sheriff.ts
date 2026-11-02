@@ -1,3 +1,4 @@
+import { gameText } from '@werewolf/protocol';
 import type { Seat, ToolSpec } from '@werewolf/protocol';
 import type { Ctx } from '../context';
 import { directionLabel, orderList, seatLabel, seatList } from '../text';
@@ -19,7 +20,7 @@ const stayTool: ToolSpec = {
 
 function withdraw(ctx: Ctx, seat: Seat): void {
   ctx.state.election.withdrawn.push(seat);
-  ctx.pub('sheriff.withdraw', `${seatLabel(seat)}退水。`, { seat });
+  ctx.pub('sheriff.withdraw', gameText(ctx.rules.locale, "{0}退水。", seatLabel(seat, ctx.rules.locale)), { seat });
 }
 
 /** 不打断其他人的发言，也不把口头声明当作行动。 */
@@ -41,12 +42,12 @@ function grantSheriff(ctx: Ctx, seat: Seat): void {
   const s = ctx.state;
   s.sheriff = seat;
   s.election.status = 'done';
-  s.history.badge.push(`第${s.day}天 ${seatLabel(seat)}当选警长`);
+  s.history.badge.push(gameText(ctx.rules.locale, "第{0}天 {1}当选警长", s.day, seatLabel(seat, ctx.rules.locale)));
 }
 
 function elect(ctx: Ctx, seat: Seat, note?: string): void {
   grantSheriff(ctx, seat);
-  ctx.pub('sheriff.elected', `${note ? `${note}` : ''}${seatLabel(seat)}当选警长。`, { seat });
+  ctx.pub('sheriff.elected', gameText(ctx.rules.locale, "{0}{1}当选警长。", note ? `${note}` : '', seatLabel(seat, ctx.rules.locale)), { seat });
 }
 
 function closeElection(ctx: Ctx): void {
@@ -67,7 +68,7 @@ type SheriffVerdict =
 function judgeSheriffVote(ctx: Ctx, round: number, t: Tally): SheriffVerdict {
   if (t.top.length === 1) {
     const seat = t.top[0];
-    return { outcome: 'elected', seat, conclusion: `${seatLabel(seat)}当选警长。` };
+    return { outcome: 'elected', seat, conclusion: gameText(ctx.rules.locale, "{0}当选警长。", seatLabel(seat, ctx.rules.locale)) };
   }
   if (t.top.length > 1 && round === 1) {
     const order = pkOrder(ctx, t.top);
@@ -75,25 +76,25 @@ function judgeSheriffVote(ctx: Ctx, round: number, t: Tally): SheriffVerdict {
       outcome: 'pk',
       seats: t.top,
       order,
-      conclusion: `${seatList(t.top)}平票，进入竞选 PK。发言顺序：${orderList(order)}。`,
+      conclusion: gameText(ctx.rules.locale, "{0}平票，进入竞选 PK。发言顺序：{1}。", seatList(t.top, ctx.rules.locale), orderList(order, ctx.rules.locale)),
     };
   }
-  const again = t.top.length > 1 ? `${seatList(t.top)}再次平票，` : '';
-  return { outcome: 'lost', seats: t.top.length > 1 ? t.top : undefined, conclusion: `${again}警徽流失，本局没有警长。` };
+  const again = t.top.length > 1 ? gameText(ctx.rules.locale, "{0}再次平票，", seatList(t.top, ctx.rules.locale)) : '';
+  return { outcome: 'lost', seats: t.top.length > 1 ? t.top : undefined, conclusion: gameText(ctx.rules.locale, "{0}警徽流失，本局没有警长。", again) };
 }
 
 function startCampaign(ctx: Ctx): void {
   const s = ctx.state;
   const el = s.election;
   const cands = el.candidates.filter((c) => ctx.isAlive(c) && !el.withdrawn.includes(c));
-  if (!cands.length) return noSheriff(ctx, '没有候选人，本局没有警长。');
-  if (cands.length === 1) return elect(ctx, cands[0], '只有一名候选人，直接当选：');
+  if (!cands.length) return noSheriff(ctx, gameText(ctx.rules.locale, "没有候选人，本局没有警长。"));
+  if (cands.length === 1) return elect(ctx, cands[0], gameText(ctx.rules.locale, "只有一名候选人，直接当选："));
   const first = ctx.pick(cands);
   const dir = randomDirection(ctx);
   const order = ringOrder(ctx.playerCount, first, dir, cands);
   s.dayState.direction = dir;
   s.dayState.firstSpeaker = first;
-  ctx.pub('sheriff.order', `竞选发言从${seatLabel(first)}开始，${directionLabel(dir)}：${orderList(order)}。`, {
+  ctx.pub('sheriff.order', gameText(ctx.rules.locale, "竞选发言从{0}开始，{1}：{2}。", seatLabel(first, ctx.rules.locale), directionLabel(dir, ctx.rules.locale), orderList(order, ctx.rules.locale)), {
     order,
     direction: dir,
   });
@@ -110,17 +111,17 @@ export const sheriffSteps: Record<string, StepHandler> = {
       const s = ctx.state;
       const el = s.election;
       el.status = 'running';
-      s.stage = `第${s.day}天 · 警长竞选`;
+      s.stage = gameText(ctx.rules.locale, "第{0}天 · 警长竞选", s.day);
       if (el.postponed && ctx.opt<string>('sheriff.explodeInElection') === 'postpone_vote' && el.postponedVote) {
         const vote = el.postponedVote;
         const candidates = vote.candidates.filter((c) => ctx.isAlive(c) && !el.withdrawn.includes(c));
         el.postponed = false;
         el.postponedCandidates = null;
         delete el.postponedVote;
-        ctx.pub('sheriff.resume', `延期竞选直接续投，不再竞选发言。${s.pendingDeaths ? '昨夜出局情况尚未公布；先完成警上环节，再通报。' : ''}候选人：${candidates.length ? seatList(candidates) : '无'}。`, {
+        ctx.pub('sheriff.resume', gameText(ctx.rules.locale, "延期竞选直接续投，不再竞选发言。{0}候选人：{1}。", s.pendingDeaths ? gameText(ctx.rules.locale, "昨夜出局情况尚未公布；先完成警上环节，再通报。") : '', candidates.length ? seatList(candidates, ctx.rules.locale) : gameText(ctx.rules.locale, "无")), {
           candidates, withdrawn: [...el.withdrawn], mode: 'vote', round: vote.round,
         });
-        if (!candidates.length) return noSheriff(ctx, '续选候选人均已出局或退水，本局没有警长。');
+        if (!candidates.length) return noSheriff(ctx, gameText(ctx.rules.locale, "续选候选人均已出局或退水，本局没有警长。"));
         ctx.pushFront(
           { type: 'explode.window', electionResume: true, cancelOnExplode: true },
           { type: 'sheriff.vote', round: vote.round, ...(vote.round === 2 ? { tied: candidates } : {}), cancelOnExplode: true },
@@ -132,7 +133,7 @@ export const sheriffSteps: Record<string, StepHandler> = {
         el.candidates = el.postponedCandidates.filter((c) => ctx.isAlive(c));
         el.postponed = false;
         el.postponedCandidates = null;
-        ctx.pub('sheriff.resume', `继续警长竞选，候选人：${el.candidates.length ? seatList(el.candidates) : '无'}。`, {
+        ctx.pub('sheriff.resume', gameText(ctx.rules.locale, "继续警长竞选，候选人：{0}。", el.candidates.length ? seatList(el.candidates, ctx.rules.locale) : gameText(ctx.rules.locale, "无")), {
           candidates: el.candidates,
         });
         startCampaign(ctx);
@@ -140,7 +141,7 @@ export const sheriffSteps: Record<string, StepHandler> = {
       }
       el.postponed = false;
       el.candidates = [];
-      ctx.pub('sheriff.start', '开始竞选警长。' + (s.pendingDeaths ? `${(s.rules.electionVersion ?? 1) >= 2 ? '昨夜' : '首夜'}出局情况尚未公布，将在竞选结束或自爆中断后通报；尚未通报不代表平安夜。` : ''), {});
+      ctx.pub('sheriff.start', gameText(ctx.rules.locale, "开始竞选警长。") + (s.pendingDeaths ? gameText(ctx.rules.locale, "{0}出局情况尚未公布，将在竞选结束或自爆中断后通报；尚未通报不代表平安夜。", (s.rules.electionVersion ?? 1) >= 2 ? gameText(ctx.rules.locale, "昨夜") : gameText(ctx.rules.locale, "首夜")) : ''), {});
       ctx.pushFront({ type: 'sheriff.signup', cancelOnExplode: true });
     },
   },
@@ -154,31 +155,31 @@ export const sheriffSteps: Record<string, StepHandler> = {
         tools: () => [
           {
             name: 'sheriff_signup',
-            title: '上警',
-            description: '同时选择是否竞选警长。全部提交后公开谁上警。',
-            params: [{ kind: 'boolean', name: 'run', label: '是否上警', trueLabel: '上警', falseLabel: '不上警' }],
+            title: gameText(ctx.rules.locale, "上警"),
+            description: gameText(ctx.rules.locale, "同时选择是否竞选警长。全部提交后公开谁上警。"),
+            params: [{ kind: 'boolean', name: 'run', label: gameText(ctx.rules.locale, "是否上警"), trueLabel: gameText(ctx.rules.locale, "上警"), falseLabel: gameText(ctx.rules.locale, "不上警") }],
           },
         ],
-        prompt: () => '是否上警竞选警长？警长放逐投票记 1.5 票，并决定白天发言方向。',
-        title: `第${ctx.state.day}天 · 上警`,
-        publicStage: '警长竞选：上警',
+        prompt: () => gameText(ctx.rules.locale, "是否上警竞选警长？警长放逐投票记 1.5 票，并决定白天发言方向。"),
+        title: gameText(ctx.rules.locale, "第{0}天 · 上警", ctx.state.day),
+        publicStage: gameText(ctx.rules.locale, "警长竞选：上警"),
       });
     },
-    ack: (_c, _s, _seat, call) => (call.args.run ? '你选择了上警。' : '你选择不上警。'),
+    ack: (_c, _s, _seat, call) => (call.args.run ? gameText(_c.rules.locale, "你选择了上警。") : gameText(_c.rules.locale, "你选择不上警。")),
     decide(ctx, _step, subs) {
       const all = Object.keys(subs).map(Number).sort((a, b) => a - b);
       const cands = all.filter((x) => subs[x].args.run === true);
-      if (!cands.length) return noSheriff(ctx, '无人上警，本局没有警长。');
+      if (!cands.length) return noSheriff(ctx, gameText(ctx.rules.locale, "无人上警，本局没有警长。"));
       ctx.state.election.candidates = cands;
       if (cands.length === all.length) {
-        ctx.pub('sheriff.signup', `全员上警：${seatList(cands)}。`, { candidates: cands });
-        return noSheriff(ctx, '全员上警，没有警下玩家投票，本局没有警长。');
+        ctx.pub('sheriff.signup', gameText(ctx.rules.locale, "全员上警：{0}。", seatList(cands, ctx.rules.locale)), { candidates: cands });
+        return noSheriff(ctx, gameText(ctx.rules.locale, "全员上警，没有警下玩家投票，本局没有警长。"));
       }
       const others = all.filter((x) => !cands.includes(x));
-      ctx.pub('sheriff.signup', `上警：${seatList(cands)}；警下：${seatList(others)}。`, { candidates: cands });
+      ctx.pub('sheriff.signup', gameText(ctx.rules.locale, "上警：{0}；警下：{1}。", seatList(cands, ctx.rules.locale), seatList(others, ctx.rules.locale)), { candidates: cands });
       startCampaign(ctx);
     },
-    fallback: () => ({ tool: 'sheriff_signup', args: { run: false } }),
+    fallback: (ctx) => ({ tool: 'sheriff_signup', args: { run: false } }),
   },
 
   'sheriff.withdraw': {
@@ -186,21 +187,21 @@ export const sheriffSteps: Record<string, StepHandler> = {
       const el = ctx.state.election;
       const actors = el.candidates.filter((c) => ctx.isAlive(c) && !el.withdrawn.includes(c));
       if (!actors.length) return;
-      ctx.pub('sheriff.withdraw.window', '竞选发言结束，候选人同时确认继续竞选或退水；全部确认后公布退水并开始警长投票。', {});
+      ctx.pub('sheriff.withdraw.window', gameText(ctx.rules.locale, "竞选发言结束，候选人同时确认继续竞选或退水；全部确认后公布退水并开始警长投票。"), {});
       ctx.ask({
         step, actors, simultaneous: true,
         tools: () => [stayTool, silentWithdraw],
-        prompt: () => '警长投票尚未开始。请最终确认继续竞选或退水；此处不再发言。全部确认后才开放投票，超时默认继续竞选。',
-        title: `第${ctx.state.day}天 · 退水确认`, publicStage: '警长竞选：投票前退水确认', hear: 'actors',
+        prompt: () => gameText(ctx.rules.locale, "警长投票尚未开始。请最终确认继续竞选或退水；此处不再发言。全部确认后才开放投票，超时默认继续竞选。"),
+        title: gameText(ctx.rules.locale, "第{0}天 · 退水确认", ctx.state.day), publicStage: gameText(ctx.rules.locale, "警长竞选：投票前退水确认"), hear: 'actors',
       });
     },
-    ack: (_c, _s, _seat, call) => call.tool === 'sheriff_withdraw' ? '你已确认退水，全部确认后公布。' : '你已确认继续竞选。',
+    ack: (_c, _s, _seat, call) => call.tool === 'sheriff_withdraw' ? gameText(_c.rules.locale, "你已确认退水，全部确认后公布。") : gameText(_c.rules.locale, "你已确认继续竞选。"),
     decide(ctx, _step, subs) {
       for (const seat of Object.keys(subs).map(Number).sort((a, b) => a - b)) {
         if (subs[seat].tool === 'sheriff_withdraw') withdraw(ctx, seat);
       }
     },
-    fallback: () => ({ tool: 'sheriff_stay', args: {} }),
+    fallback: (ctx) => ({ tool: 'sheriff_stay', args: {} }),
   },
 
   'sheriff.vote': {
@@ -211,15 +212,15 @@ export const sheriffSteps: Record<string, StepHandler> = {
       const pool = (round === 1 ? el.candidates : (step.tied as Seat[])).filter(
         (c) => ctx.isAlive(c) && !el.withdrawn.includes(c),
       );
-      if (!pool.length) return noSheriff(ctx, '候选人全部退水，本局没有警长。');
-      if (pool.length === 1) return elect(ctx, pool[0], '其余候选人已退水：');
+      if (!pool.length) return noSheriff(ctx, gameText(ctx.rules.locale, "候选人全部退水，本局没有警长。"));
+      if (pool.length === 1) return elect(ctx, pool[0], gameText(ctx.rules.locale, "其余候选人已退水："));
       const withdrawnVote = ctx.opt<boolean>('sheriff.withdrawnCanVote');
       const voters =
         round === 1
           ? ctx.alive().filter((x) => !el.candidates.includes(x) || (withdrawnVote && el.withdrawn.includes(x)))
           : ctx.alive().filter((x) => !pool.includes(x));
       if (!voters.length) {
-        return noSheriff(ctx, round === 1 ? '没有可以投票的警下玩家，本局没有警长。' : '没有可以投票的玩家，本局没有警长。');
+        return noSheriff(ctx, round === 1 ? gameText(ctx.rules.locale, "没有可以投票的警下玩家，本局没有警长。") : gameText(ctx.rules.locale, "没有可以投票的玩家，本局没有警长。"));
       }
       const allowAbstain = ctx.opt<boolean>('vote.allowAbstain');
       ctx.ask({
@@ -229,25 +230,25 @@ export const sheriffSteps: Record<string, StepHandler> = {
         tools: () => [
           {
             name: 'sheriff_vote',
-            title: round === 1 ? '警长投票' : '警长 PK 投票',
+            title: round === 1 ? gameText(ctx.rules.locale, "警长投票") : gameText(ctx.rules.locale, "警长 PK 投票"),
             description:
               round === 1
-                ? '同时秘密投票选警长，每人 1 票，票齐后公开。'
-                : '在平票的候选人中再投一次。除仍在平票台上的玩家外，其余存活玩家都可以投票。每人 1 票，票齐后公开。',
-            params: [seatParam('target', '投给', pool, allowAbstain ? '弃票' : undefined)],
+                ? gameText(ctx.rules.locale, "同时秘密投票选警长，每人 1 票，票齐后公开。")
+                : gameText(ctx.rules.locale, "在平票的候选人中再投一次。除仍在平票台上的玩家外，其余存活玩家都可以投票。每人 1 票，票齐后公开。"),
+            params: [seatParam('target', gameText(ctx.rules.locale, "投给"), pool, allowAbstain ? gameText(ctx.rules.locale, "弃票") : undefined)],
           },
         ],
         prompt: () =>
           round === 1
-            ? `请在候选人 ${seatList(pool)} 中投票选出警长。`
-            : `请在平票的 ${seatList(pool)} 中再投一次。除平票台上的玩家外，其余存活玩家都可以投票。`,
-        title: `第${s.day}天 · ${round === 1 ? '警长投票' : '警长 PK 投票'}`,
-        publicStage: round === 1 ? '警长投票中' : '警长 PK 投票中',
+            ? gameText(ctx.rules.locale, "请在候选人 {0} 中投票选出警长。", seatList(pool, ctx.rules.locale))
+            : gameText(ctx.rules.locale, "请在平票的 {0} 中再投一次。除平票台上的玩家外，其余存活玩家都可以投票。", seatList(pool, ctx.rules.locale)),
+        title: gameText(ctx.rules.locale, "第{0}天 · {1}", s.day, round === 1 ? gameText(ctx.rules.locale, "警长投票") : gameText(ctx.rules.locale, "警长 PK 投票")),
+        publicStage: round === 1 ? gameText(ctx.rules.locale, "警长投票中") : gameText(ctx.rules.locale, "警长 PK 投票中"),
         hear: 'public',
       });
     },
     ack: (_c, _s, _seat, call) =>
-      call.args.target === null ? '你选择了弃票。' : `你投给了 ${seatLabel(call.args.target as Seat)}。`,
+      call.args.target === null ? gameText(_c.rules.locale, "你选择了弃票。") : gameText(_c.rules.locale, "你投给了 {0}。", seatLabel(call.args.target as Seat, _c.rules.locale)),
     decide(ctx, step, subs) {
       const round = step.round as number;
       const normal = ctx.opt<number>('vote.normalWeight');
@@ -266,8 +267,8 @@ export const sheriffSteps: Record<string, StepHandler> = {
           { type: 'sheriff.vote', round: 2, tied: verdict.seats, cancelOnExplode: true },
         );
       } else closeElection(ctx);
-      const label = round === 1 ? '警长投票' : '警长 PK 投票';
-      ctx.pub('vote.result', `${label}结果：${describeTally(t, null)}。${verdict.conclusion}`, {
+      const label = round === 1 ? gameText(ctx.rules.locale, "警长投票") : gameText(ctx.rules.locale, "警长 PK 投票");
+      ctx.pub('vote.result', gameText(ctx.rules.locale, "{0}结果：{1}。{2}", label, describeTally(t, null, ctx.rules.locale), verdict.conclusion), {
         ...tallyPayload('sheriff', round, t, null),
         outcome: verdict.outcome,
         conclusion: verdict.conclusion,
@@ -276,6 +277,6 @@ export const sheriffSteps: Record<string, StepHandler> = {
         ...(verdict.outcome === 'lost' && verdict.seats ? { seats: verdict.seats } : {}),
       });
     },
-    fallback: () => ({ tool: 'sheriff_vote', args: { target: null } }),
+    fallback: (ctx) => ({ tool: 'sheriff_vote', args: { target: null } }),
   },
 };

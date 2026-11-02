@@ -1,3 +1,4 @@
+import { gameText } from '@werewolf/protocol';
 import type { BooleanParam, ChoiceParam, ParamSpec, Seat, SeatParam, SeatsParam, TextParam, ToolCall, ToolSpec } from '@werewolf/protocol';
 import type { Ctx } from './context';
 import type { RuleError } from './types';
@@ -8,8 +9,7 @@ export const seatParam = (
   name: string,
   label: string,
   options: Seat[],
-  nullLabel?: string,
-): ParamSpec => ({
+  nullLabel?: string): ParamSpec => ({
   kind: 'seat',
   name,
   label,
@@ -25,11 +25,11 @@ export const textParam = (name: string, label: string, minLength: number, maxLen
   ...(maxLength === undefined ? {} : { maxLength }),
 });
 
-export const speakTool = (what: string): ToolSpec => ({
+export const speakTool = (what: string, locale: string | undefined = 'zh-CN'): ToolSpec => ({
   name: 'speak',
-  title: '发言',
-  description: `${what}。内容会公开给所有人。`,
-  params: [textParam('content', '发言内容', 1)],
+  title: gameText(locale, "发言"),
+  description: gameText(locale, "{0}。内容会公开给所有人。", what),
+  params: [textParam('content', gameText(locale, "发言内容"), 1, undefined)],
 });
 
 export const explodeTool: ToolSpec = {
@@ -129,42 +129,42 @@ export function validateArgs(ctx: Ctx, spec: ToolSpec, args: Record<string, unkn
       case 'seat': {
         if (v === null || v === undefined) {
           if (p.nullable) break;
-          return err('INVALID_ARGUMENT', `缺少参数「${p.label}」`);
+          return err('INVALID_ARGUMENT', gameText(ctx.rules.locale, "缺少参数「{0}」", p.label));
         }
-        if (typeof v !== 'number' || !Number.isInteger(v)) return err('INVALID_ARGUMENT', `「${p.label}」必须是座位号`);
-        if (v < 1 || v > ctx.playerCount) return err('TARGET_NOT_IN_GAME', `没有 ${v} 号座位`);
+        if (typeof v !== 'number' || !Number.isInteger(v)) return err('INVALID_ARGUMENT', gameText(ctx.rules.locale, "「{0}」必须是座位号", p.label));
+        if (v < 1 || v > ctx.playerCount) return err('TARGET_NOT_IN_GAME', gameText(ctx.rules.locale, "没有 {0} 号座位", v));
         if (!p.options.includes(v)) {
-          if (!ctx.isAlive(v)) return err('TARGET_DEAD', `${v}号已经出局`);
-          if (v === seat) return err('TARGET_SELF_FORBIDDEN', '这个行动不能选择自己');
-          return err('INVALID_ARGUMENT', `${v}号不是「${p.label}」的可选目标`);
+          if (!ctx.isAlive(v)) return err('TARGET_DEAD', gameText(ctx.rules.locale, "{0}号已经出局", v));
+          if (v === seat) return err('TARGET_SELF_FORBIDDEN', gameText(ctx.rules.locale, "这个行动不能选择自己"));
+          return err('INVALID_ARGUMENT', gameText(ctx.rules.locale, "{0}号不是「{1}」的可选目标", v, p.label));
         }
         break;
       }
       case 'seats': {
-        if (!Array.isArray(v)) return err('INVALID_ARGUMENT', `「${p.label}」必须是座位号列表`);
-        if (v.length < p.min || v.length > p.max) return err('INVALID_ARGUMENT', `「${p.label}」需要选择 ${p.min}–${p.max} 个座位`);
-        if (new Set(v).size !== v.length) return err('INVALID_ARGUMENT', `「${p.label}」不能重复`);
+        if (!Array.isArray(v)) return err('INVALID_ARGUMENT', gameText(ctx.rules.locale, "「{0}」必须是座位号列表", p.label));
+        if (v.length < p.min || v.length > p.max) return err('INVALID_ARGUMENT', gameText(ctx.rules.locale, "「{0}」需要选择 {1}–{2} 个座位", p.label, p.min, p.max));
+        if (new Set(v).size !== v.length) return err('INVALID_ARGUMENT', gameText(ctx.rules.locale, "「{0}」不能重复", p.label));
         for (const x of v) {
-          if (typeof x !== 'number' || !Number.isInteger(x)) return err('INVALID_ARGUMENT', `「${p.label}」必须是座位号`);
-          if (!p.options.includes(x)) return err('INVALID_ARGUMENT', `${x}号不是可选目标`);
+          if (typeof x !== 'number' || !Number.isInteger(x)) return err('INVALID_ARGUMENT', gameText(ctx.rules.locale, "「{0}」必须是座位号", p.label));
+          if (!p.options.includes(x)) return err('INVALID_ARGUMENT', gameText(ctx.rules.locale, "{0}号不是可选目标", x));
         }
         break;
       }
       case 'boolean':
-        if (typeof v !== 'boolean') return err('INVALID_ARGUMENT', `「${p.label}」必须是 true 或 false`);
+        if (typeof v !== 'boolean') return err('INVALID_ARGUMENT', gameText(ctx.rules.locale, "「{0}」必须是 true 或 false", p.label));
         break;
       case 'text': {
-        if (typeof v !== 'string') return err('INVALID_ARGUMENT', `缺少参数「${p.label}」`);
+        if (typeof v !== 'string') return err('INVALID_ARGUMENT', gameText(ctx.rules.locale, "缺少参数「{0}」", p.label));
         const len = [...v].length;
-        if (len < p.minLength) return err('INVALID_ARGUMENT', `「${p.label}」不能为空`);
+        if (len < p.minLength) return err('INVALID_ARGUMENT', gameText(ctx.rules.locale, "「{0}」不能为空", p.label));
         if (p.maxLength !== undefined && len > p.maxLength) {
-          return err('INVALID_ARGUMENT', `「${p.label}」不能超过 ${p.maxLength} 字（当前 ${len} 字）`);
+          return err('INVALID_ARGUMENT', gameText(ctx.rules.locale, "「{0}」不能超过 {1} 字（当前 {2} 字）", p.label, p.maxLength, len));
         }
         break;
       }
       case 'choice':
         if (!p.options.some((o) => o.value === v)) {
-          return err('INVALID_ARGUMENT', `「${p.label}」只能是：${p.options.map((o) => o.value).join(' / ')}`);
+          return err('INVALID_ARGUMENT', gameText(ctx.rules.locale, "「{0}」只能是：{1}", p.label, p.options.map((o) => o.value).join(' / ')));
         }
         break;
     }

@@ -326,3 +326,20 @@ details.panel > summary { cursor: pointer; color: var(--text); }.rulecard { font
   .home-nav { flex-wrap: wrap; padding-block: 12px; row-gap: 10px; }.lobby-time-switch { order: 5; flex-basis: 100%; justify-content: center; border: 0; background: none; }.lobby-time-switch button { padding-inline: 18px; }.home-page.day .lobby-time-switch { background: transparent; }
   .home-page.day .home-hero::before { background: linear-gradient(180deg, #f0f1e4ee, #f0f1e4a0 42%, #f0f1e418 65%, #f0f1e4); }
 }
+
+/* 原创出局原因徽记；详细原因只由服务端按视角下发。 */
+.death-mark { display: inline-flex; align-items: center; justify-content: center; gap: 3px; color: #ffe0d4; line-height: 1; }
+.dead-badge { padding: 5px 7px; border-radius: 10px; background: #352733ed; border-color: #ce9b91; box-shadow: 0 3px 10px #0008; }
+.god-table .death-mark { color: var(--text); }
+.timing-settings { margin: 10px 0 18px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.timing-settings summary { cursor: pointer; font-weight: 600; }
+.timing-settings summary small { font-weight: 400; color: var(--dim); margin-left: 8px; }
+.timing-table { width: 100%; border-collapse: collapse; margin: 10px 0; text-align: left; font-size: 12px; }
+.timing-table th { font-weight: 400; }
+.timing-table th, .timing-table td { padding: 6px 4px; }
+.timing-table input { width: 95px; max-width: 100%; }
+@media (max-width: 520px) { .timing-table input { width: 72px; } .timing-settings summary small { display: block; margin-left: 0; } }
+
+.death-symbol { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 27px; font-size: 10px; font-weight: 600; white-space: nowrap; }
+.death-mark { gap: 5px; }
+.dead-badge { padding: 5px 6px; }

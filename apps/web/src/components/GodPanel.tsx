@@ -1,8 +1,10 @@
+import type { SeatDeathView } from '@werewolf/protocol';
+import { DeathMark } from './DeathMark';
 import type { Catalog, GodProjection, RoomBrief } from '@werewolf/protocol';
 import { roleTone, seatName, seatStyle } from '../util';
 
 /** 上帝视角：全部身份、当前决策里谁还没提交。 */
-export function GodPanel({ projection: p, room, catalog }: { projection: GodProjection; room: RoomBrief; catalog: Catalog | null }) {
+export function GodPanel({ projection: p, room, catalog, deaths = [] }: { projection: GodProjection; room: RoomBrief; catalog: Catalog | null; deaths?: SeatDeathView[] }) {
   const pending = p.god.pending;
   const controllerOf = (seat: number) => room.seats.find((s) => s.seat === seat)?.controller;
   return (
@@ -54,7 +56,7 @@ export function GodPanel({ projection: p, room, catalog }: { projection: GodProj
                 </td>
                 <td className="muted">{r.factionName}</td>
                 <td className="muted">{controllerOf(r.seat) === 'human' ? '真人' : 'AI'}</td>
-                <td>{r.alive ? '存活' : '出局'}</td>
+                <td>{r.alive ? '存活' : <DeathMark causes={deaths.find((d) => d.seat === r.seat)?.causes} locale={p.locale} />}</td>
               </tr>
             );
           })}

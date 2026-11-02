@@ -1,3 +1,4 @@
+import { gameText } from '@werewolf/protocol';
 import type { Seat } from '@werewolf/protocol';
 import { seatLabel, seatList, weightLabel } from '../text';
 
@@ -41,13 +42,13 @@ export function tally(ballots: Ballot[]): Tally {
   return { ballots, rows, abstain: abstain.sort((a, b) => a - b), top: top.sort((a, b) => a - b), topWeight };
 }
 
-export function describeTally(t: Tally, sheriff: Seat | null): string {
-  const mark = (s: Seat) => (s === sheriff ? `${seatLabel(s)}(警长)` : seatLabel(s));
+export function describeTally(t: Tally, sheriff: Seat | null, locale: string | undefined = 'zh-CN'): string {
+  const mark = (s: Seat) => (s === sheriff ? gameText(locale, "{0}(警长)", seatLabel(s, locale)) : seatLabel(s, locale));
   const parts = t.rows.map(
-    (r) => `${seatLabel(r.target)} ${weightLabel(r.weight)} 票（${[...r.voters].sort((a, b) => a - b).map(mark).join('、')}）`,
+    (r) => gameText(locale, "{0} {1} 票（{2}）", seatLabel(r.target, locale), weightLabel(r.weight), [...r.voters].sort((a, b) => a - b).map(mark).join('、')),
   );
-  if (t.abstain.length) parts.push(`弃票：${seatList(t.abstain)}`);
-  return parts.length ? parts.join('；') : '无人投票';
+  if (t.abstain.length) parts.push(gameText(locale, "弃票：{0}", seatList(t.abstain, locale)));
+  return parts.length ? parts.join('；') : gameText(locale, "无人投票");
 }
 
 export function tallyPayload(kind: string, round: number, t: Tally, sheriff: Seat | null) {

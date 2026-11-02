@@ -1,3 +1,4 @@
+import { localizeTool } from '@werewolf/protocol';
 import type { Audience, GameEvent, RuleValue, Seat, ToolSpec } from '@werewolf/protocol';
 import { expandActionTools } from '@werewolf/protocol';
 import { getRole, modulesIn } from './registry';
@@ -162,7 +163,7 @@ export class Ctx {
     const prompts: Record<number, string> = {};
     for (const s of actors) {
       const catalog = seatTools(this.state, s);
-      tools[s] = expandActionTools(o.tools(s), this.state.rules).map((tool) => ({ ...tool, description: catalog.find((t) => t.name === tool.name)?.description ?? tool.description }));
+      tools[s] = expandActionTools(o.tools(s), this.state.rules).map((tool) => ({ ...tool, description: catalog.find((t) => t.name === tool.name)?.description ?? tool.description })).map((tool) => localizeTool(tool, this.rules.locale));
       prompts[s] = o.prompt(s);
     }
     this.state.pending = {

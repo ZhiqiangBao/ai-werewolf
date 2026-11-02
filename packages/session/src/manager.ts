@@ -1,3 +1,5 @@
+import { actionKind, defaultGameTiming, parseGameTiming, deathCauses } from '@werewolf/protocol';
+import { DEFAULT_GAME_LOCALE, gameText, isGameLocale } from '@werewolf/protocol';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { THINKING_MODES, thinkingOptions, defaultThinkingMode, apiProtocol, apiUrl, actionMenu, avatarDefaultName, isAvatarStyleId } from '@werewolf/protocol';
 import type {
@@ -96,6 +98,8 @@ interface Live {
   running: Promise<void> | null;
   again: boolean;
   stepBudget: number;
+  /** 暂停时冻结推进间隔；恢复时将截止时刻向后平移。 */
+  gatePausedAt: number | undefined;
   /** 终结时加一。还在飞的请求和推进循环看到代数变了就立刻退出，不能再提交。 */
   gen: number;
   inflight: Map<string, AbortController>;
@@ -117,6 +121,15 @@ export interface ManagerOptions {
   tickMs?: number;
   /** 页面里添加的模型。不传则只留在内存里。 */
   modelsPath?: string;
+}
+
+function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(new Error('Request cancelled'));
+    if (signal.aborted) return abort();
+    signal.addEventListener('abort', abort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+  });
 }
 
 const MAX_ATTEMPTS = 5;
@@ -261,13 +274,16 @@ export class RoomManager {
     }
   }
 
-  createRoom(input: Pick<RoomSetupInput, 'avatarStyle'> = {}): CreateRoomResult {
+  createRoom(input: Pick<RoomSetupInput, 'avatarStyle' | 'locale'> = {}): CreateRoomResult {
     const avatarStyle = input.avatarStyle === undefined ? 'storybook' : input.avatarStyle;
     if (!isAvatarStyleId(avatarStyle)) throw new ApiFailure(400, 'BAD_REQUEST', '没有这个人物风格');
+    const locale = input.locale ?? DEFAULT_GAME_LOCALE;
+    if (!isGameLocale(locale)) throw new ApiFailure(400, 'BAD_REQUEST', '不支持的对局语言');
     const preset = getPreset(DEFAULT_PRESET);
     const rec: RoomRecord = {
       id: randomBytes(5).toString('hex'),
       avatarStyle,
+      locale,
       createdAt: this.now(),
       hostToken: token(),
       spectatorToken: token(),
@@ -277,6 +293,7 @@ export class RoomManager {
       paused: false,
       presetId: preset.id,
       ruleValues: {},
+      timing: defaultGameTiming(),
       humanTimeoutSec: 90,
       aiPacingMs: 1200,
       seats: preset.roles.map((_, i) => defaultSeat(i + 1, avatarStyle)),
@@ -301,8 +318,10 @@ export class RoomManager {
     const live = this.rooms.get(created.roomId)!;
     Object.assign(live.rec, {
       avatarStyle: src.avatarStyle,
+      locale: src.rules?.locale ?? src.locale ?? DEFAULT_GAME_LOCALE,
       presetId: src.presetId,
       ruleValues: { ...src.ruleValues },
+      timing: src.timing ? structuredClone(src.timing) : undefined,
       humanTimeoutSec: src.humanTimeoutSec,
       aiPacingMs: src.aiPacingMs,
       seats: structuredClone(src.seats),
@@ -322,7 +341,12 @@ export class RoomManager {
     const rec = live.rec;
     if (rec.status !== 'setup') throw new ApiFailure(409, 'ALREADY_STARTED', '对局已经开始，不能再修改配置');
     if (input.avatarStyle !== undefined && !isAvatarStyleId(input.avatarStyle)) throw new ApiFailure(400, 'BAD_REQUEST', '没有这个人物风格');
-    const previousRules = buildRuleCard(buildRules(rec.presetId, rec.ruleValues));
+    let timing: RoomRecord['timing'];
+    try { timing = input.timing === undefined ? undefined : parseGameTiming(input.timing); }
+    catch (error) { throw new ApiFailure(400, 'BAD_REQUEST', (error as Error).message); }
+    if (input.locale !== undefined && !isGameLocale(input.locale)) throw new ApiFailure(400, 'BAD_REQUEST', '不支持的对局语言');
+    const previousRules = buildRuleCard(buildRules(rec.presetId, rec.ruleValues, { locale: rec.locale }));
+    if (input.locale !== undefined) rec.locale = input.locale;
     if (input.presetId !== undefined && input.presetId !== rec.presetId) {
       let roles: string[];
       try {
@@ -360,10 +384,12 @@ export class RoomManager {
         rec.ruleValues[key] = o.type === 'choice' ? (o.choices!.find((c) => String(c.value) === String(value))!.value as RuleValue) : (value as RuleValue);
       }
     }
+    if (timing) rec.timing = timing;
+    else if (input.humanTimeoutSec !== undefined || input.aiPacingMs !== undefined) delete rec.timing; // 旧客户端保留旧计时策略。
     if (input.humanTimeoutSec !== undefined) rec.humanTimeoutSec = Math.round(clamp(input.humanTimeoutSec, 0, 3600, 90));
     if (input.aiPacingMs !== undefined) rec.aiPacingMs = Math.round(clamp(input.aiPacingMs, 0, 10000, 1200));
     for (const s of input.seats ?? []) this.applySeat(rec, s);
-    if (previousRules !== buildRuleCard(buildRules(rec.presetId, rec.ruleValues))) {
+    if (previousRules !== buildRuleCard(buildRules(rec.presetId, rec.ruleValues, { locale: rec.locale }))) {
       for (const p of Object.values(rec.participants ?? {})) p.ready = false;
     }
     for (const s of input.seats ?? []) {
@@ -455,7 +481,7 @@ export class RoomManager {
   }
 
   private setupErrors(rec: RoomRecord): string[] {
-    const errors = validateRules(buildRules(rec.presetId, rec.ruleValues));
+    const errors = validateRules(buildRules(rec.presetId, rec.ruleValues, { locale: rec.locale }));
     for (const s of rec.seats) {
       if (s.controller === 'human' && rec.participants && !rec.participants[s.seat]?.ready) errors.push(`${s.seat}号：等待真人进入座位并确认准备`);
       if (s.controller !== 'ai' || s.adapter !== 'openai_compatible') continue;
@@ -469,14 +495,16 @@ export class RoomManager {
   }
 
   private setupView(rec: RoomRecord): RoomSetupView {
-    const rules = rec.rules ?? buildRules(rec.presetId, rec.ruleValues);
+    const rules = rec.rules ?? buildRules(rec.presetId, rec.ruleValues, { locale: rec.locale });
     return {
       roomId: rec.id,
+      locale: rec.rules?.locale ?? rec.locale ?? DEFAULT_GAME_LOCALE,
       avatarStyle: rec.avatarStyle,
       status: rec.status,
       paused: rec.paused,
       presetId: rec.presetId,
       ruleValues: rules.values,
+      timing: rec.timing ?? { speech: { limitSec: 180, intervalMs: rec.aiPacingMs }, vote: { limitSec: 90, intervalMs: rec.aiPacingMs }, skill: { limitSec: rec.humanTimeoutSec || 90, intervalMs: rec.aiPacingMs } },
       humanTimeoutSec: rec.humanTimeoutSec,
       aiPacingMs: rec.aiPacingMs,
       seats: rec.seats.map((s) => this.seatView(s)),
@@ -508,7 +536,7 @@ export class RoomManager {
     if (rec.status !== 'setup') throw new ApiFailure(409, 'ALREADY_STARTED', '对局已经开始');
     const errors = this.setupErrors(rec);
     if (errors.length) throw new ApiFailure(422, 'INVALID_SETUP', errors.join('；'));
-    const rules = buildRules(rec.presetId, rec.ruleValues);
+    const rules = buildRules(rec.presetId, rec.ruleValues, { locale: rec.locale });
     const seed = randomBytes(8).toString('hex');
     const r = createGame({ id: rec.id, rules, seed, names: rec.seats.map((s) => s.name) });
     Object.assign(rec, {
@@ -533,14 +561,38 @@ export class RoomManager {
     const rec = live.rec;
     if (rec.status !== 'running') throw new ApiFailure(409, 'NOT_RUNNING', '对局不在进行中');
     if (action === 'pause') {
+      if (!rec.paused && rec.timing && rec.actionAvailableAt) {
+        live.gatePausedAt = this.now();
+        rec.actionGateRemainingMs = Math.max(0, rec.actionAvailableAt - live.gatePausedAt);
+      }
+      if (!rec.paused) {
+        if (rec.timing) rec.deadlineRemainingMs = Object.fromEntries(Object.entries(rec.deadlines).map(([key, deadline]) => [key, Math.max(0, deadline - this.now())]));
+        live.gen += 1;
+        for (const ctrl of live.inflight.values()) ctrl.abort();
+        live.inflight.clear();
+      }
       rec.paused = true;
       live.stepBudget = 0;
     } else if (action === 'resume') {
+      if (rec.paused && rec.timing && rec.actionAvailableAt && live.gatePausedAt !== undefined) {
+        const remaining = rec.actionGateRemainingMs ?? Math.max(0, rec.actionAvailableAt - live.gatePausedAt);
+        rec.actionAvailableAt = remaining ? this.now() + remaining : undefined;
+      }
+      delete rec.actionGateRemainingMs;
+      live.gatePausedAt = undefined;
       rec.paused = false;
       live.stepBudget = 0;
-      this.armDeadlines(live, true);
+      if (rec.timing && rec.deadlineRemainingMs) {
+        rec.deadlines = Object.fromEntries(Object.entries(rec.deadlineRemainingMs).map(([key, remaining]) => [key, this.now() + remaining]));
+        delete rec.deadlineRemainingMs;
+        this.armDeadlines(live, false);
+      } else this.armDeadlines(live, true);
     } else if (action === 'step') {
       if (!rec.paused) throw new ApiFailure(409, 'NOT_PAUSED', '单步只在暂停时可用');
+      if (rec.timing && rec.actionAvailableAt && (rec.actionGateRemainingMs ?? Math.max(0, rec.actionAvailableAt - (live.gatePausedAt ?? this.now()))) > 0) {
+        throw new ApiFailure(409, 'ACTION_NOT_OPEN', '推进间隔尚未结束，请恢复对局后继续');
+      }
+      if (rec.timing && rec.deadlineRemainingMs) rec.deadlines = Object.fromEntries(Object.entries(rec.deadlineRemainingMs).map(([key, remaining]) => [key, this.now() + remaining]));
       live.stepBudget += 1;
     } else if (action === 'end') {
       this.stopMatch(live);
@@ -579,7 +631,14 @@ export class RoomManager {
   view(roomId: string, tok: string): ViewResponse {
     const { live, viewer } = this.resolve(roomId, tok);
     const rec = live.rec;
-    return { room: this.brief(rec, viewer), projection: rec.state ? this.project(rec, viewer) : null };
+    return { room: this.brief(rec, viewer), projection: rec.state ? this.project(rec, viewer) : null,
+      presentation: { deaths: (rec.state?.deaths ?? []).map((d) => ({ seat: d.seat, day: d.day, causes: deathCauses(d.via, d.causes, viewer.role === 'host') })),
+        ...(rec.actionAvailableAt ? { actionAvailableAt: rec.actionAvailableAt } : {}) } };
+  }
+
+  speechLocale(roomId: string, tok: string): string {
+    const { live } = this.resolve(roomId, tok);
+    return live.rec.state?.rules.locale ?? live.rec.locale ?? DEFAULT_GAME_LOCALE;
   }
 
   speechText(roomId: string, tok: string, seq: unknown): string {
@@ -590,7 +649,7 @@ export class RoomManager {
     if (!event || event.type !== 'speech' || typeof event.payload.content !== 'string') {
       throw new ApiFailure(404, 'NOT_FOUND', '这条记录不是当前视角可朗读的已提交发言');
     }
-    return `${event.payload.seat}号发言。${event.payload.content}`;
+    return gameText(live.rec.state.rules.locale, '{0}号发言。{1}', event.payload.seat, event.payload.content);
   }
 
   act(roomId: string, tok: string, body: { decisionId?: unknown; tool?: unknown; args?: unknown }) {
@@ -636,6 +695,7 @@ export class RoomManager {
       if (viewer.role !== 'host') throw new ApiFailure(403, 'FORBIDDEN', '只有房主可以导出上帝记录');
       return {
         roomId: rec.id,
+        locale: rec.rules?.locale ?? rec.locale ?? DEFAULT_GAME_LOCALE,
         rules: rec.rules,
         seed: rec.seed,
         seats: rec.seats.map((s) => ({ seat: s.seat, name: s.name, controller: s.controller, adapter: s.adapter, model: s.model })),
@@ -659,6 +719,7 @@ export class RoomManager {
       running: null,
       again: false,
       stepBudget: 0,
+      gatePausedAt: rec.paused && rec.timing && rec.actionAvailableAt ? this.now() : undefined,
       gen: 0,
       inflight: new Map(),
       subscribers: new Set(),
@@ -683,6 +744,10 @@ export class RoomManager {
     if (res.events.length) rec.events.push(...res.events);
     rec.paused = false;
     rec.deadlines = {};
+    delete rec.actionAvailableAt;
+    delete rec.actionGateRemainingMs;
+    delete rec.deadlineRemainingMs;
+    live.gatePausedAt = undefined;
     rec.status = 'ended';
   }
 
@@ -707,6 +772,7 @@ export class RoomManager {
   private brief(rec: RoomRecord, viewer: Viewer): RoomBrief {
     return {
       roomId: rec.id,
+      locale: rec.rules?.locale ?? rec.locale ?? DEFAULT_GAME_LOCALE,
       avatarStyle: rec.avatarStyle,
       status: rec.status,
       paused: rec.paused,
@@ -715,7 +781,7 @@ export class RoomManager {
       presetName: rec.rules?.presetName ?? getPreset(rec.presetId).name,
       seats: rec.seats.map((s) => ({ seat: s.seat, name: s.name, controller: s.controller })),
       participants: this.participants(rec),
-      ...(rec.status === 'setup' ? { ruleCard: buildRuleCard(buildRules(rec.presetId, rec.ruleValues)) } : {}),
+      ...(rec.status === 'setup' ? { ruleCard: buildRuleCard(buildRules(rec.presetId, rec.ruleValues, { locale: rec.locale })) } : {}),
     };
   }
 
@@ -752,7 +818,7 @@ export class RoomManager {
   }
 
   private signature(rec: RoomRecord, viewer: Viewer): string {
-    const room = [rec.status, rec.paused, rec.avatarStyle, rec.seats.map((s) => [s.seat, s.name, s.controller]), this.participants(rec)];
+    const room = [rec.status, rec.paused, rec.avatarStyle, rec.actionAvailableAt, rec.seats.map((s) => [s.seat, s.name, s.controller]), this.participants(rec)];
     if (!rec.state) return JSON.stringify([room, rec.presetId, rec.ruleValues]);
     const p = this.project(rec, viewer);
     return JSON.stringify([
@@ -773,11 +839,21 @@ export class RoomManager {
     if (rec.status !== 'running' || rec.state?.result) {
       return { state: rec.state!, events: [], error: { code: 'GAME_ENDED', reason: '对局已经结束' } };
     }
+    if (rec.timing && rec.actionAvailableAt && this.now() < rec.actionAvailableAt) throw new ApiFailure(409, 'ACTION_NOT_OPEN', '推进间隔尚未结束，请稍后行动');
+    const previous = rec.state?.pending;
     const res = submit(rec.state!, input);
     rec.state = res.state;
     rec.events.push(...res.events);
     rec.actions.push(input);
     if (rec.state.result) rec.status = 'ended';
+    if (!res.error && rec.timing && previous && previous.id !== rec.state.pending?.id && rec.status === 'running') {
+      const interval = rec.timing[actionKind(previous.step.type)].intervalMs;
+      rec.actionAvailableAt = interval > 0 ? this.now() + interval : undefined;
+      if (rec.paused && rec.actionAvailableAt) {
+        live.gatePausedAt = this.now();
+        rec.actionGateRemainingMs = interval;
+      }
+    }
     this.changed(live);
     return res;
   }
@@ -789,7 +865,7 @@ export class RoomManager {
       // 旁听属于这条消息，不属于当时碰巧正在等待的行动；换下一位不能取消别人的收听。
       if (!key.includes(':hear:') && (!current || !key.startsWith(`${current}:`))) {
         ctrl.abort();
-        live.inflight.delete(key);
+        if (live.inflight.get(key) === ctrl) live.inflight.delete(key);
       }
     }
     this.scheduleSave(live);
@@ -884,19 +960,21 @@ export class RoomManager {
   private armDeadlines(live: Live, reset: boolean): void {
     const rec = live.rec;
     const d = rec.state?.pending;
+    if (rec.paused) return;
     const next: Record<string, number> = {};
+    if (rec.timing && rec.actionAvailableAt && this.now() < rec.actionAvailableAt) { rec.deadlines = {}; return; }
     if (d && rec.status === 'running') {
       for (const seat of waitingSeats(rec.state!)) {
         const key = `${d.id}:${seat}`;
         const human = this.isHuman(rec, seat);
         if (human) {
-          if (rec.humanTimeoutSec <= 0) continue;
-          const limit = actionLimitSec(d.step.type, rec.humanTimeoutSec);
+          if (!rec.timing && rec.humanTimeoutSec <= 0) continue;
+          const limit = rec.timing?.[actionKind(d.step.type)].limitSec ?? actionLimitSec(d.step.type, rec.humanTimeoutSec);
           next[key] = !reset && rec.deadlines[key] ? rec.deadlines[key] : this.now() + limit * 1000;
           continue;
         }
         if (!rec.deadlines[key] || !readyToAct(this.threadFor(live, seat), this.actionCue(rec))) continue;
-        const limit = aiTimeoutSec(d.step.type, rec.seats[seat - 1].timeoutSec);
+        const limit = rec.timing?.[actionKind(d.step.type)].limitSec ?? aiTimeoutSec(d.step.type, rec.seats[seat - 1].timeoutSec);
         next[key] = reset ? this.now() + limit * 1000 : rec.deadlines[key];
       }
     }
@@ -912,7 +990,7 @@ export class RoomManager {
     if (!readyToAct(this.threadFor(live, seat), this.actionCue(rec))) return;
     const key = `${d.id}:${seat}`;
     if (rec.deadlines[key]) return;
-    const limit = aiTimeoutSec(d.step.type, rec.seats[seat - 1].timeoutSec);
+    const limit = rec.timing?.[actionKind(d.step.type)].limitSec ?? aiTimeoutSec(d.step.type, rec.seats[seat - 1].timeoutSec);
     rec.deadlines[key] = this.now() + limit * 1000;
   }
 
@@ -922,6 +1000,12 @@ export class RoomManager {
       const rec = live.rec;
       const d = rec.state?.pending;
       if (rec.status !== 'running' || rec.paused || !d) continue;
+      if (rec.actionAvailableAt) {
+        if (this.now() < rec.actionAvailableAt) continue;
+        delete rec.actionAvailableAt;
+        this.changed(live);
+        void this.pump(live);
+      }
       const expired = waitingSeats(rec.state!).find((seat) => {
         if (!this.isHuman(rec, seat) && !readyToAct(this.threadFor(live, seat), this.actionCue(rec))) return false;
         const dl = rec.deadlines[`${d.id}:${seat}`];
@@ -974,6 +1058,7 @@ export class RoomManager {
         this.changed(live);
       } finally {
         live.running = null;
+        if (live.again && live.rec.status === 'running') void this.pump(live);
       }
     })();
     return live.running;
@@ -993,6 +1078,16 @@ export class RoomManager {
       if (rec.status !== 'running' && rec.status !== 'ended') return;
       const stepping = rec.paused && live.stepBudget > 0;
       if (rec.paused && !stepping) return;
+      if (rec.timing && rec.actionAvailableAt) {
+        const availableAt = rec.actionAvailableAt;
+        const decision = rec.state?.pending?.id;
+        if (stepping && live.gatePausedAt !== undefined && (rec.actionGateRemainingMs ?? availableAt - live.gatePausedAt) > 0) return;
+        if (!stepping && availableAt > this.now()) await this.sleep(availableAt - this.now());
+        if (live.gen !== gen || rec.paused && !stepping) return;
+        if (rec.state?.pending?.id !== decision) continue;
+        if (rec.actionAvailableAt !== availableAt || !stepping && availableAt > this.now()) continue;
+        if (rec.actionAvailableAt === availableAt) { delete rec.actionAvailableAt; this.changed(live); }
+      }
       const wave = this.prepareWave(live);
       if (!wave) {
         if (rec.status !== 'running' || !rec.state?.pending) return;
@@ -1002,10 +1097,11 @@ export class RoomManager {
       if (!wave.length) continue;
       if (stepping) live.stepBudget -= 1;
       const decision = rec.state?.pending?.id ?? 'end';
-      if (!stepping && rec.aiPacingMs > 0) await this.sleep(rec.aiPacingMs);
-      if (live.gen !== gen || (rec.status !== 'running' && rec.status !== 'ended')) return;
+      if (!rec.timing && !stepping && rec.aiPacingMs > 0) await this.sleep(rec.aiPacingMs);
+      if (live.gen !== gen || (rec.paused && !stepping) || (rec.status !== 'running' && rec.status !== 'ended')) return;
       const actions = wave.filter((w) => w.action).map((w) => w.seat);
       await Promise.all(wave.map((w) => (w.action ? this.runAi(live, w.seat, decision) : this.receive(live, w.seat, decision))));
+      if (stepping && rec.paused && rec.timing && live.gen === gen) rec.deadlineRemainingMs = Object.fromEntries(Object.entries(rec.deadlines).map(([key, deadline]) => [key, Math.max(0, deadline - this.now())]));
       this.scheduleSave(live);
       if (rec.status !== 'running') continue;
       const stuck = actions.length > 0 && rec.state?.pending?.id === decision && actions.every((s) => waitingSeats(rec.state!).includes(s));
@@ -1022,6 +1118,7 @@ export class RoomManager {
       thread = { seat, seen: 0, messages: [] };
       rec.threads.push(thread);
     }
+    thread.locale = rec.state?.rules.locale ?? rec.locale ?? DEFAULT_GAME_LOCALE;
     return migrateThread(thread);
   }
 
@@ -1030,11 +1127,12 @@ export class RoomManager {
     const rec = live.rec;
     const projection = projectSeat(rec.state!, rec.events, seat);
     const cfg = rec.seats[seat - 1];
-    const system = buildMessages(projection, styleText(cfg.style, cfg.persona), {
-      speechSec: SPEECH_LIMIT_SEC,
-      skillSec: Math.max(MIN_EVENT_SEC, cfg.timeoutSec),
+    const system = buildMessages(projection, styleText(cfg.style, cfg.persona, rec.state!.rules.locale), {
+      speechSec: rec.timing?.speech.limitSec ?? SPEECH_LIMIT_SEC,
+      skillSec: rec.timing?.skill.limitSec ?? Math.max(MIN_EVENT_SEC, cfg.timeoutSec),
+      voteSec: rec.timing?.vote.limitSec ?? VOTE_LIMIT_SEC,
     })[0];
-    syncThread(thread, rec.events, system, { ...this.turnHint(rec), cue: rec.status === 'running' ? this.actionCue(rec) : null }, maxSeq);
+    syncThread(thread, rec.events, system, { ...this.turnHint(rec), locale: rec.state!.rules.locale, cue: rec.status === 'running' ? this.actionCue(rec) : null }, maxSeq);
     return thread;
   }
 
@@ -1109,6 +1207,7 @@ export class RoomManager {
     const actors = waitingSeats(rec.state!).filter((seat) => d.tools[seat]?.length);
     const tool = actors.map((seat) => d.tools[seat]?.[0]?.name).find(Boolean) ?? '';
     return {
+      locale: rec.state!.rules.locale,
       id: d.id,
       // 老存档没有边界时，先收齐已有事件，再补本轮问话。
       afterSeq: d.openedAtSeq ?? rec.events.at(-1)?.seq ?? 0,
@@ -1141,20 +1240,21 @@ export class RoomManager {
 
   /** 每次回复立即入座位上下文，包括失败轮次；工具调用始终有对应的工具结果。 */
   private rememberReply(thread: SeatThread, result: DecideResult, error?: string, legalTools?: ToolSpec[]): void {
+    const locale = thread.locale;
     if (error && result.fatal && !result.toolCallIds.length) {
       if (result.assistant?.content) thread.messages.push(result.assistant);
-      thread.messages.push({ role: 'user', name: 'judge', content: `本次模型请求未完成：${error}` });
+      thread.messages.push({ role: 'user', name: 'judge', content: gameText(locale, '本次模型请求未完成：{0}', error) });
       return;
     }
     if (error) {
-      thread.messages.push(...feedbackMessages(result, `${error}${legalTools?.length ? `\n${actionMenu(legalTools)}` : ''}`));
+      thread.messages.push(...feedbackMessages(result, `${error}${legalTools?.length ? `\n${actionMenu(legalTools, locale)}` : ''}`, locale));
       return;
     }
     const call = result.call;
-    const reply = result.assistant ?? { role: 'assistant' as const, content: call ? ownLine(call.tool, call.args) : result.reply ?? '' };
+    const reply = result.assistant ?? { role: 'assistant' as const, content: call ? ownLine(call.tool, call.args, locale) : result.reply ?? '' };
     if (reply.content || (reply.role === 'assistant' && (reply.calls?.length || reply.native?.items.length))) thread.messages.push(reply);
     if (reply.role === 'assistant' && reply.calls?.length) {
-      for (const c of reply.calls) thread.messages.push({ role: 'tool', callId: c.id, content: call ? ownLine(call.tool, call.args) : '已收到。' });
+      for (const c of reply.calls) thread.messages.push({ role: 'tool', callId: c.id, content: call ? ownLine(call.tool, call.args, locale) : gameText(locale, '已收到。') });
     }
   }
 
@@ -1188,7 +1288,7 @@ export class RoomManager {
       if (live.gen !== gen || ctrl.signal.aborted) return;
       let result: DecideResult;
       try {
-        result = await adapter.decide({
+        result = await abortable(adapter.decide({
           seat,
           projection,
           messages,
@@ -1204,7 +1304,7 @@ export class RoomManager {
             thinkingChars += delta.thinking?.length ?? 0;
             replyChars += delta.reply?.length ?? 0;
           },
-        });
+        }), ctrl.signal);
       } catch (e) {
         if (live.gen !== gen || ctrl.signal.aborted) return;
         result = { ok: false, fatal: true, error: redact((e as Error).message, config.apiKey), failureKind: 'network', toolCallIds: [], latencyMs: 0 };
@@ -1216,7 +1316,9 @@ export class RoomManager {
         const allowed = projection.interrupts.some((t) => t.name === call.tool) &&
           rec.status === 'running' && projectSeat(rec.state!, rec.events, seat).interrupts.some((t) => t.name === call.tool);
         // 旁听生成的普通行动不能借用随后到来的行动许可；错误只作为本次工具反馈返回。
-        error = allowed ? this.apply(live, { seat, call }).error?.reason : NOT_TOOL_TURN;
+        error = !allowed ? gameText(rec.state!.rules.locale, NOT_TOOL_TURN)
+          : rec.timing && rec.actionAvailableAt && this.now() < rec.actionAvailableAt ? gameText(rec.state!.rules.locale, '推进间隔尚未结束，请稍后行动')
+            : this.apply(live, { seat, call }).error?.reason;
       }
       this.rememberReply(thread, result, error);
       this.writeAudit(live, {
@@ -1228,7 +1330,7 @@ export class RoomManager {
         thinkingChars: result.thinking?.length ?? thinkingChars, replyChars: result.reply?.length ?? replyChars,
       });
     } finally {
-      live.inflight.delete(key);
+      if (live.inflight.get(key) === ctrl) live.inflight.delete(key);
     }
   }
 
@@ -1256,7 +1358,7 @@ export class RoomManager {
       live.gen === gen && rec.status === 'running' && rec.state?.pending?.id === decision && waitingSeats(rec.state).includes(seat);
     let last: { thinking?: string; reply?: string } | undefined;
     try {
-      const limit = aiTimeoutSec(rec.state?.pending?.step.type ?? '', cfg.timeoutSec);
+      const limit = rec.timing?.[actionKind(rec.state?.pending?.step.type ?? '')].limitSec ?? aiTimeoutSec(rec.state?.pending?.step.type ?? '', cfg.timeoutSec);
       let config: AdapterConfig;
       try {
         config = { ...this.adapterConfig(cfg), timeoutSec: limit };
@@ -1281,7 +1383,7 @@ export class RoomManager {
         let result: DecideResult;
         let request: ModelRequestInfo | undefined;
         try {
-          result = await adapter.decide({
+          result = await abortable(adapter.decide({
             seat,
             projection,
             messages,
@@ -1297,7 +1399,7 @@ export class RoomManager {
               replyChars += delta.reply?.length ?? 0;
               if (stillWaiting() && !ctrl.signal.aborted) this.pushThought(live, seat, decision, delta);
             },
-          });
+          }), ctrl.signal);
           last = result;
         } catch (e) {
           if (live.gen !== gen || ctrl.signal.aborted || rec.status !== 'running') return;
@@ -1340,7 +1442,7 @@ export class RoomManager {
       this.fallbackIfWaiting(live, seat, decision, 'invalid_tool');
     } finally {
       this.finishThought(live, seat, decision, last);
-      live.inflight.delete(key);
+      if (live.inflight.get(key) === ctrl) live.inflight.delete(key);
     }
   }
 }

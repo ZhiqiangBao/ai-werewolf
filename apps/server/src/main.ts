@@ -155,7 +155,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL): Promise
         throw new ApiFailure(400, 'BAD_REQUEST', '请选择已配置的朗读来源');
       }
       try {
-        const audio = await speech.render(text, body.providerId as string | undefined, providers);
+        const audio = await speech.render(text, body.providerId as string | undefined, providers, manager.speechLocale(roomId, token));
         res.writeHead(200, { 'Content-Type': audio.mimeType, 'Content-Length': audio.bytes.length, 'Cache-Control': 'private, no-store' });
         res.end(audio.bytes);
       } catch {

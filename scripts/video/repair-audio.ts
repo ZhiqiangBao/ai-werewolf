@@ -70,7 +70,7 @@ export async function repairAudio(directory: string, options: RepairOptions): Pr
     const clip = clips.find((c) => c.id === id)!, inspected = audit.clips.find((c) => c.id === id)!;
     const voicesFile = join(directory, 'voices.json');
     const voicesText = await readFile(voicesFile, 'utf8'), voices = JSON.parse(voicesText) as VoiceCatalog;
-    const profile = clipVoiceProfile(voices, clip), entry: RepairEntry = { id, status: 'pending', oldDigest: inspected.digest, attempts: [] };
+    const profile = clipVoiceProfile(voices, clip, source.locale ?? 'zh-CN'), entry: RepairEntry = { id, status: 'pending', oldDigest: inspected.digest, attempts: [] };
     report.entries.push(entry); await persist();
     const folder = join(runDirectory, id); await mkdir(folder, { recursive: true });
     for (let attempt = 1; attempt <= attempts; attempt++) {

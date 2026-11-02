@@ -41,10 +41,10 @@ export const anthropicAdapter: Adapter = {
       const budget = (thinking.thinking as { budget_tokens?: number } | undefined)?.budget_tokens ?? 0;
       const max = config.maxOutputTokens ?? 32768;
       if (budget >= max) return failure(started, '单次输出上限必须大于思考预算，才能留出工具参数空间', { fatal: true });
-      const input = anthropicInput(json ? [...req.messages, { role: 'user', content: jsonInstruction(req.tools) }] : req.messages, config);
+      const input = anthropicInput(json ? [...req.messages, { role: 'user', content: jsonInstruction(req.tools, req.projection?.locale) }] : req.messages, config);
       const body: Record<string, unknown> = { model: config.model, max_tokens: max, ...input, ...thinking, ...(req.stream ? { stream: true } : {}) };
       if (!json) {
-        body.tools = req.tools.map((t) => ({ name: t.name, description: `${t.title}：${t.description}`, input_schema: toolToJsonSchema(t) }));
+        body.tools = req.tools.map((t) => ({ name: t.name, description: `${t.title}：${t.description}`, input_schema: toolToJsonSchema(t, req.projection?.locale) }));
         // auto 同时兼容手动思考、强制思考和旁听，并避免切换 tool_choice 破坏消息缓存。
         // 正式行动仍由本地解析器要求恰好一个工具，失败按现有纠错流程处理。
         body.tool_choice = { type: 'auto', disable_parallel_tool_use: true };
@@ -53,7 +53,7 @@ export const anthropicAdapter: Adapter = {
       const argumentsByIndex = new Map<number, string>();
       let message: any;
       let stopped = false;
-      req.onRequest?.({ apiProtocol: 'anthropic_messages', tools: structuredClone(body.tools as unknown[] ?? []), toolChoice: body.tool_choice, ...(json ? { toolInstruction: jsonInstruction(req.tools) } : {}) });
+      req.onRequest?.({ apiProtocol: 'anthropic_messages', tools: structuredClone(body.tools as unknown[] ?? []), toolChoice: body.tool_choice, ...(json ? { toolInstruction: jsonInstruction(req.tools, req.projection?.locale) } : {}) });
       const result = await post(apiUrl(config.baseUrl, 'anthropic_messages'), body, {
         ...(config.apiKey ? { 'x-api-key': config.apiKey } : {}), 'anthropic-version': '2023-06-01',
       }, signal, (e) => {
@@ -85,7 +85,7 @@ export const anthropicAdapter: Adapter = {
         calls: data.content.filter((b: any) => b.type === 'tool_use').map((b: any) => ({ id: b.id, name: b.name, arguments: b.invalidArguments ?? JSON.stringify(b.input) })),
         ...(!data.content.some((b: any) => b.invalidArguments !== undefined) ? { native: { protocol: 'anthropic_messages' as const, binding: protocolBinding(config), items: data.content } } : {}),
       };
-      return { ...(json ? parseJson(started, assistant, req.tools, data) : parseAssistant(started, assistant, req.tools, data, req.toolChoice === 'auto')),
+      return { ...(json ? parseJson(started, assistant, req.tools, data, req.projection?.locale) : parseAssistant(started, assistant, req.tools, data, req.toolChoice === 'auto', req.projection?.locale)),
         reply: reply || undefined, thinking: mind || undefined, usage: tokenUsage(data.usage, 'anthropic_messages'),
       };
     });
