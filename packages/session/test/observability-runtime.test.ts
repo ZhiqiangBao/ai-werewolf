@@ -173,18 +173,46 @@ describe('room runtime observation', () => {
 
   it('work cancelled during pacing creates no fictitious model call', async () => {
     const rec = fixedRecord(); delete rec.timing; rec.aiPacingMs = 1000;
-    const events: ObservationEvent[] = []; let release!: () => void; let requests = 0;
+    const events: ObservationEvent[] = []; let release!: () => void; let requests = 0, monotonic = 100;
     const store = new MemoryStore(); store.save(rec);
-    const manager = new RoomManager({ store, secrets, tickMs: 0, now: () => 100_000, sleep: () => new Promise<void>((resolve) => { release = resolve; }),
+    const manager = new RoomManager({ store, secrets, tickMs: 0, now: () => 100_000, sleep: (ms) => new Promise<void>((resolve) => { release = () => { monotonic += ms; resolve(); }; }),
       adapters: { mock: { decide: async () => { requests++; throw new Error('unexpected call'); } } },
-      observability: { clock: clock(), mappingPath: mappingPath(), sink: { emit: (event) => events.push(event) } } });
+      observability: { clock: { monotonicMs: () => monotonic, wallTimeMs: () => 5000 }, mappingPath: mappingPath(), sink: { emit: (event) => events.push(event) } } });
     managers.push(manager); manager.control(rec.id, rec.hostToken, 'resume');
     await settle(() => typeof release === 'function');
     manager.control(rec.id, rec.hostToken, 'pause'); release(); await manager.whenIdle(rec.id);
     expect(requests).toBe(0); expect(callEvents(events)).toHaveLength(0);
     expect(events.some((event) => event.kind === 'work' && event.phase === 'start')).toBe(true);
     expect(events.some((event) => event.kind === 'work' && event.phase === 'end')).toBe(true);
+    expect(events.filter((event) => event.operation === 'pacing_wait' && event.phase === 'end')).toMatchObject([
+      { metrics: { plannedWaitMs: { valueMs: 1000, source: 'client' }, pacingWaitMs: { valueMs: 1000, source: 'client' } } },
+    ]);
   });
+
+  it('measures nonzero gate waits exactly without changing the fixed game or request sequence', async () => {
+    const rec = fixedRecord('fixed-nonzero-gate');
+    for (const value of Object.values(rec.timing!)) value.intervalMs = 250;
+    const run = async (enabled: boolean) => {
+      let wall = 100_000, monotonic = 0;
+      const events: ObservationEvent[] = [], requests: unknown[] = [];
+      const store = new MemoryStore(); store.save(rec);
+      const manager = new RoomManager({ store, secrets, tickMs: 0, now: () => wall,
+        sleep: async (ms) => { wall += ms; monotonic += ms; },
+        adapters: { mock: { async decide(req) { requests.push(requestSnapshot(req)); return mockAdapter.decide(req); } } },
+        ...(enabled ? { observability: { clock: { monotonicMs: () => monotonic, wallTimeMs: () => wall },
+          mappingPath: mappingPath(), sink: { emit: (event: ObservationEvent) => events.push(event) } } } : {}) });
+      managers.push(manager); manager.control(rec.id, rec.hostToken, 'resume');
+      await manager.whenIdle(rec.id);
+      const view = manager.view(rec.id, rec.hostToken), audit = manager.audit(rec.id, rec.hostToken);
+      manager.dispose();
+      return { events, business: withoutObservations({ requests, view, audit, saved: store.loadAll() }) };
+    };
+    const disabled = await run(false), enabled = await run(true);
+    expect(enabled.business).toEqual(disabled.business);
+    const gates = enabled.events.filter((event) => event.operation === 'gate_wait' && event.phase === 'end');
+    expect(gates.length).toBeGreaterThan(0);
+    for (const gate of gates) expect(gate.metrics).toMatchObject({ plannedWaitMs: { valueMs: 250, source: 'client' }, gateWaitMs: { valueMs: 250, source: 'client' } });
+  }, 30000);
 
   it('disposal keeps the existing request sequence with observation on and off', async () => {
     const rec = fixedRecord();
