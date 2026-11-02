@@ -76,11 +76,12 @@ import type { RoomRecord, RoomStore, SeatRecord } from './store';
 
 import { ApiFailure } from './room-failure';
 import { RoomPersistence } from './room-persistence';
+import { RoomViewService } from './room-view';
 import type { ManagerOptions, RoomRuntimeState, RoomViewState, Subscriber, Viewer } from './room-types';
 export { ApiFailure } from './room-failure';
 export type { ManagerOptions } from './room-types';
 
-interface Live extends RoomRuntimeState, RoomViewState {}
+type Live = RoomRuntimeState;
 
 function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -160,6 +161,7 @@ export class RoomManager {
   private readonly rooms = new Map<string, Live>();
   private readonly store: RoomStore;
   private readonly persistence: RoomPersistence;
+  private readonly views: RoomViewService;
   private readonly secrets: SecretBox;
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
@@ -173,6 +175,11 @@ export class RoomManager {
     this.models = new ModelLibrary(o.secrets, o.modelsPath);
     this.now = o.now ?? Date.now;
     this.persistence = new RoomPersistence(o.store, this.now);
+    this.views = new RoomViewService(this.now, {
+      seatView: (s) => this.seatView(s),
+      setupErrors: (rec) => this.setupErrors(rec),
+      scheduleSave: (rec) => this.persistence.scheduleSave(rec),
+    });
     this.sleep = o.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.adapters = o.adapters ?? {};
     for (const rec of this.store.loadAll()) {
@@ -199,7 +206,7 @@ export class RoomManager {
     if (this.timer) clearInterval(this.timer);
     for (const live of this.rooms.values()) {
       for (const c of live.inflight.values()) c.abort();
-      if (live.thoughtTimer) clearTimeout(live.thoughtTimer);
+      this.views.dispose(live.rec);
       this.flush(live);
     }
   }
@@ -294,7 +301,7 @@ export class RoomManager {
   }
 
   getSetup(roomId: string, tok: string): RoomSetupView {
-    return this.setupView(this.host(roomId, tok).rec);
+    return this.views.setupView(this.host(roomId, tok).rec);
   }
 
   updateSetup(roomId: string, tok: string, input: RoomSetupInput): RoomSetupView {
@@ -357,7 +364,7 @@ export class RoomManager {
       if (s.controller !== undefined && rec.participants) delete rec.participants[s.seat];
     }
     this.changed(live);
-    return this.setupView(rec);
+    return this.views.setupView(rec);
   }
 
   private applySeat(rec: RoomRecord, s: SeatConfigInput): void {
@@ -460,30 +467,6 @@ export class RoomManager {
     return errors;
   }
 
-  private setupView(rec: RoomRecord): RoomSetupView {
-    const rules = rec.rules ?? buildRules(rec.presetId, rec.ruleValues, { locale: rec.locale });
-    return {
-      roomId: rec.id,
-      locale: rec.rules?.locale ?? rec.locale ?? DEFAULT_GAME_LOCALE,
-      avatarStyle: rec.avatarStyle,
-      status: rec.status,
-      paused: rec.paused,
-      presetId: rec.presetId,
-      ruleValues: rules.values,
-      timing: rec.timing ?? { speech: { limitSec: 180, intervalMs: rec.aiPacingMs }, vote: { limitSec: 90, intervalMs: rec.aiPacingMs }, skill: { limitSec: rec.humanTimeoutSec || 90, intervalMs: rec.aiPacingMs } },
-      humanTimeoutSec: rec.humanTimeoutSec,
-      aiPacingMs: rec.aiPacingMs,
-      seats: rec.seats.map((s) => this.seatView(s)),
-      tokens: {
-        host: rec.hostToken,
-        spectator: rec.spectatorToken,
-        seats: rec.seatTokens.map((t, i) => ({ seat: i + 1, token: t })),
-      },
-      ruleCardPreview: buildRuleCard(rules),
-      validationErrors: rec.status === 'setup' ? this.setupErrors(rec) : [],
-      participants: this.participants(rec),
-    };
-  }
 
   async testSeat(roomId: string, tok: string, seat: Seat): Promise<SeatTestResult> {
     const rec = this.host(roomId, tok).rec;
@@ -519,7 +502,7 @@ export class RoomManager {
     });
     this.changed(live);
     void this.pump(live);
-    return this.setupView(rec);
+    return this.views.setupView(rec);
   }
 
   control(roomId: string, tok: string, action: ControlAction): RoomBrief {
@@ -565,7 +548,7 @@ export class RoomManager {
     } else throw new ApiFailure(400, 'BAD_REQUEST', `未知操作：${String(action)}`);
     this.changed(live);
     if (action !== 'end') void this.pump(live);
-    return this.brief(rec, { role: 'host' });
+    return this.views.brief(rec, { role: 'host' });
   }
 
   // -------------------------------------------------------------------------
@@ -600,26 +583,16 @@ export class RoomManager {
   /** 视角只由凭证决定。请求里的任何「视角」参数都不会提升权限。 */
   view(roomId: string, tok: string): ViewResponse {
     const { live, viewer } = this.resolve(roomId, tok);
-    const rec = live.rec;
-    return { room: this.brief(rec, viewer), projection: rec.state ? this.project(rec, viewer) : null,
-      presentation: { deaths: (rec.state?.deaths ?? []).map((d) => ({ seat: d.seat, day: d.day, causes: deathCauses(d.via, d.causes, viewer.role === 'host') })),
-        ...(rec.actionAvailableAt ? { actionAvailableAt: rec.actionAvailableAt } : {}) } };
+    return this.views.view(live.rec, viewer);
   }
 
   speechLocale(roomId: string, tok: string): string {
-    const { live } = this.resolve(roomId, tok);
-    return live.rec.state?.rules.locale ?? live.rec.locale ?? DEFAULT_GAME_LOCALE;
+    return this.views.speechLocale(this.resolve(roomId, tok).live.rec);
   }
 
   speechText(roomId: string, tok: string, seq: unknown): string {
     const { live, viewer } = this.resolve(roomId, tok);
-    if (!Number.isInteger(seq) || Number(seq) < 1) throw new ApiFailure(400, 'BAD_REQUEST', '请选择一条已提交发言');
-    if (!live.rec.state) throw new ApiFailure(409, 'NOT_STARTED', '对局还没有开始');
-    const event = this.project(live.rec, viewer).events.find((e) => e.seq === seq);
-    if (!event || event.type !== 'speech' || typeof event.payload.content !== 'string') {
-      throw new ApiFailure(404, 'NOT_FOUND', '这条记录不是当前视角可朗读的已提交发言');
-    }
-    return gameText(live.rec.state.rules.locale, '{0}号发言。{1}', event.payload.seat, event.payload.content);
+    return this.views.speechText(live.rec, viewer, seq);
   }
 
   act(roomId: string, tok: string, body: { decisionId?: unknown; tool?: unknown; args?: unknown }) {
@@ -644,12 +617,7 @@ export class RoomManager {
 
   subscribe(roomId: string, tok: string, send: (n: number) => void): () => void {
     const { live, viewer } = this.resolve(roomId, tok);
-    const sub: Subscriber = { viewer, send, sig: this.signature(live.rec, viewer), count: 0 };
-    live.subscribers.add(sub);
-    // 新订阅的响应头尚未写出；仅向已经建立的其他连接通知在线变化。
-    sub.sig = this.signature(live.rec, viewer);
-    this.notify(live);
-    return () => { live.subscribers.delete(sub); this.notify(live); };
+    return this.views.subscribe(live.rec, viewer, send);
   }
 
   audit(roomId: string, tok: string): AuditEntry[] {
@@ -659,24 +627,7 @@ export class RoomManager {
 
   exportRecord(roomId: string, tok: string, kind: 'public' | 'god'): unknown {
     const { live, viewer } = this.resolve(roomId, tok);
-    const rec = live.rec;
-    if (!rec.state) throw new ApiFailure(409, 'NOT_STARTED', '对局还没有开始');
-    if (kind === 'god') {
-      if (viewer.role !== 'host') throw new ApiFailure(403, 'FORBIDDEN', '只有房主可以导出上帝记录');
-      return {
-        roomId: rec.id,
-        locale: rec.rules?.locale ?? rec.locale ?? DEFAULT_GAME_LOCALE,
-        rules: rec.rules,
-        seed: rec.seed,
-        seats: rec.seats.map((s) => ({ seat: s.seat, name: s.name, controller: s.controller, adapter: s.adapter, model: s.model })),
-        roles: rec.state.players.map((p) => ({ seat: p.seat, role: p.role })),
-        result: rec.state.result,
-        events: rec.events,
-        actions: rec.actions,
-      };
-    }
-    if (rec.status !== 'ended' && viewer.role !== 'host') throw new ApiFailure(409, 'NOT_ENDED', '终局后才能导出公开记录');
-    return projectSpectator(rec.state, rec.events);
+    return this.views.exportRecord(live.rec, viewer, kind);
   }
 
   // -------------------------------------------------------------------------
@@ -692,9 +643,6 @@ export class RoomManager {
       gatePausedAt: rec.paused && rec.timing && rec.actionAvailableAt ? this.now() : undefined,
       gen: 0,
       inflight: new Map(),
-      subscribers: new Set(),
-      thoughtTimer: null,
-      thoughtNotifiedAt: 0,
     };
   }
 
@@ -737,70 +685,12 @@ export class RoomManager {
     return live;
   }
 
-  private brief(rec: RoomRecord, viewer: Viewer): RoomBrief {
-    return {
-      roomId: rec.id,
-      locale: rec.rules?.locale ?? rec.locale ?? DEFAULT_GAME_LOCALE,
-      avatarStyle: rec.avatarStyle,
-      status: rec.status,
-      paused: rec.paused,
-      viewer: viewer.role,
-      ...(viewer.role === 'seat' ? { seat: viewer.seat } : {}),
-      presetName: rec.rules?.presetName ?? getPreset(rec.presetId).name,
-      seats: rec.seats.map((s) => ({ seat: s.seat, name: s.name, controller: s.controller })),
-      participants: this.participants(rec),
-      ...(rec.status === 'setup' ? { ruleCard: buildRuleCard(buildRules(rec.presetId, rec.ruleValues, { locale: rec.locale })) } : {}),
-    };
-  }
 
-  private participants(rec: RoomRecord): HumanParticipant[] {
-    const subscribers = this.rooms.get(rec.id)?.subscribers;
-    return rec.seats.filter((s) => s.controller === 'human').map((s) => ({
-      seat: s.seat, joined: rec.participants?.[s.seat]?.joined ?? false, ready: rec.participants?.[s.seat]?.ready ?? false,
-      online: !!subscribers && [...subscribers].some((sub) => sub.viewer.role === 'seat' && sub.viewer.seat === s.seat),
-    }));
-  }
 
-  private visibleThoughts(rec: RoomRecord, viewer: Viewer) {
-    const all = rec.thoughts ?? [];
-    if (viewer.role === 'host') return all;
-    if (viewer.role === 'seat') return all.filter((t) => t.seat === viewer.seat);
-    return [];
-  }
 
   /** 模型和座位页面看到同一份投影，包括这一步还剩多少时间。 */
-  private attachDeadline(rec: RoomRecord, seat: Seat, projection: Projection): Projection {
-    const deadline = projection.task && !projection.task.submitted ? rec.deadlines[`${projection.task.decisionId}:${seat}`] : undefined;
-    if (projection.task && deadline) projection.task.deadline = deadline;
-    return projection;
-  }
 
-  private project(rec: RoomRecord, viewer: Viewer): Projection | GodProjection {
-    const state = rec.state!;
-    if (viewer.role === 'spectator') return projectSpectator(state, rec.events);
-    const p = viewer.role === 'host' ? projectGod(state, rec.events) : projectSeat(state, rec.events, viewer.seat);
-    if (viewer.role === 'seat') this.attachDeadline(rec, viewer.seat, p);
-    const thoughts = this.visibleThoughts(rec, viewer);
-    if (thoughts.length) p.thoughts = thoughts;
-    return p;
-  }
 
-  private signature(rec: RoomRecord, viewer: Viewer): string {
-    const room = [rec.status, rec.paused, rec.avatarStyle, rec.actionAvailableAt, rec.seats.map((s) => [s.seat, s.name, s.controller]), this.participants(rec)];
-    if (!rec.state) return JSON.stringify([room, rec.presetId, rec.ruleValues]);
-    const p = this.project(rec, viewer);
-    return JSON.stringify([
-      room,
-      p.version,
-      p.stage,
-      p.task?.decisionId ?? null,
-      p.task?.submitted ?? null,
-      p.task?.deadline ?? null,
-      p.interrupts.map((t) => t.name),
-      viewer.role === 'host' ? (p as GodProjection).god.pending : null,
-      this.visibleThoughts(rec, viewer).map((t) => [t.decisionId, t.seat, t.thinking.length, t.reply.length, t.live]),
-    ]);
-  }
 
   private apply(live: Live, input: SubmitInput): EngineResult {
     const rec = live.rec;
@@ -837,43 +727,11 @@ export class RoomManager {
       }
     }
     this.scheduleSave(live);
-    this.notify(live);
+    this.views.notify(live.rec);
   }
 
   /** 只通知视角有变化的订阅者。思考的流式更新走这里，不重新武装截止时间，也不取消请求。 */
-  private notify(live: Live): void {
-    for (const sub of live.subscribers) {
-      const sig = this.signature(live.rec, sub.viewer);
-      if (sig === sub.sig) continue;
-      sub.sig = sig;
-      try {
-        sub.send(++sub.count);
-      } catch {
-        live.subscribers.delete(sub);
-      }
-    }
-  }
 
-  private publishThoughts(live: Live, immediate: boolean): void {
-    const send = () => {
-      if (live.thoughtTimer) clearTimeout(live.thoughtTimer);
-      live.thoughtTimer = null;
-      live.thoughtNotifiedAt = this.now();
-      this.scheduleSave(live);
-      this.notify(live);
-    };
-    if (immediate) {
-      send();
-      return;
-    }
-    const elapsed = this.now() - live.thoughtNotifiedAt;
-    if (elapsed >= 80) {
-      send();
-      return;
-    }
-    if (live.thoughtTimer) return;
-    live.thoughtTimer = setTimeout(send, 80 - elapsed);
-  }
 
   private pushThought(live: Live, seat: Seat, decision: string, delta: { thinking?: string; reply?: string }): void {
     const rec = live.rec;
@@ -886,7 +744,7 @@ export class RoomManager {
     if (delta.thinking) thought.thinking += delta.thinking;
     if (delta.reply) thought.reply += delta.reply;
     thought.live = true;
-    this.publishThoughts(live, false);
+    this.views.publishThoughts(live.rec, false);
   }
 
   private finishThought(live: Live, seat: Seat, decision: string, result?: { thinking?: string; reply?: string }): void {
@@ -902,7 +760,7 @@ export class RoomManager {
     if (result?.reply && result.reply.length >= thought.reply.length) thought.reply = result.reply;
     thought.live = false;
     if (!thought.thinking && !thought.reply) rec.thoughts = rec.thoughts.filter((t) => t !== thought);
-    this.publishThoughts(live, true);
+    this.views.publishThoughts(live.rec, true);
   }
 
   private scheduleSave(live: Live): void {
@@ -1223,7 +1081,7 @@ export class RoomManager {
     const rec = live.rec;
     const cfg = rec.seats[seat - 1];
     const adapter = this.adapters[cfg.adapter] ?? getAdapter(cfg.adapter, cfg.apiProtocol);
-    const projection = this.attachDeadline(rec, seat, projectSeat(rec.state!, rec.events, seat));
+    const projection = this.views.attachDeadline(rec, seat, projectSeat(rec.state!, rec.events, seat));
     const tools = seatTools(rec.state!, seat);
     const thread = this.threadFor(live, seat);
     const key = `${decision}:hear:${seat}:${thread.seen}`;
@@ -1304,8 +1162,8 @@ export class RoomManager {
     // 此刻才真正发出行动请求，排队、旁听和 AI 展示间隔均不占用行动时限。
     this.markAsked(live, seat);
     this.scheduleSave(live);
-    this.notify(live);
-    const projection = this.attachDeadline(rec, seat, projectSeat(rec.state!, rec.events, seat));
+    this.views.notify(live.rec);
+    const projection = this.views.attachDeadline(rec, seat, projectSeat(rec.state!, rec.events, seat));
     const legal = projection.task?.tools ?? [];
     if (!legal.length) return;
     const tools = seatTools(rec.state!, seat);
