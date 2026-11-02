@@ -1,9 +1,10 @@
 import { gameText } from '@werewolf/protocol';
 import { apiUrl, thinkingParameters, toolToJsonSchema } from '@werewolf/protocol';
 import { nativeItems, protocolBinding } from '../transcript';
-import { failure, HttpError, post, runRequest } from '../transport';
+import { abortedOutcome, failure, HttpError, post, runRequest } from '../transport';
 import { jsonInstruction, parseAssistant, parseJson, tokenUsage } from '../result';
 import type { Adapter, AdapterConfig, TranscriptMessage } from '../types';
+import { observeSync } from '../observation';
 
 export function anthropicInput(messages: TranscriptMessage[], config: AdapterConfig) {
   const binding = protocolBinding({ ...config, apiProtocol: 'anthropic_messages' });
@@ -35,7 +36,7 @@ export function anthropicInput(messages: TranscriptMessage[], config: AdapterCon
 
 export const anthropicAdapter: Adapter = {
   decide(req) {
-    return runRequest(req, async (signal, started, onDelta) => {
+    return runRequest(req, async (signal, started, onDelta, observation) => {
       const config = { ...req.config, apiProtocol: 'anthropic_messages' as const };
       const url = apiUrl(config.baseUrl, 'anthropic_messages', req.projection?.locale);
       const json = config.toolMode === 'json' && req.toolChoice !== 'auto';
@@ -43,6 +44,11 @@ export const anthropicAdapter: Adapter = {
       const budget = (thinking.thinking as { budget_tokens?: number } | undefined)?.budget_tokens ?? 0;
       const max = config.maxOutputTokens ?? 32768;
       if (budget >= max) return failure(started, gameText(req.projection?.locale, '单次输出上限必须大于思考预算，才能留出工具参数空间'), { fatal: true });
+      const request = observation?.observer.start('http_request', observation.adapter.id, { variantIndex: 0, variantReason: 'initial', features: {
+        stream: !!req.stream, toolChoice: json ? 'none' : 'auto', responseFormat: false,
+      } });
+      try {
+      const body = observeSync(observation?.observer, request, 'request_encode', () => {
       const input = anthropicInput(json ? [...req.messages, { role: 'user', content: jsonInstruction(req.tools, req.projection?.locale) }] : req.messages, config);
       const body: Record<string, unknown> = { model: config.model, max_tokens: max, ...input, ...thinking, ...(req.stream ? { stream: true } : {}) };
       if (!json) {
@@ -51,6 +57,8 @@ export const anthropicAdapter: Adapter = {
         // 正式行动仍由本地解析器要求恰好一个工具，失败按现有纠错流程处理。
         body.tool_choice = { type: 'auto', disable_parallel_tool_use: true };
       }
+      return body;
+      });
       const blocks = new Map<number, Record<string, any>>();
       const argumentsByIndex = new Map<number, string>();
       let message: any;
@@ -73,7 +81,9 @@ export const anthropicAdapter: Adapter = {
         }
         if (e.type === 'message_delta' && message) { Object.assign(message, e.delta); message.usage = { ...message.usage, ...e.usage }; }
         if (e.type === 'message_stop') stopped = true;
-      }, req.projection?.locale);
+      }, req.projection?.locale, observation && request ? { observer: observation.observer, request, protocol: 'anthropic_messages' } : undefined);
+      request?.finish('success');
+      return observeSync(observation?.observer, observation?.adapter, 'parse', () => {
       if (!result && (!message || !stopped)) throw new HttpError(200, gameText(req.projection?.locale, 'Anthropic 流式连接提前结束，未执行任何工具'));
       const data = result ?? { ...message, content: [...blocks.entries()].sort(([a], [b]) => a - b).map(([i, block]) => {
         if (argumentsByIndex.has(i)) { try { block.input = JSON.parse(argumentsByIndex.get(i)!); } catch { block.invalidArguments = argumentsByIndex.get(i); } }
@@ -90,6 +100,8 @@ export const anthropicAdapter: Adapter = {
       return { ...(json ? parseJson(started, assistant, req.tools, data, req.projection?.locale) : parseAssistant(started, assistant, req.tools, data, req.toolChoice === 'auto', req.projection?.locale)),
         reply: reply || undefined, thinking: mind || undefined, usage: tokenUsage(data.usage, 'anthropic_messages'),
       };
+      });
+      } catch (error) { request?.finish(signal.aborted ? abortedOutcome(signal) : error instanceof HttpError ? error.observationOutcome : 'network_error'); throw error; }
     });
   },
 };
