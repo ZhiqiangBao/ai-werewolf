@@ -5,8 +5,10 @@ export interface BaselineEvidence {
   manifest: {
     completed: boolean; scenario: string; protocol: string; seed: string; repetition: number; warmup: boolean;
     roomCount: number; workloadSha256: string; sourceRevision: string;
+    sourceSha256?: string; sourceSha256End?: string; sourceChangedDuringRun?: boolean;
     collector: { dropped: number; writeErrors: number; bufferedRecords: number; bufferedBytes: number };
     observability?: { callbackErrors: number; activeSpans: number };
+    collectorRuntime?: { callbackErrors: number; activeSpans: number } | null;
   };
   observations: ObservationEvent[];
   truth: SyntheticTruth[];
@@ -29,15 +31,23 @@ export function evaluateBaselineEvidence(evidence: readonly BaselineEvidence[], 
   const results = (requireFullMatrix ? expected : [...groups.keys()]).map((key) => {
     const rows = groups.get(key) ?? [], measured = rows.filter((r) => !r.manifest.warmup), warmups = rows.filter((r) => r.manifest.warmup);
     const counts = new Map<string, number>(), workloads = new Map<string, Set<string>>();
+    const sourceHashes = new Set<string>(), runIds = new Set<string>(), repetitions = new Map<string, Set<number>>();
     let invalid = false, incomplete = false, orphanEnds = 0, duplicateStarts = 0, duplicateEnds = 0;
     let attempts = 0, matched = 0;
     const errors: Record<string, { absolute: number[]; medianRatios: number[]; p95Ratios: number[]; missing: number }> = {};
     for (const row of measured) {
       counts.set(row.manifest.seed, (counts.get(row.manifest.seed) ?? 0) + 1);
+      const repeated = repetitions.get(row.manifest.seed) ?? new Set<number>(); repeated.add(row.manifest.repetition); repetitions.set(row.manifest.seed, repeated);
+      if (row.manifest.sourceSha256) sourceHashes.add(row.manifest.sourceSha256); else incomplete = true;
+      invalid ||= row.manifest.sourceChangedDuringRun === true || row.manifest.sourceSha256 !== row.manifest.sourceSha256End;
+      const runId = row.observations[0]?.runId;
+      if (runId && runIds.has(runId)) invalid = true;
+      if (runId) runIds.add(runId);
       const hashes = workloads.get(row.manifest.seed) ?? new Set<string>(); hashes.add(row.manifest.workloadSha256); workloads.set(row.manifest.seed, hashes);
       invalid ||= !row.manifest.completed || row.manifest.roomCount > 2 || row.manifest.collector.dropped > 0 || row.manifest.collector.writeErrors > 0 ||
         row.manifest.collector.bufferedRecords !== 0 || row.manifest.collector.bufferedBytes !== 0 ||
-        (row.manifest.observability?.callbackErrors ?? 0) !== 0 || (row.manifest.observability?.activeSpans ?? 0) !== 0;
+        ((row.manifest.collectorRuntime ?? row.manifest.observability)?.callbackErrors ?? 0) !== 0 ||
+        ((row.manifest.collectorRuntime ?? row.manifest.observability)?.activeSpans ?? 0) !== 0;
       const starts = new Set<string>(), ends = new Set<string>(), truths = new Map(row.truth.map((r) => [r.attemptId, r]));
       for (const event of row.observations) {
         const id = `${event.runId}/${event.kind}/${event.id}`;
@@ -63,8 +73,11 @@ export function evaluateBaselineEvidence(evidence: readonly BaselineEvidence[], 
       }
       if ([...starts].some((id) => !ends.has(id))) incomplete = true;
     }
-    invalid ||= orphanEnds > 0 || duplicateStarts > 0 || duplicateEnds > 0 || [...workloads.values()].some((values) => values.size !== 1);
-    const covered = measured.length === 9 && warmups.length >= 1 && ['001','002','003'].every((suffix) => counts.get(`obs-standard12-${suffix}`) === 3);
+    invalid ||= sourceHashes.size > 1 || orphanEnds > 0 || duplicateStarts > 0 || duplicateEnds > 0 || [...workloads.values()].some((values) => values.size !== 1);
+    const covered = measured.length === 9 && warmups.length >= 1 && ['001','002','003'].every((suffix) => {
+      const seed = `obs-standard12-${suffix}`;
+      return counts.get(seed) === 3 && [1,2,3].every((r) => repetitions.get(seed)?.has(r));
+    });
     const metrics = Object.fromEntries(Object.entries(errors).map(([name, data]) => [name, {
       samples: data.absolute.length, missing: data.missing, medianAbsoluteErrorMs: quantile(data.absolute, .5), p95AbsoluteErrorMs: quantile(data.absolute, .95),
       medianLimitRatio: quantile(data.medianRatios, .5), p95LimitRatio: quantile(data.p95Ratios, .95),
@@ -72,7 +85,7 @@ export function evaluateBaselineEvidence(evidence: readonly BaselineEvidence[], 
     }]));
     const numeric = Object.values(metrics).length === 4 && Object.values(metrics).every((m) => m.withinThresholds);
     return { key, formalRuns: measured.length, warmups: warmups.length, covered, attempts, matchedTruth: matched,
-      orphanEnds, duplicateStarts, duplicateEnds, workloadConsistent: [...workloads.values()].every((hashes) => hashes.size === 1), metrics,
+      orphanEnds, duplicateStarts, duplicateEnds, sourceHashes: [...sourceHashes], workloadConsistent: [...workloads.values()].every((hashes) => hashes.size === 1), metrics,
       status: invalid ? 'invalid' : !covered || incomplete || matched !== attempts ? 'incomplete' : numeric ? 'within_thresholds' : 'inconclusive_noise' };
   });
   return { reportKind: 'synthetic_accuracy_acceptance', samples: evidence.length,

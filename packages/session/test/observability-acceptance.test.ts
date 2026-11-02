@@ -4,7 +4,7 @@ import { evaluateBaselineEvidence, type BaselineEvidence } from '../src/observab
 function sample(seed: string, repetition: number, warmup = false): BaselineEvidence {
   const ref = { schemaVersion: 1 as const, runId: `r-${seed}-${repetition}`, roomRef: 'r1' };
   return { manifest: { completed: true, scenario: 'S01', protocol: 'responses', seed, repetition, warmup, roomCount: 1,
-    workloadSha256: seed, sourceRevision: 'fixture', collector: { dropped: 0, writeErrors: 0, bufferedRecords: 0, bufferedBytes: 0 } },
+    workloadSha256: seed, sourceRevision: 'fixture', sourceSha256: 'fixture-source', sourceSha256End: 'fixture-source', collector: { dropped: 0, writeErrors: 0, bufferedRecords: 0, bufferedBytes: 0 } },
     observations: [{ ...ref, kind: 'http_attempt', id: 'h1', phase: 'start', atMs: 0 },
       { ...ref, kind: 'http_attempt', id: 'h1', phase: 'end', atMs: 90, outcome: 'success', metrics: Object.fromEntries(
         [['headersMs',20],['firstBodyByteMs',50],['firstStreamContentMs',60],['bodyConsumeMs',70]].map(([key, valueMs]) => [key, { valueMs, source: 'client' }])) }],
