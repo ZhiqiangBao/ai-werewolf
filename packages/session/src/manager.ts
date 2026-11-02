@@ -1,7 +1,8 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { THINKING_MODES, thinkingOptions, defaultThinkingMode, apiProtocol, apiUrl, actionMenu } from '@werewolf/protocol';
+import { THINKING_MODES, thinkingOptions, defaultThinkingMode, apiProtocol, apiUrl, actionMenu, avatarDefaultName, isAvatarStyleId } from '@werewolf/protocol';
 import type {
   AdapterKind,
+  AvatarStyleId,
   AuditEntry,
   Catalog,
   ControlAction,
@@ -148,10 +149,11 @@ const clamp = (v: unknown, lo: number, hi: number, fallback: number) => {
 };
 const text = (v: unknown, max: number) => String(v ?? '').trim().slice(0, max);
 
-function defaultSeat(seat: Seat): SeatRecord {
+function defaultSeat(seat: Seat, avatarStyle: AvatarStyleId = 'storybook'): SeatRecord {
   return {
     seat,
-    name: `${seat}号`,
+    name: avatarDefaultName(avatarStyle, seat),
+    nameSource: 'avatar',
     controller: 'ai',
     adapter: 'mock',
     baseUrl: '',
@@ -257,10 +259,13 @@ export class RoomManager {
     }
   }
 
-  createRoom(): CreateRoomResult {
+  createRoom(input: Pick<RoomSetupInput, 'avatarStyle'> = {}): CreateRoomResult {
+    const avatarStyle = input.avatarStyle === undefined ? 'storybook' : input.avatarStyle;
+    if (!isAvatarStyleId(avatarStyle)) throw new ApiFailure(400, 'BAD_REQUEST', '没有这个人物风格');
     const preset = getPreset(DEFAULT_PRESET);
     const rec: RoomRecord = {
       id: randomBytes(5).toString('hex'),
+      avatarStyle,
       createdAt: this.now(),
       hostToken: token(),
       spectatorToken: token(),
@@ -272,7 +277,7 @@ export class RoomManager {
       ruleValues: {},
       humanTimeoutSec: 90,
       aiPacingMs: 1200,
-      seats: preset.roles.map((_, i) => defaultSeat(i + 1)),
+      seats: preset.roles.map((_, i) => defaultSeat(i + 1, avatarStyle)),
       seed: null,
       rules: null,
       state: null,
@@ -293,6 +298,7 @@ export class RoomManager {
     const created = this.createRoom();
     const live = this.rooms.get(created.roomId)!;
     Object.assign(live.rec, {
+      avatarStyle: src.avatarStyle,
       presetId: src.presetId,
       ruleValues: { ...src.ruleValues },
       humanTimeoutSec: src.humanTimeoutSec,
@@ -313,6 +319,7 @@ export class RoomManager {
     const live = this.host(roomId, tok);
     const rec = live.rec;
     if (rec.status !== 'setup') throw new ApiFailure(409, 'ALREADY_STARTED', '对局已经开始，不能再修改配置');
+    if (input.avatarStyle !== undefined && !isAvatarStyleId(input.avatarStyle)) throw new ApiFailure(400, 'BAD_REQUEST', '没有这个人物风格');
     const previousRules = buildRuleCard(buildRules(rec.presetId, rec.ruleValues));
     if (input.presetId !== undefined && input.presetId !== rec.presetId) {
       let roles: string[];
@@ -323,8 +330,18 @@ export class RoomManager {
       }
       rec.presetId = input.presetId;
       rec.ruleValues = {};
-      rec.seats = roles.map((_, i) => rec.seats[i] ?? defaultSeat(i + 1));
+      rec.seats = roles.map((_, i) => rec.seats[i] ?? defaultSeat(i + 1, rec.avatarStyle));
       rec.seatTokens = roles.map((_, i) => rec.seatTokens[i] ?? token());
+    }
+    if (input.avatarStyle !== undefined) {
+      rec.avatarStyle = input.avatarStyle;
+      for (const seat of rec.seats) {
+        if (seat.nameSource !== 'avatar' && !(seat.nameSource === undefined && seat.name === `${seat.seat}号`)) continue;
+        const name = avatarDefaultName(input.avatarStyle, seat.seat);
+        if (name !== seat.name && rec.participants?.[seat.seat]) rec.participants[seat.seat].ready = false;
+        seat.name = name;
+        seat.nameSource = 'avatar';
+      }
     }
     if (input.ruleValues) {
       const editable = new Map(allOptions().filter((o) => o.editable).map((o) => [o.key, o]));
@@ -377,7 +394,12 @@ export class RoomManager {
       if (s.toolMode !== 'tools' && s.toolMode !== 'json') throw new ApiFailure(400, 'BAD_REQUEST', '输出模式只能是 tools 或 json');
       seat.toolMode = s.toolMode;
     }
-    if (s.name !== undefined) seat.name = text(s.name, 12) || `${seat.seat}号`;
+    if (s.name !== undefined) {
+      const name = text(s.name, 12);
+      seat.name = name || avatarDefaultName(rec.avatarStyle ?? 'storybook', seat.seat);
+      seat.nameSource = name ? 'custom' : 'avatar';
+      if (seat.name !== current.name && rec.participants?.[seat.seat]) rec.participants[seat.seat].ready = false;
+    }
     if (s.baseUrl !== undefined) seat.baseUrl = text(s.baseUrl, 300);
     if (s.model !== undefined) seat.model = text(s.model, 120);
     if (s.temperature !== undefined) seat.temperature = clamp(s.temperature, 0, 2, 0.7);
@@ -426,7 +448,7 @@ export class RoomManager {
   }
 
   private seatView(s: SeatRecord): SeatConfigView {
-    const { apiKeyEnc: _enc, apiKeyMask, ...rest } = s;
+    const { apiKeyEnc: _enc, apiKeyMask, nameSource: _nameSource, ...rest } = s;
     return { ...rest, apiProtocol: s.apiProtocol ?? 'chat_completions', ...(s.adapter === 'openai_compatible' ? { thinkingMode: s.thinkingMode ?? defaultThinkingMode(s.baseUrl, s.model, s.apiProtocol) } : {}), apiKeyMasked: apiKeyMask, modelId: s.modelId ?? null };
   }
 
@@ -448,6 +470,7 @@ export class RoomManager {
     const rules = rec.rules ?? buildRules(rec.presetId, rec.ruleValues);
     return {
       roomId: rec.id,
+      avatarStyle: rec.avatarStyle,
       status: rec.status,
       paused: rec.paused,
       presetId: rec.presetId,
@@ -541,7 +564,10 @@ export class RoomManager {
     rec.participants ??= {};
     const participant = rec.participants[viewer.seat] ??= { joined: false, ready: false };
     participant.joined = true;
-    if (input.name !== undefined) seat.name = input.name.trim();
+    if (input.name !== undefined && input.name.trim() !== seat.name) {
+      seat.name = input.name.trim();
+      seat.nameSource = 'custom';
+    }
     if (input.ready !== undefined) participant.ready = input.ready;
     this.changed(live);
     return this.view(roomId, tok);
@@ -679,6 +705,7 @@ export class RoomManager {
   private brief(rec: RoomRecord, viewer: Viewer): RoomBrief {
     return {
       roomId: rec.id,
+      avatarStyle: rec.avatarStyle,
       status: rec.status,
       paused: rec.paused,
       viewer: viewer.role,
@@ -723,7 +750,7 @@ export class RoomManager {
   }
 
   private signature(rec: RoomRecord, viewer: Viewer): string {
-    const room = [rec.status, rec.paused, rec.seats.map((s) => [s.seat, s.name, s.controller]), this.participants(rec)];
+    const room = [rec.status, rec.paused, rec.avatarStyle, rec.seats.map((s) => [s.seat, s.name, s.controller]), this.participants(rec)];
     if (!rec.state) return JSON.stringify([room, rec.presetId, rec.ruleValues]);
     const p = this.project(rec, viewer);
     return JSON.stringify([

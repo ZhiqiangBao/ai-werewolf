@@ -1,5 +1,9 @@
 export type Seat = number;
-export type { SpeechProviderView, SpeechProvidersView } from './speech';
+export { AVATAR_STYLES, isAvatarStyleId, avatarDefaultName } from './avatars';
+export type { AvatarStyleId } from './avatars';
+import type { AvatarStyleId } from './avatars';
+export type { SpeechProviderView, SpeechProvidersView, SpeechConnectionKind, SpeechConnectionDraft, SpeechConnectionView, SpeechSettingsView } from './speech';
+export { SPEECH_CONNECTION_TEMPLATES } from './speech';
 export { expandActionTools, canonicalAction, simulationTools, exposeAction, actionMenu } from './action-tools';
 export { API_PROTOCOLS, API_PROTOCOL_LABELS, apiProtocol, apiBase, apiUrl, isDashscopeEndpoint } from './api';
 export type { ApiProtocol, TokenUsage } from './api';
@@ -392,6 +396,7 @@ export interface InviteNetworkView {
 
 export interface RoomSetupView {
   roomId: string;
+  avatarStyle?: AvatarStyleId;
   status: 'setup' | 'running' | 'ended';
   paused: boolean;
   presetId: string;
@@ -409,6 +414,7 @@ export interface HumanParticipant { seat: Seat; joined: boolean; ready: boolean;
 export interface ParticipantInput { name?: string; ready?: boolean }
 
 export interface RoomSetupInput {
+  avatarStyle?: AvatarStyleId;
   presetId?: string;
   ruleValues?: Record<string, RuleValue>;
   humanTimeoutSec?: number;
@@ -431,6 +437,7 @@ export type ViewerRole = 'host' | 'seat' | 'spectator';
 /** 房间层面的公开信息：谁是真人、谁是模型，以及暂停状态。不含任何身份和配置细节。 */
 export interface RoomBrief {
   roomId: string;
+  avatarStyle?: AvatarStyleId;
   status: 'setup' | 'running' | 'ended';
   paused: boolean;
   viewer: ViewerRole;

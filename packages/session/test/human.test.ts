@@ -36,13 +36,13 @@ describe('真人玩家接入、候场和凭证', () => {
   });
 
   it('输入严格校验，不能借传入座位号改别人或更换控制者', () => {
-    const { m, id, host, tok } = room();
+    const { m, id, host, tok, setup } = room();
     for (const input of [{ name: '' }, { name: '一'.repeat(13) }, { name: 23 }, { ready: 'yes' }]) {
       expect(() => m.participate(id, tok(1), input as never)).toThrow();
     }
     m.participate(id, tok(1), { name: '本人', seat: 2, controller: 'ai', ready: true } as never);
     expect(m.getSetup(id, host).seats[0]).toMatchObject({ name: '本人', controller: 'human' });
-    expect(m.getSetup(id, host).seats[1].name).toBe('2号');
+    expect(m.getSetup(id, host).seats[1].name).toBe(setup.seats[1].name);
   });
 
   it('修改规则或版型取消准备；改 AI 配置不影响真人确认，改回真人需要重新确认', () => {

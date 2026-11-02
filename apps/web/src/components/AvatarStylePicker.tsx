@@ -3,8 +3,9 @@ import { AVATAR_STYLES, currentAvatarStyle, selectAvatarStyle, type AvatarStyleI
 import { Avatar } from './Avatar';
 import { Icon } from './Icons';
 
-export function AvatarStylePicker() {
-  const [selected, setSelected] = useState(currentAvatarStyle);
+export function AvatarStylePicker({ value, onChange }: { value?: AvatarStyleId; onChange?: (style: AvatarStyleId) => void } = {}) {
+  const [local, setLocal] = useState(currentAvatarStyle);
+  const selected = value ?? local;
   const ref = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
     const outside = (event: PointerEvent) => { if (event.target instanceof Node && !ref.current?.contains(event.target) && ref.current) ref.current.open = false; };
@@ -14,7 +15,7 @@ export function AvatarStylePicker() {
     return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape); };
   }, []);
   const pick = (id: AvatarStyleId) => {
-    selectAvatarStyle(id); setSelected(id);
+    selectAvatarStyle(id); setLocal(id); onChange?.(id);
     if (ref.current) { ref.current.open = false; ref.current.querySelector('summary')?.focus(); }
   };
   return (
@@ -26,7 +27,7 @@ export function AvatarStylePicker() {
           <span className="style-preview"><Avatar seat={1} size={44} styleId={style.id} /><Avatar seat={2} size={48} styleId={style.id} /><Avatar seat={4} size={44} styleId={style.id} /></span>
           <b>{style.name}</b><small>{style.detail}</small>{selected === style.id && <span className="style-check"><Icon name="check" size={13} /></span>}
         </button>)}</div>
-        <p className="picker-note">每套 12 位不同人物 · 仅更换外观，不改变游戏身份</p>
+        <p className="picker-note">每套 12 位人物与默认昵称 · 自定义昵称保留 · 不改变游戏身份</p>
       </div>
     </details>
   );

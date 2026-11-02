@@ -4,6 +4,7 @@ import { go, useCatalog } from '../hooks';
 import { Icon, Logo } from '../components/Icons';
 import { Avatar } from '../components/Avatar';
 import { AvatarStylePicker } from '../components/AvatarStylePicker';
+import { currentAvatarStyle } from '../avatar-style';
 
 export function Home() {
   const catalog = useCatalog();
@@ -24,7 +25,7 @@ export function Home() {
   const create = async () => {
     setBusy(true); setError(null);
     try {
-      const r = await api.createRoom(); rememberRoom(r); go('/host/' + r.roomId + '/' + r.hostToken);
+      const r = await api.createRoom(currentAvatarStyle()); rememberRoom(r); go('/host/' + r.roomId + '/' + r.hostToken);
     } catch (e) { setError((e as Error).message); setBusy(false); }
   };
 

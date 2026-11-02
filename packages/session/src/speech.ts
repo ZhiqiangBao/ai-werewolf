@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { SpeechProvidersView } from '@werewolf/protocol';
-import { DEFAULT_SPEECH_CONFIG, speechProvider, type SpeechAudio, type SpeechConfig, type SpeechProvider } from './speech/providers';
+import { defaultSpeechConfig, speechProvider, type SpeechAudio, type SpeechConfig, type SpeechProvider } from './speech/providers';
 export type { SpeechAudio, SpeechProvider, SpeechConfig, SpeechProviderConfig } from './speech/providers';
 
 const MIME_TYPES = new Set(['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/webm', 'audio/mp4', 'audio/flac']);
@@ -45,19 +45,20 @@ export class SpeechService {
   }
   static configured(directory: string, configFile = join(dirname(directory), 'speech-providers.json')): SpeechService {
     try {
-      const config: SpeechConfig = existsSync(configFile) ? JSON.parse(readFileSync(configFile, 'utf8')) : DEFAULT_SPEECH_CONFIG;
+      const config: SpeechConfig = existsSync(configFile) ? JSON.parse(readFileSync(configFile, 'utf8')) : defaultSpeechConfig();
       if (!Array.isArray(config.providers)) throw Error('Invalid speech providers');
       return new SpeechService(directory, config.providers.map((p) => speechProvider(p, directory, dirname(configFile))), config.defaultProviderId ?? config.providers[0]?.id ?? null);
     } catch {
       return new SpeechService(directory, [], null, '服务端朗读配置无效，请检查 speech-providers.json；浏览器原生朗读仍可独立使用。');
     }
   }
-  catalog(): SpeechProvidersView {
-    return { providers: this.providers.map(({ id, label }) => ({ id, label })), defaultProviderId: this.defaultId, ...(this.configError ? { error: this.configError } : {}) };
+  catalog(additional: SpeechProvider[] = []): SpeechProvidersView {
+    return { providers: [...this.providers, ...additional].map(({ id, label }) => ({ id, label })), defaultProviderId: this.defaultId ?? additional[0]?.id ?? null, ...(this.configError ? { error: this.configError } : {}) };
   }
 
-  render(text: string, providerId: string | undefined = this.defaultId ?? undefined): Promise<{ bytes: Buffer; mimeType: string }> {
-    const provider = this.providers.find((p) => p.id === providerId);
+  render(text: string, providerId?: string, additional: SpeechProvider[] = []): Promise<{ bytes: Buffer; mimeType: string }> {
+    const selected = providerId ?? this.defaultId ?? additional[0]?.id;
+    const provider = [...this.providers, ...additional].find((p) => p.id === selected);
     if (!provider) return Promise.reject(new Error('Unknown speech provider'));
     const key = createHash('sha256').update(JSON.stringify({ version: 1, provider: provider.cacheIdentity, id: provider.id, text })).digest('hex');
     const running = this.pending.get(key);

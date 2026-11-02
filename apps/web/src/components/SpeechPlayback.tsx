@@ -13,6 +13,8 @@ export function useSpeechPlayback(roomId: string, token: string, projection: Pro
   const native = typeof window.speechSynthesis !== 'undefined' && typeof window.SpeechSynthesisUtterance !== 'undefined';
   const audio = useRef<HTMLAudioElement | null>(null), output = useRef<SpeechOutput | null>(null);
   const cursor = useRef(new SpeechCursor()), enabledRef = useRef(false), pausedRef = useRef(false), rateRef = useRef(rate);
+  const sourceRef = useRef(source), stopRef = useRef<() => void>(() => {});
+  sourceRef.current = source;
   rateRef.current = rate;
   const items = audibleSpeech(projection?.events ?? []);
 
@@ -24,13 +26,31 @@ export function useSpeechPlayback(roomId: string, token: string, projection: Pro
   }, [native]);
   useEffect(() => {
     let active = true;
-    void api.speechProviders(roomId, token).then((data) => {
-      if (!active) return;
-      setProviders(data.providers); setProviderError(data.error ?? '');
-      const preferred = localStorage.getItem('werewolf-speech-source');
-      setSource(preferred === 'browser' && native ? 'browser' : data.providers.some((p) => p.id === preferred) ? preferred! : native ? 'browser' : data.defaultProviderId ?? '');
-    }, () => { if (active) { setProviderError('无法载入服务端朗读来源。'); if (native) setSource('browser'); } });
-    return () => { active = false; };
+    let request = 0;
+    const refresh = (initial = false) => {
+      const own = ++request;
+      void api.speechProviders(roomId, token).then((data) => {
+        if (!active || own !== request) return;
+        setProviders(data.providers); setProviderError(data.error ?? '');
+        if (!initial && sourceRef.current) {
+          if (sourceRef.current !== 'browser' && !data.providers.some((p) => p.id === sourceRef.current)) {
+            stopRef.current(); setSource(''); setError('所选朗读来源已删除，请重新选择。');
+          }
+          return;
+        }
+        const preferred = localStorage.getItem('werewolf-speech-source');
+        setSource(preferred === 'browser' && native ? 'browser' : data.providers.some((p) => p.id === preferred) ? preferred! : native ? 'browser' : data.defaultProviderId ?? '');
+      }, () => { if (active && own === request) { setProviderError('无法载入服务端朗读来源。'); if (initial && native) setSource('browser'); } });
+    };
+    const changed = (event: Event) => {
+      if ((event as CustomEvent).detail !== roomId) return;
+      if (sourceRef.current.startsWith('tts_')) stopRef.current();
+      refresh();
+    };
+    const focus = () => refresh();
+    refresh(true);
+    window.addEventListener('werewolf-speech-providers-updated', changed); window.addEventListener('focus', focus);
+    return () => { active = false; window.removeEventListener('werewolf-speech-providers-updated', changed); window.removeEventListener('focus', focus); };
   }, [roomId, token, native]);
   useEffect(() => {
     if (!projection) return;
@@ -70,6 +90,7 @@ export function useSpeechPlayback(roomId: string, token: string, projection: Pro
     enabledRef.current = false; pausedRef.current = false;
     setEnabled(false); setPaused(false); setCurrent(null); setQueue([]); setLoading(false); output.current?.stop();
   };
+  stopRef.current = stop;
   const read = (event: GameEvent) => {
     const item = audibleSpeech([event])[0];
     if (!item) return;

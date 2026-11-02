@@ -1,5 +1,6 @@
 import type {
   ActResult,
+  AvatarStyleId,
   AuditEntry,
   Catalog,
   ControlAction,
@@ -16,6 +17,9 @@ import type {
   SeatActionInput,
   SpeechProvidersView,
   InviteNetworkView,
+  SpeechConnectionDraft,
+  SpeechConnectionView,
+  SpeechSettingsView,
 } from '@werewolf/protocol';
 
 export class ApiError extends Error {
@@ -45,11 +49,14 @@ async function request<T>(method: string, path: string, token?: string, body?: u
 
 export const api = {
   speechProviders: (id: string, token: string) => request<SpeechProvidersView>('GET', `/rooms/${id}/speech-providers`, token),
+  speechSettings: (id: string, token: string) => request<SpeechSettingsView>('GET', `/rooms/${id}/speech-settings`, token),
+  saveSpeech: (id: string, token: string, draft: SpeechConnectionDraft, connectionId?: string) => request<SpeechConnectionView>(connectionId ? 'PUT' : 'POST', `/rooms/${id}/speech-settings${connectionId ? `/${encodeURIComponent(connectionId)}` : ''}`, token, draft),
+  deleteSpeech: (id: string, token: string, connectionId: string) => request<{ ok: true }>('DELETE', `/rooms/${id}/speech-settings/${encodeURIComponent(connectionId)}`, token),
   catalog: () => request<Catalog>('GET', '/catalog'),
   modelPresets: () => request<ModelPresetView[]>('GET', '/models'),
   addModel: (draft: ModelDraft) => request<ModelPresetView>('POST', '/models', undefined, draft),
   deleteModel: (id: string) => request<{ ok: true }>('DELETE', `/models/${encodeURIComponent(id)}`),
-  createRoom: () => request<CreateRoomResult>('POST', '/rooms'),
+  createRoom: (avatarStyle?: AvatarStyleId) => request<CreateRoomResult>('POST', '/rooms', undefined, { avatarStyle }),
   cloneRoom: (id: string, t: string) => request<CreateRoomResult>('POST', `/rooms/${id}/clone`, t),
   getSetup: (id: string, t: string) => request<RoomSetupView>('GET', `/rooms/${id}/setup`, t),
   inviteNetwork: (id: string, t: string) => request<InviteNetworkView>('GET', `/rooms/${id}/invite-network`, t),

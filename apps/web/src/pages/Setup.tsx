@@ -16,6 +16,8 @@ import { useCatalog, useStream } from '../hooks';
 import { HumanStatus } from '../components/HumanPlayers';
 import { RuleCard } from '../components/Cards';
 import { Avatar } from '../components/Avatar';
+import { AvatarStylePicker } from '../components/AvatarStylePicker';
+import { applyAvatarStyle, currentAvatarStyle } from '../avatar-style';
 import { InviteQr } from '../components/InviteQr';
 import { automaticInviteBase, inviteBase, sharedInvite } from '../invites';
 import { copyText, link, seatName, seatStyle } from '../util';
@@ -34,6 +36,7 @@ function mergeInput(a: RoomSetupInput, b: RoomSetupInput): RoomSetupInput {
 function applyLocal(s: RoomSetupView, input: RoomSetupInput): RoomSetupView {
   return {
     ...s,
+    avatarStyle: input.avatarStyle ?? s.avatarStyle,
     ruleValues: { ...s.ruleValues, ...input.ruleValues },
     humanTimeoutSec: input.humanTimeoutSec ?? s.humanTimeoutSec,
     aiPacingMs: input.aiPacingMs ?? s.aiPacingMs,
@@ -58,6 +61,9 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const edits = useRef(0);
   const chain = useRef<Promise<void>>(Promise.resolve());
+  useEffect(() => {
+    if (setup?.avatarStyle) applyAvatarStyle(setup.avatarStyle);
+  }, [setup?.avatarStyle]);
   useStream(roomId, token, () => {
     if (saving || Object.keys(queued.current).length) return;
     const mark = edits.current;
@@ -155,7 +161,7 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
     <div className="wrap">
       <header className="page-heading">
         <div><span className="eyebrow">PREPARE YOUR COUNCIL</span><h1>准备你的圆桌</h1><p>选一个故事，让不同的声音入席。</p></div>
-        <span className="tag gold">{saving ? '正在保存…' : '配置已自动保存'}</span>
+        <div className="row"><AvatarStylePicker value={setup.avatarStyle ?? currentAvatarStyle()} onChange={(avatarStyle) => patch({ avatarStyle }, 0)} /><span className="tag gold">{saving ? '正在保存…' : '配置已自动保存'}</span></div>
       </header>
       <div className="setup-steps"><span><b>01</b>选择版型</span><span><b>02</b>安排座位</span><span><b>03</b>开启故事</span></div>
       <div className="setup-grid">
@@ -605,9 +611,9 @@ function SeatRow({
         type="text"
         value={s.name === seatName(s.seat) ? '' : s.name}
         maxLength={12}
-        placeholder="自定义昵称"
+        placeholder="留空恢复人物默认昵称"
         aria-label={`${s.seat}号的昵称`}
-        title="自定义昵称，可在开局前修改"
+        title="自定义昵称，可在开局前修改；留空恢复当前人物默认昵称"
         onChange={(e) => patchSeat(s.seat, { name: e.target.value })}
       />
       <div className="seg">

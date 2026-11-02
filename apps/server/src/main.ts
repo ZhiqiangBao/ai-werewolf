@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ControlAction } from '@werewolf/protocol';
-import { ApiFailure, FileStore, RoomManager, SecretBox, SpeechService } from '@werewolf/session';
+import { ApiFailure, FileStore, RoomManager, SecretBox, SpeechConnections, SpeechService } from '@werewolf/session';
 import { DEFAULT_HOST, inviteNetwork } from './invite-network';
 
 const ROOT = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
@@ -17,6 +17,7 @@ const HOST = process.env.HOST ?? DEFAULT_HOST;
 const secrets = SecretBox.fromEnvOrFile(DATA);
 const manager = new RoomManager({ store: new FileStore(DATA), secrets, modelsPath: join(DATA, 'models.json') });
 const speech = SpeechService.configured(join(DATA, 'speech'), process.env.WEREWOLF_SPEECH_CONFIG);
+const speechConnections = new SpeechConnections(join(DATA, 'speech-connections.json'), secrets, join(DATA, 'speech'));
 
 function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -77,7 +78,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL): Promise
     return send(res, 200, { ok: true });
   }
   if (parts[0] !== 'rooms') throw new ApiFailure(404, 'NOT_FOUND', '接口不存在');
-  if (parts.length === 1 && method === 'POST') return send(res, 201, manager.createRoom());
+  if (parts.length === 1 && method === 'POST') return send(res, 201, manager.createRoom(await readBody(req)));
 
   const [, roomId, action, sub, subAction] = parts;
   if (!roomId) throw new ApiFailure(404, 'NOT_FOUND', '接口不存在');
@@ -109,17 +110,43 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL): Promise
       return send(res, 200, manager.act(roomId, token, await readBody(req)));
     case 'POST participate':
       return send(res, 200, manager.participate(roomId, token, await readBody(req)));
+    case 'GET speech-settings':
+      manager.getSetup(roomId, token);
+      return send(res, 200, { connections: speechConnections.views(roomId), builtins: speech.catalog().providers, ...(speechConnections.error ? { error: speechConnections.error } : {}) });
+    case 'POST speech-settings':
+    case 'PUT speech-settings': {
+      manager.getSetup(roomId, token);
+      if (subAction === 'test' && method === 'POST' && sub) {
+        const providers = speechConnections.providers(roomId);
+        if (!providers.some((provider) => provider.id === sub)) throw new ApiFailure(404, 'NOT_FOUND', '没有这个 TTS 来源');
+        try {
+          const audio = await speech.render('这是一段语音接入测试。一二三。', sub, providers);
+          res.writeHead(200, { 'Content-Type': audio.mimeType, 'Content-Length': audio.bytes.length, 'Cache-Control': 'private, no-store' }); res.end(audio.bytes);
+        } catch { return send(res, 503, { code: 'SPEECH_UNAVAILABLE', message: '试听失败，请核对地址、密钥、模型、音色及所选协议；未切换其他来源。' }); }
+        return;
+      }
+      if ((method === 'POST' && sub) || (method === 'PUT' && (!sub || subAction))) break;
+      try { return send(res, method === 'POST' ? 201 : 200, speechConnections.save(roomId, await readBody(req), method === 'PUT' ? sub : undefined)); }
+      catch (error) { if (error instanceof ApiFailure) throw error; throw new ApiFailure(400, 'BAD_REQUEST', error instanceof Error && !('code' in error) ? error.message : '无法保存 TTS 配置，请检查服务端存储。'); }
+    }
+    case 'DELETE speech-settings':
+      manager.getSetup(roomId, token);
+      if (!sub || subAction) break;
+      try { speechConnections.remove(roomId, sub); }
+      catch { throw new ApiFailure(400, 'BAD_REQUEST', '无法删除此 TTS 来源'); }
+      return send(res, 200, { ok: true });
     case 'GET speech-providers':
       manager.view(roomId, token);
-      return send(res, 200, speech.catalog());
+      return send(res, 200, speech.catalog(speechConnections.providers(roomId)));
     case 'POST speech': {
       const body = await readBody(req);
       const text = manager.speechText(roomId, token, body.eventSeq);
-      if (body.providerId !== undefined && (typeof body.providerId !== 'string' || !speech.catalog().providers.some((p) => p.id === body.providerId))) {
+      const providers = speechConnections.providers(roomId);
+      if (body.providerId !== undefined && (typeof body.providerId !== 'string' || !speech.catalog(providers).providers.some((p) => p.id === body.providerId))) {
         throw new ApiFailure(400, 'BAD_REQUEST', '请选择已配置的朗读来源');
       }
       try {
-        const audio = await speech.render(text, body.providerId as string | undefined);
+        const audio = await speech.render(text, body.providerId as string | undefined, providers);
         res.writeHead(200, { 'Content-Type': audio.mimeType, 'Content-Length': audio.bytes.length, 'Cache-Control': 'private, no-store' });
         res.end(audio.bytes);
       } catch {

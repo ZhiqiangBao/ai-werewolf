@@ -1,4 +1,4 @@
-import type { AuditEntry, GameEvent, RuleSet, RuleValue, SeatConfigView, Thought } from '@werewolf/protocol';
+import type { AuditEntry, AvatarStyleId, GameEvent, RuleSet, RuleValue, SeatConfigView, Thought } from '@werewolf/protocol';
 import type { SeatThread } from './agent';
 import { migrateThread } from './agent';
 import type { ActionRecord, GameState } from '@werewolf/engine';
@@ -6,6 +6,8 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renam
 import { join } from 'node:path';
 
 export interface SeatRecord extends Omit<SeatConfigView, 'apiKeyMasked'> {
+  /** 缺省为旧存档；只把旧的座位号昵称视为默认昵称。 */
+  nameSource?: 'avatar' | 'custom';
   /** 加密后的密钥。 */
   apiKeyEnc: string | null;
   apiKeyMask: string | null;
@@ -13,6 +15,7 @@ export interface SeatRecord extends Omit<SeatConfigView, 'apiKeyMasked'> {
 
 export interface RoomRecord {
   id: string;
+  avatarStyle?: AvatarStyleId;
   createdAt: number;
   hostToken: string;
   spectatorToken: string;

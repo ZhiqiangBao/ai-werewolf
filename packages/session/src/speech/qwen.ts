@@ -8,12 +8,18 @@ export type { VoiceProfile, Word, AudioMeta } from './types';
 
 // The user authorized Token Plan. Never silently switch to a pay-as-you-go key.
 const ENDPOINT = 'https://token-plan.maas.qianwenaiapi.com/api/v1/services/audio/tts/SpeechSynthesizer';
-export async function synthesizeQwen(text: string, profile: VoiceProfile, model: string, output: string, options?: { signal: AbortSignal }): Promise<AudioMeta> {
+export async function synthesizeQwen(text: string, profile: VoiceProfile, model: string, output: string, options?: { signal?: AbortSignal; endpoint?: string; apiKey?: string }): Promise<AudioMeta> {
+  const explicit = options?.endpoint !== undefined || options?.apiKey !== undefined;
+  const endpoint = options?.endpoint ?? ENDPOINT;
+  if (explicit) {
+    const url = new URL(endpoint);
+    if (!options?.apiKey || !options.endpoint || !['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw Error('Explicit Qwen TTS endpoint and key are required');
+  }
   const seed = profile.seed ?? 31415;
   if (!Number.isInteger(seed) || seed < 0 || seed > 2147483647) throw Error('Invalid Qwen synthesis seed');
   const input = { text, voice: profile.voice, format: 'wav', sample_rate: 24000, rate: profile.rate,
     instruction: profile.instruction, language_hints: ['zh'], word_timestamp_enabled: true, seed };
-  const cacheKey = createHash('sha256').update(JSON.stringify({ model, input })).digest('hex');
+  const cacheKey = createHash('sha256').update(JSON.stringify(explicit ? { endpoint, model, input } : { model, input })).digest('hex');
   try {
     const meta = JSON.parse(await readFile(output + '.json', 'utf8')) as AudioMeta;
     const bytes = await readFile(output);
@@ -21,15 +27,15 @@ export async function synthesizeQwen(text: string, profile: VoiceProfile, model:
   } catch { /* Missing/incomplete cache: regenerate this clip only. */ }
   const reused = await reuseAudio(cacheKey, output);
   if (reused) return reused;
-  const apiKey = process.env.WEREWOLF_TTS_API_KEY || loadQwenPresets().find((p) =>
+  const apiKey = explicit ? options!.apiKey : process.env.WEREWOLF_TTS_API_KEY || loadQwenPresets().find((p) =>
     new URL(p.baseUrl).hostname === 'token-plan.maas.qianwenaiapi.com' && p.apiKey?.startsWith('sk-sp-'))?.apiKey;
-  if (!apiKey?.startsWith('sk-sp-')) throw Error('Qwen Token Plan key is unavailable');
-  const response = await fetch(ENDPOINT, { method: 'POST',
+  if (explicit ? !apiKey : !apiKey?.startsWith('sk-sp-')) throw Error('Qwen Token Plan key is unavailable');
+  const response = await fetch(endpoint, { method: 'POST', ...(explicit ? { redirect: 'error' as const } : {}),
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'X-DashScope-SSE': 'enable' },
     body: JSON.stringify({ model, input }), signal: options?.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(240000)]) : AbortSignal.timeout(240000) });
   if (!response.ok) {
     let code = 'HTTP error';
-    try { const body = await response.json() as Record<string, unknown>; code = String(body.code ?? body.message ?? code).slice(0, 150); } catch { /* Do not print raw HTTP bodies or credentials. */ }
+    if (!explicit) try { const body = await response.json() as Record<string, unknown>; code = String(body.code ?? body.message ?? code).slice(0, 150); } catch { /* Do not print raw HTTP bodies or credentials. */ }
     throw Error(`Qwen TTS ${response.status}: ${code}`);
   }
   const contentType = response.headers.get('content-type') ?? '';

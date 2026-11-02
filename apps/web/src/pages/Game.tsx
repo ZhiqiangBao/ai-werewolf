@@ -7,18 +7,23 @@ import { IdentityCard, ResultBanner, RuleCard } from '../components/Cards';
 import { EventLog } from '../components/EventLog';
 import { GodPanel } from '../components/GodPanel';
 import { Logo, PhaseIcon } from '../components/Icons';
-import { AvatarStylePicker } from '../components/AvatarStylePicker';
+import { AVATAR_STYLES, applyAvatarStyle, initializeAvatarStyle } from '../avatar-style';
 import { SeatRing } from '../components/SeatRing';
 import { TaskPanel } from '../components/TaskPanel';
 import { ThoughtFeed } from '../components/ThoughtFeed';
 import { HumanLobby, HumanStatus } from '../components/HumanPlayers';
 import { SpeechControls, useSpeechPlayback } from '../components/SpeechPlayback';
+import { SpeechSettings } from '../components/SpeechSettings';
 import { downloadVideoScript } from '../video';
 import { phaseLabel, seatName } from '../util';
 import { LinksPanel, Setup } from './Setup';
 
 function TopBar({ room, projection, who, children }: { room: RoomBrief; projection: Projection | null; who: string; children?: ReactNode }) {
   const phase = projection?.status === 'ended' ? 'end' : (projection?.phase ?? 'setup');
+  useEffect(() => {
+    if (room.avatarStyle) applyAvatarStyle(room.avatarStyle);
+    return initializeAvatarStyle;
+  }, [room.avatarStyle]);
   // 场景与公共控件随昼夜切换。
   useEffect(() => {
     document.body.dataset.phase = phase;
@@ -43,7 +48,7 @@ function TopBar({ room, projection, who, children }: { room: RoomBrief; projecti
       )}
       {room.paused && room.status === 'running' && <span className="tag gold">已暂停</span>}
       <span className="spacer" />
-      <AvatarStylePicker />
+      {room.avatarStyle && <span className="tag">{AVATAR_STYLES.find((style) => style.id === room.avatarStyle)?.name}</span>}
       {children}
       <span className="tag">{who}</span>
     </div>
@@ -78,7 +83,7 @@ export function HostPage({ roomId, token }: { roomId: string; token: string }) {
   if (data.room.status === 'setup' || !data.projection) {
     return (
       <>
-        <TopBar room={data.room} projection={null} who="房主" />
+        <TopBar room={data.room} projection={null} who="房主"><SpeechSettings roomId={roomId} token={token} /></TopBar>
         <Setup roomId={roomId} token={token} onStarted={() => void refresh()} />
       </>
     );
@@ -130,6 +135,7 @@ function HostGame({ roomId, token, room, projection: p, refresh }: { roomId: str
   return (
     <>
       <TopBar room={room} projection={p} who="房主 · 上帝视角">
+        <SpeechSettings roomId={roomId} token={token} />
         {running && !room.paused && (
           <button className="btn sm" disabled={busy} onClick={() => void control('pause')}>
             暂停
