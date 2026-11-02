@@ -1,32 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createBaselineAcceptance, evaluateBaselineEvidence, type BaselineEvidence } from '../src/observability/acceptance';
-
-const source = 'a'.repeat(64), revision = 'b'.repeat(40);
-let sequence = 0;
-function sample(seed: string, repetition: number, warmup = false, scenario = 'S01', protocol = 'responses'): BaselineEvidence {
-  const runId = `run-${(++sequence).toString(16).padStart(8, '0')}-0000-4000-8000-000000000000`;
-  const ref = { schemaVersion: 1 as const, runId, roomRef: 'r1' };
-  const callId = `${runId}:call:18`, requestId = `${callId}:2`, id = `${callId}:5`;
-  const rootId = `${runId}:run:1`;
-  return { manifest: { completed: true, scenario, protocol, seed, repetition, warmup, roomCount: scenario === 'S01' ? 1 : 2,
-    workloadSha256: seed.slice(-3).padStart(64, '0'), sourceRevision: revision, sourceRevisionEnd: revision,
-    sourceSha256: source, sourceSha256End: source, sourceChangedDuringRun: false,
-    collector: { dropped: 0, writeErrors: 0, bufferedRecords: 0, bufferedBytes: 0 }, collectorRuntime: { callbackErrors: 0, activeSpans: 0 } },
-    observations: [
-      { ...ref, kind: 'run', id: rootId, phase: 'start', atMs: 0 },
-      { ...ref, kind: 'http_attempt', id, httpAttemptId: id, callId, requestId, parentId: requestId, attemptIndex: 0, phase: 'start', atMs: 0 },
-      { ...ref, kind: 'http_attempt', id, httpAttemptId: id, callId, requestId, parentId: requestId, attemptIndex: 0, phase: 'end', atMs: 90, status: 200, outcome: 'success', metrics: Object.fromEntries(
-        [['headersMs', 20], ['firstBodyByteMs', 50], ['firstStreamContentMs', 60], ['bodyConsumeMs', 70]].map(([key, valueMs]) => [key, { valueMs, source: 'client' }])) },
-      { ...ref, kind: 'run', id: rootId, phase: 'end', atMs: 90, outcome: 'success' },
-    ],
-    truth: [{ attemptId: id, source: 'synthetic', planned: { headersMs: 20, firstContentMs: 30, chunks: 4, chunkIntervalMs: 10, status: 200, capacity: null },
-      queueMs: 0, headersMs: 20, elapsedMs: 90, finished: true, firstBodyByteMs: 50, firstStreamContentMs: 60, bodyConsumeMs: 70 }],
-  };
-}
-const fullGroup = (scenario = 'S01', protocol = 'responses') => [sample('obs-standard12-001', 0, true, scenario, protocol),
-  ...['001', '002', '003'].flatMap((suffix) => [1, 2, 3].map((repetition) => sample(`obs-standard12-${suffix}`, repetition, false, scenario, protocol)))];
-const fullMatrix = () => ['S01', 'S02', 'S03'].flatMap((scenario) =>
-  ['chat_completions', 'responses', 'anthropic_messages'].flatMap((protocol) => fullGroup(scenario, protocol)));
+import { fullGroup, fullMatrix, revision, sample, source } from './observability-fixture';
 const end = (row: BaselineEvidence) => row.observations.find((event) => event.kind === 'http_attempt' && event.phase === 'end')!;
 const start = (row: BaselineEvidence) => row.observations.find((event) => event.kind === 'http_attempt' && event.phase === 'start')!;
 
@@ -36,11 +10,12 @@ describe('normal baseline acceptance integrity', () => {
     expect(result.status).toBe('within_thresholds');
     expect(result.samples).toBe(90);
     expect(result.results).toHaveLength(9);
-    expect(result.integrity).toMatchObject({ truthRaw: 90, truthUnique: 90, httpStartsRaw: 90, httpStartsUnique: 90,
-      httpEndsRaw: 90, httpEndsUnique: 90, duplicateTruth: 0, duplicateHttpStarts: 0, duplicateHttpEnds: 0 });
+    expect(result.integrity).toMatchObject({ truthRaw: 4500, truthUnique: 4500, httpStartsRaw: 4500, httpStartsUnique: 4500,
+      httpEndsRaw: 4500, httpEndsUnique: 4500, duplicateTruth: 0, duplicateHttpStarts: 0, duplicateHttpEnds: 0 });
     for (const group of result.results) {
-      expect(group).toMatchObject({ formalRuns: 9, warmups: 1, covered: true, attempts: 9, matchedTruth: 9, status: 'within_thresholds',
-        integrity: { truthRaw: 10, truthUnique: 10, httpStartsRaw: 10, httpStartsUnique: 10, httpEndsRaw: 10, httpEndsUnique: 10,
+      const count = group.key.startsWith('S01/') ? 300 : 600;
+      expect(group).toMatchObject({ formalRuns: 9, warmups: 1, covered: true, attempts: count * 0.9, matchedTruth: count * 0.9, status: 'within_thresholds',
+        integrity: { truthRaw: count, truthUnique: count, httpStartsRaw: count, httpStartsUnique: count, httpEndsRaw: count, httpEndsUnique: count,
           duplicateTruth: 0, duplicateHttpStarts: 0, duplicateHttpEnds: 0, truthWithoutStart: [], truthWithoutEnd: [],
           httpStartsWithoutTruth: [], httpEndsWithoutTruth: [], crossRunTruth: 0, crossRunObservations: 0 } });
       expect(group.metrics.firstStreamContentMs.medianAbsoluteErrorMs).toBe(0);
@@ -67,27 +42,27 @@ describe('normal baseline acceptance integrity', () => {
 
   it('detects an entirely missing HTTP pair even when truth and collector counters remain', () => {
     const rows = fullGroup(), id = rows[1].truth[0].attemptId;
-    rows[1].observations = rows[1].observations.filter((event) => event.kind !== 'http_attempt');
+    rows[1].observations = rows[1].observations.filter((event) => !(event.kind === 'http_attempt' && event.id === id));
     const group = evaluateBaselineEvidence(rows, false).results[0];
     expect(group.status).toBe('invalid');
-    expect(group.integrity.truthRaw).toBe(10);
-    expect(group.integrity.httpStartsRaw).toBe(9);
+    expect(group.integrity.truthRaw).toBe(300);
+    expect(group.integrity.httpStartsRaw).toBe(299);
     expect(group.integrity.truthWithoutStart).toHaveLength(1);
     expect(group.integrity.truthWithoutEnd).toHaveLength(1);
     expect(group.runs[1].integrity.truthWithoutStart).toEqual([id]);
   });
 
   it('reports extra and duplicate truth and missing truth in both directions', () => {
-    const extra = fullGroup(), id = extra[1].truth[0].attemptId.replace(/:5$/, ':6');
+    const extra = fullGroup(), id = extra[1].truth[0].attemptId.replace(/:call:1:5$/, ':call:99999:5');
     extra[1].truth.push({ ...extra[1].truth[0], attemptId: id });
     let group = evaluateBaselineEvidence(extra, false).results[0];
     expect(group.status).toBe('invalid');
-    expect(group.integrity).toMatchObject({ truthRaw: 11, truthUnique: 11, duplicateTruth: 0 });
+    expect(group.integrity).toMatchObject({ truthRaw: 301, truthUnique: 301, duplicateTruth: 0 });
     expect(group.runs[1].integrity.truthWithoutEnd).toEqual([id]);
     const duplicate = fullGroup(); duplicate[1].truth.push({ ...duplicate[1].truth[0] });
     group = evaluateBaselineEvidence(duplicate, false).results[0];
-    expect(group).toMatchObject({ status: 'invalid', integrity: { truthRaw: 11, truthUnique: 10, duplicateTruth: 1 } });
-    const missing = fullGroup(); missing[1].truth = [];
+    expect(group).toMatchObject({ status: 'invalid', integrity: { truthRaw: 301, truthUnique: 300, duplicateTruth: 1 } });
+    const missing = fullGroup(); missing[1].truth.shift();
     group = evaluateBaselineEvidence(missing, false).results[0];
     expect(group.status).toBe('invalid');
     expect(group.integrity.httpStartsWithoutTruth).toHaveLength(1);
@@ -98,7 +73,7 @@ describe('normal baseline acceptance integrity', () => {
     const rows = fullGroup(); rows[1].observations.splice(2, 0, structuredClone(start(rows[1])), structuredClone(end(rows[1])));
     const group = evaluateBaselineEvidence(rows, false).results[0];
     expect(group.status).toBe('invalid');
-    expect(group.integrity).toMatchObject({ httpStartsRaw: 11, httpStartsUnique: 10, httpEndsRaw: 11, httpEndsUnique: 10, duplicateHttpStarts: 1, duplicateHttpEnds: 1 });
+    expect(group.integrity).toMatchObject({ httpStartsRaw: 301, httpStartsUnique: 300, httpEndsRaw: 301, httpEndsUnique: 300, duplicateHttpStarts: 1, duplicateHttpEnds: 1 });
   });
 
   it('retains malformed rows in raw counts without mislabeling absent IDs as duplicates', () => {
@@ -107,8 +82,8 @@ describe('normal baseline acceptance integrity', () => {
     delete (start(rows[2]) as unknown as { id?: string }).id;
     const group = evaluateBaselineEvidence(rows, false).results[0];
     expect(group.status).toBe('invalid');
-    expect(group.integrity).toMatchObject({ truthRaw: 10, truthUnique: 9, invalidTruthIds: 1, duplicateTruth: 0,
-      httpStartsRaw: 10, httpStartsUnique: 9, invalidHttpStartIds: 1, duplicateHttpStarts: 0 });
+    expect(group.integrity).toMatchObject({ truthRaw: 300, truthUnique: 299, invalidTruthIds: 1, duplicateTruth: 0,
+      httpStartsRaw: 300, httpStartsUnique: 299, invalidHttpStartIds: 1, duplicateHttpStarts: 0 });
   });
 
   it('rejects foreign observation IDs, truth IDs and optional explicit foreign run IDs', () => {
@@ -209,9 +184,132 @@ describe('normal baseline acceptance integrity', () => {
     expect(evaluateBaselineEvidence(unpinnedAcrossGroups, false).status).toBe('not_passed');
   });
 
+  it.each([
+    ['headersMs', 21], ['firstContentMs', 31], ['chunks', 3], ['chunkIntervalMs', 11], ['status', 201], ['capacity', 1],
+  ] as const)('rejects a changed truth plan field %s', (field, value) => {
+    const rows = fullGroup();
+    (rows[1].truth[0].planned as unknown as Record<string, unknown>)[field] = value;
+    expect(evaluateBaselineEvidence(rows, false).results[0]).toMatchObject({ status: 'invalid', integrity: { invalidTruthPlans: 1 } });
+  });
+
+  it('checks S03 truth plans against the room that issued the HTTP attempt', () => {
+    const rows = fullGroup('S03');
+    expect(evaluateBaselineEvidence(rows, false).status).toBe('within_thresholds');
+    rows[1].truth[30].planned.headersMs = 20;
+    expect(evaluateBaselineEvidence(rows, false).results[0]).toMatchObject({ status: 'invalid', integrity: { invalidTruthPlans: 1 } });
+  });
+
+  it.each(['headersMs', 'firstBodyByteMs', 'firstStreamContentMs', 'bodyConsumeMs'] as const)(
+    'requires the measurement source to be client for %s', (field) => {
+      const rows = fullGroup();
+      end(rows[1]).metrics![field] = { valueMs: 20, source: 'synthetic' };
+      expect(evaluateBaselineEvidence(rows, false).results[0]).toMatchObject({ status: 'invalid', integrity: { invalidMetricSources: 1 } });
+    },
+  );
+
+  it('rejects protocol relabelling and HTTP attempts without their paired model call', () => {
+    const relabelled = fullGroup();
+    for (const row of relabelled) row.manifest.protocol = 'chat_completions';
+    const group = evaluateBaselineEvidence(relabelled, false).results[0];
+    expect(group.covered).toBe(true);
+    expect(group.status).toBe('invalid');
+    expect(group.integrity.invalidModelCalls).toBeGreaterThan(0);
+
+    const unlinked = fullGroup(), callId = start(unlinked[1]).callId;
+    unlinked[1].observations = unlinked[1].observations.filter((event) => !(event.kind === 'model_call' && event.id === callId));
+    unlinked[1].manifest.sequenceEvidence!.adapterCalls--;
+    const result = evaluateBaselineEvidence(unlinked, false).results[0];
+    expect(result.status).toBe('invalid');
+    expect(result.integrity.invalidSequenceCounts).toBe(0);
+    expect(result.integrity.invalidHttpCallLinks).toBeGreaterThan(0);
+  });
+
+  it('requires a paired call for every successful work even when the attempt sets still agree', () => {
+    const rows = fullGroup(), row = rows[1], retained = row.truth[0].attemptId;
+    const retainedCall = retained.slice(0, retained.lastIndexOf(':'));
+    row.observations = row.observations.filter((event) =>
+      !['model_call', 'http_attempt'].includes(event.kind) || event.callId === retainedCall);
+    row.truth = row.truth.filter((entry) => entry.attemptId === retained);
+    row.manifest.sequenceEvidence!.adapterCalls = 1;
+    row.manifest.sequenceEvidence!.syntheticHttpAttempts = 1;
+    const result = evaluateBaselineEvidence(rows, false).results[0];
+    expect(result.status).toBe('invalid');
+    expect(result.integrity.successfulWorkWithoutCall).toBe(29);
+    expect(result.integrity.invalidSequenceCounts).toBe(0);
+    expect(result.integrity.invalidWorkloadHash).toBe(0);
+    expect(result.integrity.truthWithoutStart).toEqual([]);
+    expect(result.integrity.httpStartsWithoutTruth).toEqual([]);
+  });
+
+  it('rejects a call referring to a different work despite using same-run identifiers', () => {
+    const rows = fullGroup(), models = rows[1].observations.filter((event) => event.kind === 'model_call' && event.phase === 'start');
+    models[0].workId = models[1].workId;
+    const result = evaluateBaselineEvidence(rows, false).results[0];
+    expect(result.status).toBe('invalid');
+    expect(result.integrity.invalidModelWorkLinks).toBeGreaterThan(0);
+  });
+
+  it.each(['skipped', 'cancelled'] as const)('does not require an unissued call for a %s work', (outcome) => {
+    const rows = fullGroup(), row = rows[1], callId = start(row).callId!;
+    const workId = start(row).workId!;
+    row.observations = row.observations.filter((event) => !(['model_call', 'http_attempt'].includes(event.kind) && event.callId === callId));
+    row.observations.find((event) => event.kind === 'work' && event.phase === 'end' && event.id === workId)!.outcome = outcome;
+    row.truth = row.truth.filter((entry) => !entry.attemptId.startsWith(`${callId}:`));
+    row.manifest.sequenceEvidence!.adapterCalls--;
+    row.manifest.sequenceEvidence!.syntheticHttpAttempts--;
+    const result = evaluateBaselineEvidence(rows, false);
+    expect(result.results[0].integrity.successfulWorkWithoutCall).toBe(0);
+    expect(result.status).toBe('within_thresholds');
+  });
+
+  it('rejects a coherently truncated wave, HTTP pair and truth despite matching attempt sets', () => {
+    const rows = fullGroup(), row = rows[1];
+    const wave = row.observations.filter((event) => event.kind === 'wave' && event.phase === 'start').at(-1)!;
+    const ids = new Set(row.observations.filter((event) => event.kind === 'http_attempt' && event.waveId === wave.id).map((event) => event.id));
+    row.observations = row.observations.filter((event) => event.waveId !== wave.id);
+    row.truth = row.truth.filter((entry) => !ids.has(entry.attemptId));
+    row.manifest.sequenceEvidence!.adapterCalls--;
+    row.manifest.sequenceEvidence!.syntheticHttpAttempts--;
+    const group = evaluateBaselineEvidence(rows, false).results[0];
+    expect(group.status).toBe('invalid');
+    expect(group.integrity.truthWithoutStart).toEqual([]);
+    expect(group.integrity.httpStartsWithoutTruth).toEqual([]);
+    expect(group.integrity.invalidSequenceCounts).toBe(0);
+    expect(group.integrity.invalidWorkloadHash).toBe(1);
+    expect(group.integrity.invalidRoomWindows).toBeGreaterThan(0);
+  });
+
+  it('requires room windows, exact aliases and independent sequence counts', () => {
+    const missing = fullGroup(); delete missing[1].manifest.roomWindowMs;
+    expect(evaluateBaselineEvidence(missing, false).results[0].integrity.invalidRoomWindows).toBeGreaterThan(0);
+    const short = fullGroup(); short[1].manifest.roomWindowMs!['synthetic-A'] = 1;
+    expect(evaluateBaselineEvidence(short, false).results[0].integrity.invalidRoomWindows).toBeGreaterThan(0);
+    const aliases = fullGroup('S02'); delete aliases[1].manifest.waveCounts!.r2;
+    expect(evaluateBaselineEvidence(aliases, false).results[0].integrity.invalidRoomWindows).toBeGreaterThan(0);
+    const sequence = fullGroup(); sequence[1].manifest.sequenceEvidence!.syntheticHttpAttempts--;
+    expect(evaluateBaselineEvidence(sequence, false).results[0].integrity.invalidSequenceCounts).toBe(1);
+    const members = fullGroup();
+    const waveEnd = members[1].observations.find((event) => event.kind === 'wave' && event.phase === 'end')!;
+    waveEnd.members = 2;
+    expect(evaluateBaselineEvidence(members, false).results[0].integrity.invalidWaveStructure).toBeGreaterThan(0);
+  });
+
+  it('accepts consistent natural-end metadata without claiming independent engine replay', () => {
+    const rows = fullGroup();
+    for (let repetition = 1; repetition <= 3; repetition++)
+      rows[repetition] = sample('obs-standard12-001', repetition, false, 'S01', 'responses', { waves: 3, endReason: 'natural_end' });
+    const result = evaluateBaselineEvidence(rows, false);
+    expect(result.status).toBe('within_thresholds');
+    expect(result.workloadEvidenceScope).toBe('observed_wave_consistency_not_engine_replay');
+    rows[1].manifest.completed = false;
+    expect(evaluateBaselineEvidence(rows, false).results[0].status).toBe('invalid');
+  });
+
   it('retains genuine timing noise as inconclusive and refuses fault scenarios', () => {
     const noisy = fullGroup();
-    for (const row of noisy) end(row).metrics!.headersMs = { valueMs: 250, source: 'client' };
+    for (const row of noisy) for (const event of row.observations) {
+      if (event.kind === 'http_attempt' && event.phase === 'end') event.metrics!.headersMs = { valueMs: 250, source: 'client' };
+    }
     expect(evaluateBaselineEvidence(noisy, false).results[0].status).toBe('inconclusive_noise');
     noisy[1].manifest.collector.dropped = 1;
     expect(evaluateBaselineEvidence(noisy, false).results[0].status).toBe('invalid');

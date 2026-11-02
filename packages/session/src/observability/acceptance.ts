@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { ObservationEvent, Measurement } from '@werewolf/protocol';
 import type { SyntheticTruth } from './synthetic-types';
 
@@ -6,6 +7,9 @@ export interface BaselineEvidence {
     completed: boolean; scenario: string; protocol: string; seed: string; repetition: number; warmup: boolean; runId?: string;
     roomCount: number; workloadSha256: string; sourceRevision: string; sourceRevisionEnd?: string;
     sourceSha256?: string; sourceSha256End?: string; sourceChangedDuringRun?: boolean;
+    waveCounts?: Record<string, number>; roomWindowMs?: Record<string, number>; windowWallMs?: number;
+    endReasons?: Record<string, string>; windowFixture?: string;
+    sequenceEvidence?: { adapterCalls: number; syntheticHttpAttempts: number };
     collector: { dropped: number; writeErrors: number; bufferedRecords: number; bufferedBytes: number };
     observability?: { callbackErrors: number; activeSpans: number } | null;
     collectorRuntime?: { callbackErrors: number; activeSpans: number } | null;
@@ -64,6 +68,9 @@ interface Integrity {
   truthWithoutStart: string[]; truthWithoutEnd: string[]; httpStartsWithoutTruth: string[]; httpEndsWithoutTruth: string[];
   crossRunTruth: number; crossRunObservations: number; invalidAttemptIds: number; invalidRoots: number;
   invalidNumericValues: number; invalidRequiredFields: number; invalidTruthIds: number; invalidHttpStartIds: number; invalidHttpEndIds: number; manifestRunIdMismatch: number;
+  invalidTruthPlans: number; invalidMetricSources: number; invalidModelCalls: number; invalidHttpCallLinks: number;
+  invalidModelWorkLinks: number; successfulWorkWithoutCall: number;
+  invalidWaveStructure: number; invalidWorkloadHash: number; invalidRoomWindows: number; invalidSequenceCounts: number;
 }
 
 interface Inspection {
@@ -77,6 +84,7 @@ interface Inspection {
   duplicateEnds: number;
   unfinished: number;
   incompleteTerminals: number;
+  reconstructedWorkloadSha256: string | null;
   matched: number;
   errors: Record<string, { absolute: number[]; medianRatios: number[]; p95Ratios: number[]; missing: number }>;
 }
@@ -92,6 +100,58 @@ const counts = (values: readonly string[]) => {
   return { unique, duplicates: values.length - unique.size };
 };
 
+/** Rebuild only the runner's observed workload; this does not replay the game engine. */
+function inspectWindow(row: BaselineEvidence, observations: readonly ObservationEvent[]) {
+  const roomRefs = row.manifest.scenario === 'S01' ? ['r1'] : ['r1', 'r2'];
+  const roomNames = roomRefs.map((_, index) => index === 0 ? 'synthetic-A' : 'synthetic-B');
+  const waveStarts = observations.filter((event) => event?.kind === 'wave' && event.phase === 'start');
+  const waveEnds = new Map(observations.filter((event) => event?.kind === 'wave' && event.phase === 'end').map((event) => [event.id, event]));
+  const workStarts = observations.filter((event) => event?.kind === 'work' && event.phase === 'start');
+  const workEnds = new Map(observations.filter((event) => event?.kind === 'work' && event.phase === 'end').map((event) => [event.id, event]));
+  const waveById = new Map(waveStarts.map((event) => [event.id, event]));
+  const workByWave = new Map<string, ObservationEvent[]>();
+  let invalidWaveStructure = 0, invalidRoomWindows = 0;
+  for (const work of workStarts) {
+    const wave = typeof work.waveId === 'string' ? waveById.get(work.waveId) : undefined;
+    const end = workEnds.get(work.id), waveEnd = wave && waveEnds.get(wave.id);
+    if (!wave || !waveEnd || !roomRefs.includes(work.roomRef) || work.roomRef !== wave.roomRef || work.workId !== work.id ||
+      typeof work.seatRef !== 'string' || !/^s(?:[1-9]|1[0-2])$/.test(work.seatRef) || (typeof work.purpose !== 'string' || !['listen', 'action'].includes(work.purpose)) ||
+      !end || end.workId !== work.id || end.waveId !== work.waveId || end.roomRef !== work.roomRef || end.seatRef !== work.seatRef || end.purpose !== work.purpose ||
+      !validNumber(work.atMs) || !validNumber(end.atMs) || !validNumber(wave.atMs) || !validNumber(waveEnd.atMs) ||
+      work.atMs < wave.atMs || end.atMs < work.atMs || end.atMs > waveEnd.atMs) invalidWaveStructure++;
+    if (typeof work.waveId === 'string') { const list = workByWave.get(work.waveId) ?? []; list.push(work); workByWave.set(work.waveId, list); }
+  }
+  for (const wave of waveStarts) {
+    const end = waveEnds.get(wave.id), members = workByWave.get(wave.id) ?? [];
+    if (!roomRefs.includes(wave.roomRef) || wave.waveId !== wave.id || !end || end.waveId !== wave.id || end.roomRef !== wave.roomRef ||
+      !validNumber(wave.atMs) || !validNumber(end.atMs) || end.atMs < wave.atMs || !validCount(end.members) || end.members !== members.length ||
+      (members.length > 0 && end.outcome !== 'success') || (members.length === 0 && end.outcome !== 'empty') ||
+      new Set(members.map((member) => member.seatRef)).size !== members.length) invalidWaveStructure++;
+  }
+  const exactKeys = (input: unknown, expected: readonly string[]): input is Record<string, unknown> =>
+    !!input && typeof input === 'object' && !Array.isArray(input) && Object.keys(input).length === expected.length && expected.every((key) => Object.prototype.hasOwnProperty.call(input, key));
+  const manifest = row.manifest;
+  if (!exactKeys(manifest.waveCounts, roomRefs) || !exactKeys(manifest.roomWindowMs, roomNames) || !exactKeys(manifest.endReasons, roomNames) ||
+    !validNumber(manifest.windowWallMs) || manifest.windowWallMs === 0 || manifest.windowFixture !== 'wave_end_watcher') invalidRoomWindows++;
+  const workload = roomRefs.map((roomRef, index) => {
+    const inRoom = waveStarts.filter((wave) => wave.roomRef === roomRef);
+    const nonempty = inRoom.filter((wave) => (workByWave.get(wave.id)?.length ?? 0) > 0);
+    const roomName = roomNames[index], window = manifest.roomWindowMs?.[roomName], reason = manifest.endReasons?.[roomName];
+    const first = nonempty[0], last = nonempty.at(-1), lastEnd = last && waveEnds.get(last.id);
+    if (nonempty.length < 1 || nonempty.length > 30 || manifest.waveCounts?.[roomRef] !== nonempty.length ||
+      !validNumber(window) || window === 0 || !validNumber(manifest.windowWallMs) || manifest.windowWallMs < window ||
+      !first || !lastEnd || !validNumber(first.atMs) || !validNumber(lastEnd.atMs) || lastEnd.atMs - first.atMs > window ||
+      (reason === '30_nonempty_waves' ? nonempty.length !== 30 : reason === 'natural_end' ? manifest.completed !== true : true)) invalidRoomWindows++;
+    for (let i = 1; i < inRoom.length; i++) if (inRoom[i].atMs < inRoom[i - 1].atMs) invalidWaveStructure++;
+    return { roomRef, waves: nonempty.map((wave) => (workByWave.get(wave.id) ?? []).map((work) => ({
+      seatRef: typeof work.seatRef === 'string' ? work.seatRef : 'unknown', purpose: typeof work.purpose === 'string' ? work.purpose : 'unknown',
+    })).sort((a, b) => a.seatRef.localeCompare(b.seatRef) || a.purpose.localeCompare(b.purpose))) };
+  });
+  const reconstructedWorkloadSha256 = createHash('sha256').update(JSON.stringify(workload)).digest('hex');
+  return { invalidWaveStructure, invalidRoomWindows, reconstructedWorkloadSha256,
+    invalidWorkloadHash: reconstructedWorkloadSha256 === manifest.workloadSha256 ? 0 : 1 };
+}
+
 function inspect(row: BaselineEvidence): Inspection {
   const observations = Array.isArray(row.observations) ? row.observations : [];
   const truths = Array.isArray(row.truth) ? row.truth : [];
@@ -106,6 +166,39 @@ function inspect(row: BaselineEvidence): Inspection {
   const invalidNumericValues = invalidNumberCount(row.manifest) + invalidNumberCount(observations) + invalidNumberCount(truths);
   const rawStarts = observations.filter((event) => event?.kind === 'http_attempt' && event.phase === 'start');
   const rawEnds = observations.filter((event) => event?.kind === 'http_attempt' && event.phase === 'end');
+  const attemptsById = new Map(rawStarts.map((event) => [event.id, event]));
+  const modelStarts = observations.filter((event) => event?.kind === 'model_call' && event.phase === 'start');
+  const modelEnds = observations.filter((event) => event?.kind === 'model_call' && event.phase === 'end');
+  const modelStartsById = new Map(modelStarts.map((event) => [event.id, event]));
+  const modelEndsById = new Map(modelEnds.map((event) => [event.id, event]));
+  const workStarts = observations.filter((event) => event?.kind === 'work' && event.phase === 'start');
+  const workEnds = observations.filter((event) => event?.kind === 'work' && event.phase === 'end');
+  const workStartsById = new Map(workStarts.map((event) => [event.id, event]));
+  const workEndsById = new Map(workEnds.map((event) => [event.id, event]));
+  const allowedRooms = row.manifest.scenario === 'S01' ? ['r1'] : ['r1', 'r2'];
+  let invalidTruthPlans = 0, invalidMetricSources = 0, invalidModelCalls = 0, invalidHttpCallLinks = 0;
+  const sequenceEvidence = row.manifest.sequenceEvidence;
+  const invalidSequenceCounts = !sequenceEvidence || !validCount(sequenceEvidence.adapterCalls) || !validCount(sequenceEvidence.syntheticHttpAttempts) ||
+    sequenceEvidence.adapterCalls !== modelStarts.length || sequenceEvidence.syntheticHttpAttempts !== rawStarts.length ? 1 : 0;
+  for (const model of [...modelStarts, ...modelEnds]) {
+    if (model.id !== model.callId || model.apiProtocol !== row.manifest.protocol || !allowedRooms.includes(model.roomRef) ||
+      typeof model.waveId !== 'string' || typeof model.workId !== 'string') invalidModelCalls++;
+  }
+  const matchesWork = (model: ObservationEvent, work: ObservationEvent | undefined) => !!work &&
+    model.runId === runId && work.runId === runId && model.workId === work.id && model.waveId === work.waveId &&
+    model.roomRef === work.roomRef && model.seatRef === work.seatRef && model.purpose === work.purpose;
+  let invalidModelWorkLinks = 0;
+  const worksWithCalls = new Set<string>();
+  for (const model of [...modelStarts, ...modelEnds]) {
+    const workStart = typeof model.workId === 'string' ? workStartsById.get(model.workId) : undefined;
+    const workEnd = typeof model.workId === 'string' ? workEndsById.get(model.workId) : undefined;
+    if (!matchesWork(model, workStart) || !matchesWork(model, workEnd)) invalidModelWorkLinks++;
+    else if (model.phase === 'start') {
+      const modelEnd = modelEndsById.get(model.id);
+      if (modelEnd && matchesWork(modelEnd, workStart) && matchesWork(modelEnd, workEnd)) worksWithCalls.add(model.workId!);
+    }
+  }
+  const successfulWorkWithoutCall = workStarts.filter((work) => workEndsById.get(work.id)?.outcome === 'success' && !worksWithCalls.has(work.id)).length;
   const startRows = rawStarts.map((event) => event.id).filter((id): id is string => typeof id === 'string' && id.length > 0);
   const endRows = rawEnds.map((event) => event.id).filter((id): id is string => typeof id === 'string' && id.length > 0);
   const truthRows: string[] = [];
@@ -123,6 +216,10 @@ function inspect(row: BaselineEvidence): Inspection {
       !validNumber(entry.planned.headersMs) || !validNumber(entry.planned.firstContentMs) || !validCount(entry.planned.chunks) ||
       !validNumber(entry.planned.chunkIntervalMs) || !validCount(entry.planned.status) || entry.planned.status < 200 || entry.planned.status >= 300 ||
       !(entry.planned.capacity === null || validCount(entry.planned.capacity))) invalidRequiredFields++;
+    const attempt = typeof id === 'string' ? attemptsById.get(id) : undefined;
+    const expectedHeaders = row.manifest.scenario === 'S03' ? attempt?.roomRef === 'r1' ? 20 : attempt?.roomRef === 'r2' ? 80 : null : 20;
+    if (!entry?.planned || (expectedHeaders !== null && entry.planned.headersMs !== expectedHeaders) || entry.planned.firstContentMs !== 30 ||
+      entry.planned.chunks !== 4 || entry.planned.chunkIntervalMs !== 10 || entry.planned.status !== 200 || entry.planned.capacity !== null) invalidTruthPlans++;
     if (typeof id === 'string' && !truthMap.has(id)) truthMap.set(id, entry);
   }
   const allStarts = new Set<string>(), allEnds = new Set<string>();
@@ -156,6 +253,11 @@ function inspect(row: BaselineEvidence): Inspection {
     if (!runId || !attemptIdValid(event.id, runId) || event.httpAttemptId !== event.id || !validCount(event.attemptIndex) ||
       typeof event.callId !== 'string' || !event.id.startsWith(`${event.callId}:`) ||
       typeof event.requestId !== 'string' || event.parentId !== event.requestId || !event.requestId.startsWith(`${event.callId}:`)) invalidAttemptIds++;
+    const modelStart = typeof event.callId === 'string' ? modelStartsById.get(event.callId) : undefined;
+    const modelEnd = typeof event.callId === 'string' ? modelEndsById.get(event.callId) : undefined;
+    if (!modelStart || !modelEnd || modelStart.roomRef !== event.roomRef || modelEnd.roomRef !== event.roomRef ||
+      modelStart.waveId !== event.waveId || modelEnd.waveId !== event.waveId || modelStart.workId !== event.workId || modelEnd.workId !== event.workId ||
+      modelStart.seatRef !== event.seatRef || modelEnd.seatRef !== event.seatRef) invalidHttpCallLinks++;
     if (event.phase !== 'end') continue;
     if (event.outcome !== 'success' || !validCount(event.status) || event.status < 200 || event.status >= 300) invalidRequiredFields++;
     const truth = truthMap.get(event.id);
@@ -167,6 +269,7 @@ function inspect(row: BaselineEvidence): Inspection {
         ? truth.headersMs + truth.queueMs : null : truth[metric];
       const actual = value(event.metrics?.[metric]);
       const data = errors[metric] ??= { absolute: [], medianRatios: [], p95Ratios: [], missing: 0 };
+      if (event.metrics?.[metric]?.valueMs !== null && (event.metrics?.[metric] as { source?: unknown } | undefined)?.source !== 'client') invalidMetricSources++;
       if (!validNumber(expected) || !validNumber(actual)) { data.missing++; invalidRequiredFields++; continue; }
       const absolute = Math.abs(actual - expected);
       data.absolute.push(absolute); data.medianRatios.push(absolute / Math.max(20, expected * 0.1)); data.p95Ratios.push(absolute / Math.max(50, expected * 0.2));
@@ -174,36 +277,46 @@ function inspect(row: BaselineEvidence): Inspection {
   }
   if (!Array.isArray(row.observations) || !Array.isArray(row.truth)) invalidRequiredFields++;
   const started = counts(startRows), ended = counts(endRows), truth = counts(truthRows);
+  const window = inspectWindow(row, observations);
   const integrity: Integrity = { truthRaw: truths.length, truthUnique: truth.unique.size, httpStartsRaw: rawStarts.length,
     httpStartsUnique: started.unique.size, httpEndsRaw: rawEnds.length, httpEndsUnique: ended.unique.size,
     duplicateTruth: truth.duplicates, duplicateHttpStarts: started.duplicates, duplicateHttpEnds: ended.duplicates,
     truthWithoutStart: difference(truth.unique, started.unique).map(safeAttempt), truthWithoutEnd: difference(truth.unique, ended.unique).map(safeAttempt),
     httpStartsWithoutTruth: difference(started.unique, truth.unique).map(safeAttempt), httpEndsWithoutTruth: difference(ended.unique, truth.unique).map(safeAttempt),
     crossRunTruth, crossRunObservations, invalidAttemptIds, invalidRoots, invalidNumericValues, invalidRequiredFields,
-    invalidTruthIds: truths.length - truthRows.length, invalidHttpStartIds: rawStarts.length - startRows.length, invalidHttpEndIds: rawEnds.length - endRows.length, manifestRunIdMismatch };
+    invalidTruthIds: truths.length - truthRows.length, invalidHttpStartIds: rawStarts.length - startRows.length, invalidHttpEndIds: rawEnds.length - endRows.length, manifestRunIdMismatch,
+    invalidTruthPlans, invalidMetricSources, invalidModelCalls, invalidHttpCallLinks, invalidModelWorkLinks, successfulWorkWithoutCall, invalidSequenceCounts,
+    invalidWaveStructure: window.invalidWaveStructure, invalidWorkloadHash: window.invalidWorkloadHash, invalidRoomWindows: window.invalidRoomWindows };
   return { runId, integrity, truthIds: truth.unique, starts: started.unique, ends: ended.unique,
-    orphanEnds, duplicateStarts, duplicateEnds, unfinished: difference(allStarts, allEnds).length, incompleteTerminals, matched, errors };
+    orphanEnds, duplicateStarts, duplicateEnds, unfinished: difference(allStarts, allEnds).length, incompleteTerminals, matched, errors,
+    reconstructedWorkloadSha256: window.reconstructedWorkloadSha256 };
 }
 
 function integrityInvalid(data: Integrity): boolean {
   return data.duplicateTruth > 0 || data.duplicateHttpStarts > 0 || data.duplicateHttpEnds > 0 ||
     data.truthWithoutStart.length > 0 || data.truthWithoutEnd.length > 0 || data.httpStartsWithoutTruth.length > 0 || data.httpEndsWithoutTruth.length > 0 ||
     data.crossRunTruth > 0 || data.crossRunObservations > 0 || data.invalidAttemptIds > 0 || data.invalidRoots > 0 ||
-    data.invalidNumericValues > 0 || data.invalidRequiredFields > 0 || data.manifestRunIdMismatch > 0 || data.truthRaw === 0 || data.httpStartsRaw === 0 || data.httpEndsRaw === 0;
+    data.invalidNumericValues > 0 || data.invalidRequiredFields > 0 || data.manifestRunIdMismatch > 0 || data.invalidTruthPlans > 0 ||
+    data.invalidMetricSources > 0 || data.invalidModelCalls > 0 || data.invalidHttpCallLinks > 0 || data.invalidModelWorkLinks > 0 ||
+    data.successfulWorkWithoutCall > 0 || data.invalidWaveStructure > 0 ||
+    data.invalidWorkloadHash > 0 || data.invalidRoomWindows > 0 || data.invalidSequenceCounts > 0 || data.truthRaw === 0 || data.httpStartsRaw === 0 || data.httpEndsRaw === 0;
 }
 
 function combineIntegrity(samples: readonly Inspection[]): Integrity {
   const truth = new Set<string>(), starts = new Set<string>(), ends = new Set<string>();
   const totals = { truthRaw: 0, httpStartsRaw: 0, httpEndsRaw: 0, crossRunTruth: 0, crossRunObservations: 0,
     invalidAttemptIds: 0, invalidRoots: 0, invalidNumericValues: 0, invalidRequiredFields: 0,
-    invalidTruthIds: 0, invalidHttpStartIds: 0, invalidHttpEndIds: 0, manifestRunIdMismatch: 0 };
+    invalidTruthIds: 0, invalidHttpStartIds: 0, invalidHttpEndIds: 0, manifestRunIdMismatch: 0,
+    invalidTruthPlans: 0, invalidMetricSources: 0, invalidModelCalls: 0, invalidHttpCallLinks: 0, invalidModelWorkLinks: 0, successfulWorkWithoutCall: 0,
+    invalidWaveStructure: 0, invalidWorkloadHash: 0, invalidRoomWindows: 0, invalidSequenceCounts: 0 };
   for (const [index, sample] of samples.entries()) {
     const prefix = sample.runId ?? `missing-run-${index}`;
     for (const id of sample.truthIds) truth.add(`${prefix}/${id}`);
     for (const id of sample.starts) starts.add(`${prefix}/${id}`);
     for (const id of sample.ends) ends.add(`${prefix}/${id}`);
     for (const field of ['truthRaw', 'httpStartsRaw', 'httpEndsRaw', 'crossRunTruth', 'crossRunObservations',
-      'invalidAttemptIds', 'invalidRoots', 'invalidNumericValues', 'invalidRequiredFields', 'invalidTruthIds', 'invalidHttpStartIds', 'invalidHttpEndIds', 'manifestRunIdMismatch'] as const) totals[field] += sample.integrity[field];
+      'invalidAttemptIds', 'invalidRoots', 'invalidNumericValues', 'invalidRequiredFields', 'invalidTruthIds', 'invalidHttpStartIds', 'invalidHttpEndIds', 'manifestRunIdMismatch',
+      'invalidTruthPlans', 'invalidMetricSources', 'invalidModelCalls', 'invalidHttpCallLinks', 'invalidModelWorkLinks', 'successfulWorkWithoutCall', 'invalidWaveStructure', 'invalidWorkloadHash', 'invalidRoomWindows', 'invalidSequenceCounts'] as const) totals[field] += sample.integrity[field];
   }
   return { ...totals, truthUnique: truth.size, httpStartsUnique: starts.size, httpEndsUnique: ends.size,
     duplicateTruth: totals.truthRaw - totals.invalidTruthIds - truth.size,
@@ -241,10 +354,11 @@ function evaluateInspections(rows: readonly InspectedRow[], samples: number, inv
     const sourceHashes = new Set<string>();
     const errors: Inspection['errors'] = {};
     let invalid = false, incomplete = false, orphanEnds = 0, duplicateStarts = 0, duplicateEnds = 0, attempts = 0, matched = 0;
-    const runReports: { runId: string | null; warmup: boolean | null; integrity: Integrity }[] = [];
+    const runReports: { runId: string | null; warmup: boolean | null; reconstructedWorkloadSha256: string | null; integrity: Integrity }[] = [];
     for (const { manifest, sample } of rows) {
       const data = sample.integrity;
-      runReports.push({ runId: sample.runId, warmup: typeof manifest.warmup === 'boolean' ? manifest.warmup : null, integrity: data });
+      runReports.push({ runId: sample.runId, warmup: typeof manifest.warmup === 'boolean' ? manifest.warmup : null,
+        reconstructedWorkloadSha256: sample.reconstructedWorkloadSha256, integrity: data });
       orphanEnds += sample.orphanEnds; duplicateStarts += sample.duplicateStarts; duplicateEnds += sample.duplicateEnds;
       const collector = manifest.collector, runtime = manifest.collectorRuntime ?? manifest.observability;
       const validCollector = !!collector && [collector.dropped, collector.writeErrors, collector.bufferedRecords, collector.bufferedBytes].every(validCount) &&
@@ -294,7 +408,8 @@ function evaluateInspections(rows: readonly InspectedRow[], samples: number, inv
       status: invalid ? 'invalid' : !covered || incomplete || matched !== attempts ? 'incomplete' : numeric ? 'within_thresholds' : 'inconclusive_noise' };
   });
   const globalInvalid = invalidInputs > 0 || invalidOptions || unsupportedSamples > 0 || duplicateRunIds.length > 0 || allHashes.size > 1 || allRevisions.size > 1;
-  return { reportKind: 'synthetic_accuracy_acceptance', samples, invalidInputs, duplicateRunIds, unsupportedSamples, invalidOptions, integrity: combineIntegrity(inspected),
+  return { reportKind: 'synthetic_accuracy_acceptance', workloadEvidenceScope: 'observed_wave_consistency_not_engine_replay',
+    samples, invalidInputs, duplicateRunIds, unsupportedSamples, invalidOptions, integrity: combineIntegrity(inspected),
     sourceHashes: [...allHashes], sourceRevisions: [...allRevisions],
     status: !globalInvalid && results.length > 0 && results.every((result) => result.status === 'within_thresholds') ? 'within_thresholds' : 'not_passed', results };
 }
@@ -313,6 +428,9 @@ export function createBaselineAcceptance(requireFullMatrix = true, options: Base
         repetition: input.repetition, warmup: input.warmup, roomCount: input.roomCount, workloadSha256: input.workloadSha256,
         sourceRevision: input.sourceRevision, sourceRevisionEnd: input.sourceRevisionEnd, sourceSha256: input.sourceSha256,
         sourceSha256End: input.sourceSha256End, sourceChangedDuringRun: input.sourceChangedDuringRun,
+        waveCounts: input.waveCounts && { ...input.waveCounts }, roomWindowMs: input.roomWindowMs && { ...input.roomWindowMs },
+        windowWallMs: input.windowWallMs, endReasons: input.endReasons && { ...input.endReasons }, windowFixture: input.windowFixture,
+        sequenceEvidence: input.sequenceEvidence && { ...input.sequenceEvidence },
         collector: input.collector ? { dropped: input.collector.dropped, writeErrors: input.collector.writeErrors,
           bufferedRecords: input.collector.bufferedRecords, bufferedBytes: input.collector.bufferedBytes } : input.collector,
         collectorRuntime: input.collectorRuntime ? { callbackErrors: input.collectorRuntime.callbackErrors, activeSpans: input.collectorRuntime.activeSpans } : input.collectorRuntime,

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ObservationArchive } from '../src/observability/archive-reader';
+import { fullGroup, revision, source } from './observability-fixture';
 
 const python = process.env.OBSERVABILITY_TEST_PYTHON ?? 'python';
 const pythonAvailable = spawnSync(python, ['-c', 'import zipfile'], { windowsHide: true, encoding: 'utf8' }).status === 0;
@@ -98,29 +99,7 @@ describe.skipIf(!pythonAvailable)('optional compressed archive reader', () => {
 
 describe.skipIf(!pythonAvailable)('offline acceptance command with archived evidence', () => {
   it('accepts one complete group and preserves verifiable provenance; invalid evidence exits nonzero with a report', () => {
-    const source = 'a'.repeat(64), revision = 'b'.repeat(40);
-    const evidence = Array.from({ length: 10 }, (_, index) => {
-      const runId = `run-${(index + 1).toString(16).padStart(8, '0')}-0000-4000-8000-000000000000`;
-      const seedSuffix = index === 0 ? '001' : String(Math.ceil(index / 3)).padStart(3, '0');
-      const callId = `${runId}:call:18`, requestId = `${callId}:2`, id = `${callId}:5`, root = `${runId}:run:1`;
-      const common = { schemaVersion: 1, runId, roomRef: 'r1' };
-      const manifest = { completed: true, scenario: 'S01', protocol: 'responses', seed: `obs-standard12-${seedSuffix}`,
-        repetition: index === 0 ? 0 : (index - 1) % 3 + 1, warmup: index === 0, roomCount: 1,
-        workloadSha256: seedSuffix.padStart(64, '0'), sourceRevision: revision, sourceRevisionEnd: revision,
-        sourceSha256: source, sourceSha256End: source, sourceChangedDuringRun: false,
-        collector: { dropped: 0, writeErrors: 0, bufferedRecords: 0, bufferedBytes: 0 }, collectorRuntime: { callbackErrors: 0, activeSpans: 0 } };
-      const observations = [
-        { ...common, kind: 'run', id: root, phase: 'start', atMs: 0 },
-        { ...common, kind: 'http_attempt', id, httpAttemptId: id, callId, requestId, parentId: requestId, attemptIndex: 0, phase: 'start', atMs: 0 },
-        { ...common, kind: 'http_attempt', id, httpAttemptId: id, callId, requestId, parentId: requestId, attemptIndex: 0,
-          phase: 'end', atMs: 90, status: 200, outcome: 'success', metrics: Object.fromEntries(
-            [['headersMs', 20], ['firstBodyByteMs', 50], ['firstStreamContentMs', 60], ['bodyConsumeMs', 70]].map(([key, valueMs]) => [key, { valueMs, source: 'client' }])) },
-        { ...common, kind: 'run', id: root, phase: 'end', atMs: 90, outcome: 'success' },
-      ];
-      const truth = [{ attemptId: id, source: 'synthetic', planned: { headersMs: 20, firstContentMs: 30, chunks: 4, chunkIntervalMs: 10, status: 200, capacity: null },
-        queueMs: 0, headersMs: 20, elapsedMs: 90, finished: true, firstBodyByteMs: 50, firstStreamContentMs: 60, bodyConsumeMs: 70 }];
-      return { name: `run-${index + 1}`, manifest, observations, truth };
-    });
+    const evidence = fullGroup().map((item, index) => ({ name: `run-${index + 1}`, ...item }));
     const jsonl = (items: unknown[]) => Buffer.from(items.map((item) => JSON.stringify(item)).join('\n') + '\n');
     const members = evidence.flatMap((item): File[] => [
       { path: `synthetic/${item.name}/observations.jsonl`, bytes: jsonl(item.observations) },
@@ -160,15 +139,19 @@ describe.skipIf(!pythonAvailable)('offline acceptance command with archived evid
     }
     expect(paths.every((dir) => readdirSync(dir).join(',') === 'manifest.json')).toBe(true);
 
-    const badManifest = join(paths[1], 'manifest.json');
-    const changed = JSON.parse(readFileSync(badManifest, 'utf8')); changed.collector.dropped = 1;
-    writeFileSync(badManifest, JSON.stringify(changed));
+    // Relabel the complete group, so rejection depends on protocol evidence,
+    // not merely on a now-incomplete matrix cell.
+    for (const path of paths) {
+      const badManifest = join(path, 'manifest.json');
+      const changed = JSON.parse(readFileSync(badManifest, 'utf8')); changed.protocol = 'anthropic_messages';
+      writeFileSync(badManifest, JSON.stringify(changed));
+    }
     const failedOutput = join(f.dir, 'rejected'), rejected = invoke(failedOutput);
     expect(rejected.status, rejected.stderr).toBe(1);
     const rejectedSummary = JSON.parse(readFileSync(join(failedOutput, 'summary.json'), 'utf8'));
     const rejectedProvenance = JSON.parse(readFileSync(join(failedOutput, 'input-manifest.json'), 'utf8'));
-    expect(rejectedSummary.status).toBe('not_passed');
+    expect(rejectedSummary).toMatchObject({ status: 'not_passed', results: [{ key: 'S01/anthropic_messages', status: 'invalid' }] });
     expect(readFileSync(join(failedOutput, 'report.md'), 'utf8')).toContain('not_passed');
-    expect(rejectedProvenance.inputs[1].manifest.sha256).toBe(sha(readFileSync(badManifest)));
+    for (const input of rejectedProvenance.inputs) expect(input.manifest.sha256).toBe(sha(readFileSync(input.manifest.path)));
   }, 120_000);
 });
