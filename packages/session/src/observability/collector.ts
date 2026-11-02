@@ -43,10 +43,20 @@ function measurement(value: unknown): Measurement | undefined {
 }
 
 /** 类型外的输入也重新投影为白名单，不复制任意对象或原始字符串。 */
-export function whitelistObservation(event: ObservationEvent): ObservationEvent {
+function validIdentity(value: string, cache?: Set<string>): boolean {
+  if (cache?.has(value)) return true;
+  if (!safeIdentity.test(value)) return false;
+  if (cache) {
+    if (cache.size >= 10_000) cache.clear();
+    cache.add(value);
+  }
+  return true;
+}
+
+function sanitizeObservation(event: ObservationEvent, identityCache?: Set<string>): ObservationEvent {
   const source = event as unknown as Record<string, unknown>;
   const out: Record<string, unknown> = { schemaVersion: 1 };
-  for (const key of idNames) if (typeof source[key] === 'string' && safeIdentity.test(source[key])) out[key] = source[key];
+  for (const key of idNames) if (typeof source[key] === 'string' && validIdentity(source[key], identityCache)) out[key] = source[key];
   for (const [key, values] of enumEntries) if (typeof source[key] === 'string' && values.includes(source[key])) out[key] = source[key];
   for (const key of ['atMs','wallTimeMs','correctionAttempt','variantIndex','attemptIndex','status','members','httpAttemptsStarted','httpAttemptsFinished','compatibilityFallbacks']) {
     const value = source[key]; if (typeof value === 'number' && Number.isFinite(value) && value >= 0) out[key] = value;
@@ -67,10 +77,14 @@ export function whitelistObservation(event: ObservationEvent): ObservationEvent 
     const u = source.usage as Record<string, unknown>, usage: Record<string, unknown> = {};
     for (const key of ['inputTokens','outputTokens','cacheReadTokens','cacheWriteTokens']) usage[key] = typeof u[key] === 'number' && Number.isFinite(u[key]) && u[key] >= 0 ? u[key] : null;
     usage.completeness = typeof u.completeness === 'string' && ['complete','partial','unknown'].includes(u.completeness) ? u.completeness : 'unknown';
-    if (typeof u.sourceHttpAttemptId === 'string' && safeIdentity.test(u.sourceHttpAttemptId)) usage.sourceHttpAttemptId = u.sourceHttpAttemptId;
+    if (typeof u.sourceHttpAttemptId === 'string' && validIdentity(u.sourceHttpAttemptId, identityCache)) usage.sourceHttpAttemptId = u.sourceHttpAttemptId;
     out.usage = usage;
   }
   return out as unknown as ObservationEvent;
+}
+
+export function whitelistObservation(event: ObservationEvent): ObservationEvent {
+  return sanitizeObservation(event);
 }
 
 export class ObservationSpan {
@@ -99,6 +113,7 @@ export class RoomObservability {
   private readonly active = new Map<string, ObservationEvent>();
   private readonly endedCalls = new Map<string, number>();
   private readonly expiredCalls = new Set<string>();
+  private readonly validIdentities = new Set<string>();
   private next = 0;
   private closed = false;
   private readonly run: ObservationSpan;
@@ -154,7 +169,7 @@ export class RoomObservability {
         if (event.kind === 'model_call') this.endedCalls.set(event.id, event.atMs);
       } else if (!this.active.has(event.id)) { this.stats.lateEvents++; return; }
       this.stats.activeSpans = this.active.size;
-      this.options.sink.emit(whitelistObservation(event.kind === 'run' || event.kind === 'room' ? { ...event, wallTimeMs: this.clock.wallTimeMs() } : event));
+      this.options.sink.emit(sanitizeObservation(event.kind === 'run' || event.kind === 'room' ? { ...event, wallTimeMs: this.clock.wallTimeMs() } : event, this.validIdentities));
     } catch { this.stats.callbackErrors++; }
   }
   adapter(ref: ObservationRef): DecideObservationPort {
@@ -183,6 +198,7 @@ export class RoomObservability {
     this.closed = true;
     this.endedCalls.clear();
     this.expiredCalls.clear();
+    this.validIdentities.clear();
     this.decisions.clear();
   }
 }
