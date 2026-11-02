@@ -2,7 +2,8 @@ import { performance } from 'node:perf_hooks';
 import type { ObservationEvent, ObservationSink } from '@werewolf/protocol';
 
 export interface BufferedSinkOptions {
-  write(events: readonly ObservationEvent[]): Promise<void>;
+  /** 第二个参数是用于字节配额的同一份已编码行，可直接写入避免再次编码。 */
+  write(events: readonly ObservationEvent[], encodedLines?: readonly string[]): Promise<void>;
   maxRecords?: number;
   maxBytes?: number;
   flushMs?: number;
@@ -14,7 +15,7 @@ export class BufferedObservationSink implements ObservationSink {
   readonly config: Required<Omit<BufferedSinkOptions, 'write'>>;
   readonly stats = { bufferedRecords: 0, bufferedBytes: 0, peakRecords: 0, peakBytes: 0,
     dropped: 0, writeErrors: 0, writtenRecords: 0, writtenBytes: 0, writeMs: 0 };
-  private queue: { event: ObservationEvent; bytes: number }[] = [];
+  private queue: { event: ObservationEvent; bytes: number; line: string }[] = [];
   private writing: Promise<void> | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
@@ -26,11 +27,12 @@ export class BufferedObservationSink implements ObservationSink {
   }
 
   emit(event: ObservationEvent): void {
-    const bytes = Buffer.byteLength(JSON.stringify(event)) + 1;
+    const line = `${JSON.stringify(event)}\n`;
+    const bytes = Buffer.byteLength(line);
     if (this.closed || this.stats.bufferedRecords >= this.config.maxRecords || this.stats.bufferedBytes + bytes > this.config.maxBytes) {
       this.stats.dropped++; return;
     }
-    this.queue.push({ event, bytes });
+    this.queue.push({ event, bytes, line });
     this.stats.bufferedRecords++;
     this.stats.bufferedBytes += bytes;
     this.stats.peakRecords = Math.max(this.stats.peakRecords, this.stats.bufferedRecords);
@@ -52,7 +54,7 @@ export class BufferedObservationSink implements ObservationSink {
     this.writing = (async () => {
       const started = performance.now();
       try {
-        await this.options.write(batch.map((row) => row.event));
+        await this.options.write(batch.map((row) => row.event), batch.map((row) => row.line));
         this.stats.writtenRecords += batch.length;
         this.stats.writtenBytes += bytes;
       } catch {

@@ -76,12 +76,12 @@ export async function runSyntheticBaseline(options: { scenario: RunnableSyntheti
   const store: RoomStore = options.scenario === 'S13' && faultCase === 'file' ? new FileStore(resolve(directory, 'filestore')) : new SyntheticStore();
   const secrets = SecretBox.ephemeral();
   let events: ObservationEvent[] = [];
-  const buffered = new BufferedObservationSink({ write: async (batch) => {
+  const buffered = new BufferedObservationSink({ write: async (batch, encodedLines) => {
     if (options.scenario === 'S15' && faultCase === 'write_failure' && injectPersistence && injectionCount === 0) {
       injectionCount++;
       throw new Error('synthetic diagnostic write failure');
     }
-    await appendFile(observationPath, batch.map((e) => JSON.stringify(e)).join('\n') + '\n');
+    await appendFile(observationPath, encodedLines?.join('') ?? batch.map((e) => JSON.stringify(e)).join('\n') + '\n');
   } });
   const waveCounts = new Map<string, number>();
   const pauseRequested = new Set<string>();

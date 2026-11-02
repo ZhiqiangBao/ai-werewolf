@@ -26,14 +26,18 @@ const enumFields: Record<string, readonly string[]> = {
   firstContentKind: ['reply','thinking','tool_name','tool_arguments'], bodyEndKind: ['protocol_end','eof','error','cancelled','discarded'],
   providerQueueContract: ['synthetic_v1'],
 };
+const enumEntries = Object.entries(enumFields);
+const safeIdentity = /^[A-Za-z0-9_.:-]{1,200}$/;
+const measurementSources = new Set(['client','provider_reported','synthetic']);
+const missingReasons = new Set(['not_observable','not_applicable','not_emitted','cancelled_before_point','failed_before_point','incomplete','legacy','collector_dropped']);
 
 function measurement(value: unknown): Measurement | undefined {
   if (!value || typeof value !== 'object') return;
   const row = value as Record<string, unknown>;
-  if (typeof row.valueMs === 'number' && Number.isFinite(row.valueMs) && row.valueMs >= 0 && ['client','provider_reported','synthetic'].includes(String(row.source))) {
+  if (typeof row.valueMs === 'number' && Number.isFinite(row.valueMs) && row.valueMs >= 0 && typeof row.source === 'string' && measurementSources.has(row.source)) {
     return { valueMs: row.valueMs, source: row.source as 'client' };
   }
-  if (row.valueMs === null && ['not_observable','not_applicable','not_emitted','cancelled_before_point','failed_before_point','incomplete','legacy','collector_dropped'].includes(String(row.reason))) {
+  if (row.valueMs === null && typeof row.reason === 'string' && missingReasons.has(row.reason)) {
     return { valueMs: null, reason: row.reason as 'not_observable' };
   }
 }
@@ -42,8 +46,8 @@ function measurement(value: unknown): Measurement | undefined {
 export function whitelistObservation(event: ObservationEvent): ObservationEvent {
   const source = event as unknown as Record<string, unknown>;
   const out: Record<string, unknown> = { schemaVersion: 1 };
-  for (const key of idNames) if (typeof source[key] === 'string' && /^[A-Za-z0-9_.:-]{1,200}$/.test(source[key])) out[key] = source[key];
-  for (const [key, values] of Object.entries(enumFields)) if (values.includes(String(source[key]))) out[key] = source[key];
+  for (const key of idNames) if (typeof source[key] === 'string' && safeIdentity.test(source[key])) out[key] = source[key];
+  for (const [key, values] of enumEntries) if (typeof source[key] === 'string' && values.includes(source[key])) out[key] = source[key];
   for (const key of ['atMs','wallTimeMs','correctionAttempt','variantIndex','attemptIndex','status','members','httpAttemptsStarted','httpAttemptsFinished','compatibilityFallbacks']) {
     const value = source[key]; if (typeof value === 'number' && Number.isFinite(value) && value >= 0) out[key] = value;
   }
@@ -56,14 +60,14 @@ export function whitelistObservation(event: ObservationEvent): ObservationEvent 
   if (source.features && typeof source.features === 'object') {
     const f = source.features as Record<string, unknown>;
     out.features = { stream: f.stream === true, responseFormat: f.responseFormat === true,
-      toolChoice: ['auto','required','none'].includes(String(f.toolChoice)) ? f.toolChoice : 'none',
-      ...(['cold','warm'].includes(String(f.compatibilityMemory)) ? { compatibilityMemory: f.compatibilityMemory } : {}) };
+      toolChoice: typeof f.toolChoice === 'string' && ['auto','required','none'].includes(f.toolChoice) ? f.toolChoice : 'none',
+      ...(typeof f.compatibilityMemory === 'string' && ['cold','warm'].includes(f.compatibilityMemory) ? { compatibilityMemory: f.compatibilityMemory } : {}) };
   }
   if (source.usage && typeof source.usage === 'object') {
     const u = source.usage as Record<string, unknown>, usage: Record<string, unknown> = {};
     for (const key of ['inputTokens','outputTokens','cacheReadTokens','cacheWriteTokens']) usage[key] = typeof u[key] === 'number' && Number.isFinite(u[key]) && u[key] >= 0 ? u[key] : null;
-    usage.completeness = ['complete','partial','unknown'].includes(String(u.completeness)) ? u.completeness : 'unknown';
-    if (typeof u.sourceHttpAttemptId === 'string' && /^[A-Za-z0-9_.:-]{1,200}$/.test(u.sourceHttpAttemptId)) usage.sourceHttpAttemptId = u.sourceHttpAttemptId;
+    usage.completeness = typeof u.completeness === 'string' && ['complete','partial','unknown'].includes(u.completeness) ? u.completeness : 'unknown';
+    if (typeof u.sourceHttpAttemptId === 'string' && safeIdentity.test(u.sourceHttpAttemptId)) usage.sourceHttpAttemptId = u.sourceHttpAttemptId;
     out.usage = usage;
   }
   return out as unknown as ObservationEvent;

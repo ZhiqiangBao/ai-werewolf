@@ -15,6 +15,20 @@ const mappingFile = () => { const dir = mkdtempSync(join(tmpdir(), 'werewolf-obs
 afterEach(() => { vi.useRealTimers(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 
 describe('observation collector lifecycle', () => {
+  it('does not coerce private objects into allowed enum or measurement fields', () => {
+    const disguised = (value: string) => ({ privateText: 'nested-private-sentinel', toString: () => value });
+    const unsafe = { ...row('coercion'), outcome: disguised('success'),
+      metrics: { modelCallMs: { valueMs: 10, source: disguised('client') }, headersMs: { valueMs: null, reason: disguised('not_observable') } },
+      features: { stream: true, responseFormat: false, toolChoice: disguised('auto'), compatibilityMemory: disguised('warm') },
+      usage: { inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, completeness: disguised('complete') },
+    } as unknown as ObservationEvent;
+    const safe = whitelistObservation(unsafe);
+    expect(JSON.stringify(safe)).not.toContain('nested-private-sentinel');
+    expect(safe.outcome).toBeUndefined();
+    expect(safe.metrics).toEqual({});
+    expect(safe.features?.toolChoice).toBe('none');
+    expect(safe.usage?.completeness).toBe('unknown');
+  });
   it('uses monotonic time across wall-clock jumps and closes each span once', () => {
     vi.useFakeTimers();
     let monotonic = 100, wall = 10_000;
@@ -96,6 +110,19 @@ describe('observation collector lifecycle', () => {
 });
 
 describe('bounded observation output', () => {
+  it('reuses the byte-counted JSON lines without changing the written record stream', async () => {
+    const records = [row('one'), row('two')];
+    const written: string[] = [];
+    const sink = new BufferedObservationSink({ write: async (events, encoded) => {
+      expect(encoded?.map((line) => JSON.parse(line))).toEqual(events);
+      written.push(...encoded!);
+    } });
+    for (const record of records) sink.emit(record);
+    await sink.close();
+    expect(written.join('')).toBe(records.map((record) => `${JSON.stringify(record)}\n`).join(''));
+    expect(sink.stats.writtenBytes).toBe(Buffer.byteLength(written.join('')));
+    expect(sink.stats.bufferedRecords).toBe(0);
+  });
   it('counts the in-flight batch towards the limit, drops overflow, and drains on close', async () => {
     let finishWrite!: () => void;
     const batches: readonly ObservationEvent[][] = [];
