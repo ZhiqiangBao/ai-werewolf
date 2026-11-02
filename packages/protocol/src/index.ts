@@ -378,8 +378,8 @@ export interface ModelPresetView {
   baseUrl: string;
   apiProtocol?: ApiProtocol;
   hasKey: boolean;
-  /** settings：来自 Qwen Code 的 settings.json。added：在页面里添加的。 */
-  source: 'settings' | 'added';
+  /** imported：已复制到项目的旧模型；added：网页添加。settings 仅兼容旧响应。 */
+  source: 'settings' | 'imported' | 'added';
 }
 
 export interface RoomLinks {

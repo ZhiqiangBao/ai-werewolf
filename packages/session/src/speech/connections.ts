@@ -8,6 +8,7 @@ import { speechProvider, type SpeechProviderConfig } from './providers';
 
 interface SavedConnection extends Omit<SpeechConnectionView, 'hasKey'> { apiKeyEnc: string }
 type Rooms = Record<string, SavedConnection[]>;
+const GLOBAL = '@global';
 const MIME_TYPES = new Set(['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/webm', 'audio/mp4', 'audio/flac']);
 function optional(value: unknown, limit = 500): string | undefined {
   if (value === undefined) return;
@@ -28,7 +29,7 @@ export function connectionConfig(draft: Omit<SpeechConnectionView, 'hasKey'>): S
   return { ...common, type: 'http-json-audio', body, audioPath: draft.audioPath || 'audio', encoding: draft.encoding || 'base64', mimeType: draft.mimeType || 'audio/wav' };
 }
 
-/** 房间配置与对局事实分开持久化；仅通过房主接口管理，不改写环境或旧配置文件。 */
+/** 首页共享库与旧房间私有配置分开保存，不改写对局事实或环境配置。 */
 export class SpeechConnections {
   private rooms: Rooms = {};
   readonly error?: string;
@@ -36,12 +37,13 @@ export class SpeechConnections {
     if (!existsSync(file)) return;
     try {
       const data = JSON.parse(readFileSync(file, 'utf8'));
-      if (data.version !== 1 || !data.rooms || typeof data.rooms !== 'object' || Array.isArray(data.rooms)) throw Error('Invalid saved TTS connections');
-      for (const entries of Object.values(data.rooms)) {
+      if (![1, 2].includes(data.version) || !data.rooms || typeof data.rooms !== 'object' || Array.isArray(data.rooms) || (data.version === 2 && !Array.isArray(data.connections))) throw Error('Invalid saved TTS connections');
+      const scopes = { ...data.rooms, [GLOBAL]: data.version === 2 ? data.connections : [] };
+      for (const entries of Object.values(scopes)) {
         if (!Array.isArray(entries) || entries.some((entry) => !entry || typeof entry.apiKeyEnc !== 'string')) throw Error('Invalid saved TTS connections');
         for (const entry of entries) speechProvider(connectionConfig(entry), directory, dirname(file), { apiKey: 'validation-only' });
       }
-      this.rooms = data.rooms;
+      this.rooms = scopes;
     } catch { this.error = '网页 TTS 配置文件损坏或版本不支持，请检查 speech-connections.json；原文件未被覆盖。'; }
   }
   views(roomId: string): SpeechConnectionView[] {
@@ -50,11 +52,23 @@ export class SpeechConnections {
   providers(roomId: string) {
     return (this.rooms[roomId] ?? []).map(({ apiKeyEnc, ...view }) => speechProvider(connectionConfig(view), this.directory, dirname(this.file), { apiKey: this.key(apiKeyEnc) }));
   }
+  sharedViews() { return this.views(GLOBAL); }
+  sharedProviders() { return this.providers(GLOBAL); }
+  saveShared(raw: Record<string, unknown>, id?: string) { return this.save(GLOBAL, raw, id); }
+  removeShared(id: string) { this.remove(GLOBAL, id); }
+  share(roomId: string, id: string): SpeechConnectionView {
+    if (this.error) throw Error(this.error);
+    const entry = this.rooms[roomId]?.find((item) => item.id === id);
+    if (!entry) throw Error('没有这个旧房间 TTS 来源');
+    if ((this.rooms[GLOBAL]?.length ?? 0) >= 20 || this.rooms[GLOBAL]?.some((item) => item.id === id)) throw Error('首页 TTS 库已满或已有此来源');
+    this.persist({ ...this.rooms, [GLOBAL]: [...(this.rooms[GLOBAL] ?? []), entry], [roomId]: this.rooms[roomId].filter((item) => item.id !== id) });
+    return this.sharedViews().find((item) => item.id === id)!;
+  }
   save(roomId: string, raw: Record<string, unknown>, id?: string): SpeechConnectionView {
     if (this.error) throw Error(this.error);
     const previous = id ? this.rooms[roomId]?.find((item) => item.id === id) : undefined;
     if (id && !previous) throw Error('没有这个 TTS 来源');
-    if (!id && (this.rooms[roomId]?.length ?? 0) >= 20) throw Error('每个房间最多配置 20 个 TTS 来源');
+    if (!id && (this.rooms[roomId]?.length ?? 0) >= 20) throw Error('当前 TTS 库最多配置 20 个来源');
     const name = optional(raw.name, 120), address = optional(raw.url, 2000);
     if (!name || !address || !SPEECH_CONNECTION_TEMPLATES.some((item) => item.kind === raw.kind)) throw Error('请填写名称、接口地址并选择接入类型');
     let url: URL;
@@ -89,7 +103,8 @@ export class SpeechConnections {
   private persist(rooms: Rooms) {
     mkdirSync(dirname(this.file), { recursive: true });
     const temporary = this.file + '.tmp';
-    writeFileSync(temporary, JSON.stringify({ version: 1, rooms }), { mode: 0o600 });
+    const { [GLOBAL]: connections = [], ...legacyRooms } = rooms;
+    writeFileSync(temporary, JSON.stringify({ version: 2, connections, rooms: legacyRooms }), { mode: 0o600 });
     renameSync(temporary, this.file); this.rooms = rooms;
   }
 }

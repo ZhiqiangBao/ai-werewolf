@@ -238,10 +238,12 @@ export class RoomManager {
     return { ...engineCatalog(), styles: STYLES };
   }
 
-  /** 模型名单：页面里添加的，加上 settings.json 里写好的。没有密钥明文。 */
+  /** 统一项目模型库，包含已迁移和网页新增的条目；没有密钥明文。 */
   modelPresets(): ModelPresetView[] {
     return this.models.views();
   }
+
+  importLegacyModels(): number { return this.models.importLegacySettings(); }
 
   addModel(body: { name?: unknown; baseUrl?: unknown; apiKey?: unknown; apiProtocol?: unknown }): ModelPresetView {
     try {

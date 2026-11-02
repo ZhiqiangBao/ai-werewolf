@@ -24,6 +24,27 @@ const draft = { name: '自选朗读', url: 'https://fixture.invalid/v1/audio/spe
 const wav = () => Buffer.concat([wavHeader(3, 24000), Buffer.from([1, 0, 2, 0, 3, 0])]);
 
 describe('网页配置的房间 TTS 来源', () => {
+  it('首页共享库跨房间复用，兼容 v1 私有配置，并仅在显式分享后扩大旧来源的范围', async () => {
+    const { dir, file, secrets, library } = await fixture();
+    const legacy = library.save('a', draft);
+    const existing = JSON.parse(await readFile(file, 'utf8'));
+    await writeFile(file, JSON.stringify({ version: 1, rooms: existing.rooms }));
+    const upgraded = new SpeechConnections(file, secrets, dir);
+    expect(upgraded.views('a')).toEqual([legacy]); expect(upgraded.sharedViews()).toEqual([]);
+    const shared = upgraded.saveShared({ ...draft, name: '首页语音' });
+    expect(upgraded.views('b')).toEqual([]);
+    expect(upgraded.sharedViews()).toEqual([shared]);
+    expect(() => upgraded.share('b', legacy.id)).toThrow('没有');
+    expect(upgraded.share('a', legacy.id)).toMatchObject({ id: legacy.id, hasKey: true });
+    expect(upgraded.views('a')).toEqual([]);
+    const restored = new SpeechConnections(file, secrets, dir);
+    expect(restored.sharedViews().map((item) => item.id)).toEqual([shared.id, legacy.id]);
+    expect(JSON.parse(await readFile(file, 'utf8')).version).toBe(2);
+    expect(await readFile(file, 'utf8')).not.toContain(draft.apiKey);
+    const service = new SpeechService(dir, []);
+    for (const room of ['a', 'b']) expect(service.catalog([...restored.sharedProviders(), ...restored.providers(room)]).providers).toHaveLength(2);
+    restored.removeShared(shared.id); expect(restored.sharedViews()).toHaveLength(1);
+  });
   it('加密保存、重启后加载、留空保留 Key；修改请求参数失效缓存，不共享其他房间的来源', async () => {
     const { dir, file, secrets, library } = await fixture();
     const saved = library.save('a', draft);

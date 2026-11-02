@@ -43,7 +43,7 @@ export function useSpeechPlayback(roomId: string, token: string, projection: Pro
       }, () => { if (active && own === request) { setProviderError('无法载入服务端朗读来源。'); if (initial && native) setSource('browser'); } });
     };
     const changed = (event: Event) => {
-      if ((event as CustomEvent).detail !== roomId) return;
+      if (!['*', roomId].includes((event as CustomEvent).detail)) return;
       if (sourceRef.current.startsWith('tts_')) stopRef.current();
       refresh();
     };

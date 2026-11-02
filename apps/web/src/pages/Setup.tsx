@@ -178,9 +178,9 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
             flush={flush}
           />
           <details className="panel setup-advanced">
-            <summary>规则与模型设置<small>按需要调整</small></summary>
+            <summary>规则设置<small>按需要调整</small></summary>
             <OptionsPanel catalog={catalog} roles={preset?.roles ?? []} values={setup.ruleValues} onChange={(k, v) => patch({ ruleValues: { [k]: v } }, 200)} />
-            <ModelsPanel models={models} onChange={loadModels} />
+            <p className="small muted">模型库与语音服务在<a href="#/settings">首页统一管理</a>，本页只为座位选择模型。</p>
           </details>
         </div>
 
@@ -351,89 +351,6 @@ function keepThinking(seat: SeatConfigView, next: Omit<SeatConfigInput, 'seat'>)
   return { ...next, thinkingMode: supported ? mode : preferred };
 }
 
-function ModelsPanel({ models, onChange }: { models: ModelPresetView[]; onChange: () => void }) {
-  const [name, setName] = useState('');
-  const [baseUrl, setBaseUrl] = useState('');
-  const [apiKey, setApiKey] = useState('');
-  const [protocol, setProtocol] = useState<ApiProtocol>('chat_completions');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const added = models.filter((m) => m.source === 'added');
-  const fromSettings = models.filter((m) => m.source === 'settings');
-  const add = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await api.addModel({ name: name.trim(), baseUrl: baseUrl.trim(), apiKey: apiKey.trim(), apiProtocol: protocol });
-      setName('');
-      setBaseUrl('');
-      setApiKey('');
-      onChange();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const remove = async (id: string) => {
-    setError(null);
-    try {
-      await api.deleteModel(id);
-      onChange();
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
-  return (
-    <div className="panel">
-      <h3>模型</h3>
-      <p className="small muted" style={{ margin: '0 0 10px' }}>
-        选择协议并添加模型，各座位可重复选用。settings.json 中的模型已自动导入，也可在座位设置中调整接口。
-      </p>
-      <div className="model-add">
-        <label className="field">
-          接口协议
-          <select value={protocol} onChange={(e) => setProtocol(e.target.value as ApiProtocol)}>
-            {API_PROTOCOLS.map((p) => <option key={p} value={p}>{API_PROTOCOL_LABELS[p]}</option>)}
-          </select>
-        </label>
-        <label className="field">
-          名称
-          <input type="text" value={name} maxLength={120} placeholder="例如 deepseek-v4-flash" onChange={(e) => setName(e.target.value)} />
-        </label>
-        <label className="field">
-          接口地址
-          <input type="text" value={baseUrl} placeholder="https://api.example.com/v1" onChange={(e) => setBaseUrl(e.target.value)} />
-        </label>
-        <label className="field">
-          密钥
-          <input type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
-        </label>
-        <button className="btn sm primary" disabled={busy || !name.trim() || !baseUrl.trim() || !apiKey.trim()} onClick={() => void add()}>
-          {busy ? '添加中…' : '添加'}
-        </button>
-      </div>
-      {error && <div className="error-box small" style={{ marginTop: 8 }}>{error}</div>}
-      {added.length > 0 && (
-        <div className="model-list">
-          {added.map((m) => (
-            <div key={m.id} className="model-item">
-              <span>{m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}</span>
-              <span className="tiny dim">{m.baseUrl}</span>
-              <button className="btn sm ghost" type="button" onClick={() => void remove(m.id)}>
-                删除
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="tiny dim" style={{ marginTop: 8 }}>
-        {fromSettings.length ? `settings 里有 ${fromSettings.length} 个模型，直接在座位上选。` : 'settings 里没有读到模型。'}
-      </div>
-    </div>
-  );
-}
-
 interface SeatsPanelProps {
   setup: RoomSetupView;
   catalog: Catalog;
@@ -449,8 +366,6 @@ function SeatsPanel({ setup, catalog, models, roomId, token, patchSeat, patch, f
   const [open, setOpen] = useState<number | null>(null);
   const choice = choiceFor(models);
   const ai = setup.seats.filter((s) => s.controller === 'ai');
-  const added = models.filter((m) => m.source === 'added');
-  const fromSettings = models.filter((m) => m.source === 'settings');
   const applyAll = (id: string) => {
     const picked = choice(id);
     if (!picked) return;
@@ -467,12 +382,7 @@ function SeatsPanel({ setup, catalog, models, roomId, token, patchSeat, patch, f
         <select className="seat-model" style={{ maxWidth: 280 }} value="" onChange={(e) => applyAll(e.target.value)}>
           <option value="">全部 AI 座位改成…</option>
           <option value="mock">模拟玩家</option>
-          {added.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}
-            </option>
-          ))}
-          {fromSettings.map((m) => (
+          {models.map((m) => (
             <option key={m.id} value={m.id}>
               {m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}
             </option>
@@ -528,23 +438,12 @@ function selectedId(s: SeatConfigView, models: ModelPresetView[]): string {
 }
 
 function ModelOptions({ models }: { models: ModelPresetView[] }) {
-  const added = models.filter((m) => m.source === 'added');
-  const settings = models.filter((m) => m.source === 'settings');
   return (
     <>
       <option value="mock">模拟玩家</option>
-      {added.length > 0 && (
-        <optgroup label="已添加">
-          {added.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}
-            </option>
-          ))}
-        </optgroup>
-      )}
-      {settings.length > 0 && (
-        <optgroup label="settings">
-          {settings.map((m) => (
+      {models.length > 0 && (
+        <optgroup label="项目模型库">
+          {models.map((m) => (
             <option key={m.id} value={m.id}>
               {m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}
             </option>

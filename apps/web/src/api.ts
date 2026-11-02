@@ -48,6 +48,10 @@ async function request<T>(method: string, path: string, token?: string, body?: u
 }
 
 export const api = {
+  sharedSpeechSettings: () => request<SpeechSettingsView>('GET', '/speech-settings'),
+  saveSharedSpeech: (draft: SpeechConnectionDraft, connectionId?: string) => request<SpeechConnectionView>(connectionId ? 'PUT' : 'POST', `/speech-settings${connectionId ? `/${encodeURIComponent(connectionId)}` : ''}`, undefined, draft),
+  deleteSharedSpeech: (connectionId: string) => request<{ ok: true }>('DELETE', `/speech-settings/${encodeURIComponent(connectionId)}`),
+  shareSpeech: (id: string, token: string, connectionId: string) => request<SpeechConnectionView>('POST', `/rooms/${id}/speech-settings/${encodeURIComponent(connectionId)}/share`, token),
   speechProviders: (id: string, token: string) => request<SpeechProvidersView>('GET', `/rooms/${id}/speech-providers`, token),
   speechSettings: (id: string, token: string) => request<SpeechSettingsView>('GET', `/rooms/${id}/speech-settings`, token),
   saveSpeech: (id: string, token: string, draft: SpeechConnectionDraft, connectionId?: string) => request<SpeechConnectionView>(connectionId ? 'PUT' : 'POST', `/rooms/${id}/speech-settings${connectionId ? `/${encodeURIComponent(connectionId)}` : ''}`, token, draft),

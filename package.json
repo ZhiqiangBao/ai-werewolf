@@ -9,6 +9,7 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "simulate": "tsx packages/engine/scripts/simulate.ts",
+    "models:migrate": "tsx scripts/migrate-models.ts",
     "video:export": "tsx packages/session/scripts/export-video.ts",
     "video:tts": "tsx scripts/video/synthesize.ts",
     "video:audit-audio": "tsx scripts/video/audit-audio.ts",

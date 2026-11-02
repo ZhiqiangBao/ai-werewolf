@@ -172,6 +172,10 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; 
 .feature-index { position: absolute; top: 8px; right: 12px; font-size: 10px; color: #7185ab; }
 .section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 15px; margin-bottom: 23px; }.section-heading h2 { margin-top: 6px; font-size: 27px; }
 .room-section { scroll-margin-top: 25px; }.room-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.home-connections { margin-bottom: 48px; scroll-margin-top: 24px; }
+.home-connections > .panel + .panel { margin-top: 16px; }
+.home-speech-library { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.home-speech-library p { margin-bottom: 0; }
 .room-item { position: relative; display: flex; align-items: center; gap: 15px; background: #1a2843; border: 1px solid #344767; padding: 20px; border-radius: 12px; }
 .room-emblem { color: #f0d294; padding: 8px; display: grid; place-items: center; border: 1px solid #8574537a; border-radius: 12px; background: #3a3e461f; }.room-info { min-width: 0; flex: 1; }.room-info h3 { font-size: 15px; margin: 2px 0; }.room-info .eyebrow { font-size: 8px; }
 .remove-room { position: absolute; right: 3px; top: 2px; width: 22px; height: 22px; opacity: .65; }.room-item > .btn { margin-right: 4px; }

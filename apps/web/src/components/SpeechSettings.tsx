@@ -1,27 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
 import { SPEECH_CONNECTION_TEMPLATES, type SpeechConnectionDraft, type SpeechConnectionKind, type SpeechConnectionView, type SpeechSettingsView } from '@werewolf/protocol';
-import { api } from '../api';
+import { api, savedRooms } from '../api';
 
 const empty = (): SpeechConnectionDraft => ({ kind: 'speech-compatible', name: '', url: '', apiKey: '', model: '', voice: '' });
-export function SpeechSettings({ roomId, token }: { roomId: string; token: string }) {
+export function SpeechSettings() {
   const [open, setOpen] = useState(false), [data, setData] = useState<SpeechSettingsView | null>(null);
   const [draft, setDraft] = useState(empty), [editing, setEditing] = useState<string>();
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState(''), [sample, setSample] = useState('');
+  const [legacy, setLegacy] = useState<{ roomId: string; token: string; connections: SpeechConnectionView[] }[]>([]);
   const dialog = useRef<HTMLDialogElement>(null), controller = useRef<AbortController | null>(null);
   useEffect(() => {
     if (!open) return;
     let active = true;
     dialog.current?.showModal();
-    void api.speechSettings(roomId, token).then((value) => { if (active) { setData(value); setError(value.error ?? ''); } }, (e: Error) => { if (active) setError(e.message); });
+    void api.sharedSpeechSettings().then((value) => { if (active) { setData(value); setError(value.error ?? ''); } }, (e: Error) => { if (active) setError(e.message); });
+    void loadLegacy().then((value) => { if (active) setLegacy(value); });
     return () => { active = false; controller.current?.abort(); };
-  }, [open, roomId, token]);
+  }, [open]);
   useEffect(() => () => { if (sample) URL.revokeObjectURL(sample); }, [sample]);
   const patch = (value: Partial<SpeechConnectionDraft>) => setDraft((current) => ({ ...current, ...value }));
   const reset = () => { setEditing(undefined); setDraft(empty()); };
   const close = () => { controller.current?.abort(); dialog.current?.close(); setOpen(false); setSample(''); setBusy(false); setError(''); setNotice(''); reset(); };
   const changed = async () => {
-    setData(await api.speechSettings(roomId, token));
-    window.dispatchEvent(new CustomEvent('werewolf-speech-providers-updated', { detail: roomId }));
+    setData(await api.sharedSpeechSettings()); setLegacy(await loadLegacy());
+    window.dispatchEvent(new CustomEvent('werewolf-speech-providers-updated', { detail: '*' }));
   };
   const selectKind = (kind: SpeechConnectionKind) => {
     const template = SPEECH_CONNECTION_TEMPLATES.find((item) => item.kind === kind)!;
@@ -29,7 +31,7 @@ export function SpeechSettings({ roomId, token }: { roomId: string; token: strin
   };
   const save = async () => {
     setBusy(true); setError(''); setNotice('');
-    try { await api.saveSpeech(roomId, token, draft, editing); reset(); await changed(); setNotice('已保存，可在朗读来源中选择。'); }
+    try { await api.saveSharedSpeech(draft, editing); reset(); await changed(); setNotice('已保存，所有房间均可选用。'); }
     catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   };
@@ -40,7 +42,7 @@ export function SpeechSettings({ roomId, token }: { roomId: string; token: strin
   };
   const remove = async (id: string) => {
     setBusy(true); setError(''); setNotice(''); setSample('');
-    try { await api.deleteSpeech(roomId, token, id); if (editing === id) reset(); await changed(); setNotice('已删除此朗读来源。'); }
+    try { await api.deleteSharedSpeech(id); if (editing === id) reset(); await changed(); setNotice('已删除此朗读来源。'); }
     catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   };
@@ -48,18 +50,24 @@ export function SpeechSettings({ roomId, token }: { roomId: string; token: strin
     controller.current?.abort(); const own = new AbortController(); controller.current = own;
     setBusy(true); setError(''); setNotice(''); setSample('');
     try {
-      const response = await fetch(`/api/v1/rooms/${roomId}/speech-settings/${encodeURIComponent(id)}/test`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, signal: own.signal });
+      const response = await fetch(`/api/v1/speech-settings/${encodeURIComponent(id)}/test`, { method: 'POST', signal: own.signal });
       if (!response.ok) { const body = await response.json().catch(() => ({})); throw Error(body.message ?? '试听失败'); }
       const blob = await response.blob();
       if (!own.signal.aborted) { setSample(URL.createObjectURL(blob)); setNotice('试听音频已生成，请点击播放器播放。'); }
     } catch (e) { if (!own.signal.aborted) setError((e as Error).message); }
     finally { if (!own.signal.aborted) setBusy(false); }
   };
+  const share = async (roomId: string, token: string, id: string) => {
+    setBusy(true); setError(''); setNotice('');
+    try { await api.shareSpeech(roomId, token, id); await changed(); setNotice('已导入首页共享库，所有房间均可选用。'); }
+    catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  };
   const custom = draft.kind === 'http-audio' || draft.kind === 'http-json-audio';
   return <>
     <button className="btn sm" onClick={() => setOpen(true)}>TTS 设置</button>
     <dialog ref={dialog} className="speech-settings" aria-labelledby="speech-settings-title" onCancel={(event) => { event.preventDefault(); close(); }}>
-      <div className="row"><div><h2 id="speech-settings-title">语音服务</h2><p className="small muted">为本房间添加朗读来源。保存后可选择使用，试听会向所填服务发送一条固定测试句。</p></div><button className="btn sm" onClick={close} aria-label="关闭 TTS 设置">关闭</button></div>
+      <div className="row"><div><h2 id="speech-settings-title">语音服务库</h2><p className="small muted">添加一次，所有房间均可选用。试听会向所填服务发送一条固定测试句。</p></div><button className="btn sm" onClick={close} aria-label="关闭 TTS 设置">关闭</button></div>
       {data?.builtins.length ? <p className="small muted">已有来源：{data.builtins.map((item) => item.label).join('、')}</p> : null}
       <form autoComplete="off" onSubmit={(event) => { event.preventDefault(); void save(); }}>
         <fieldset disabled={busy || !!data?.error}>
@@ -97,7 +105,13 @@ export function SpeechSettings({ roomId, token }: { roomId: string; token: strin
         <div><b>{item.name}</b><span className="tiny muted">{SPEECH_CONNECTION_TEMPLATES.find((template) => template.kind === item.kind)?.label} · {item.hasKey ? '已保存密钥' : '密钥不可用'}</span><span className="tiny muted">{item.url}</span></div>
         <div className="row"><button className="btn sm" disabled={busy || !item.hasKey} onClick={() => void test(item.id)} aria-label={`试听 ${item.name}`}>试听</button><button className="btn sm" disabled={busy} onClick={() => edit(item)} aria-label={`编辑 ${item.name}`}>编辑</button><button className="btn sm ghost" disabled={busy} onClick={() => void remove(item.id)} aria-label={`删除 ${item.name}`}>删除</button></div>
       </article>)}</div>
-      <p className="tiny muted">密钥加密保存在服务端，玩家与观战页只获得来源名称。更换配置后，其他已打开的页面刷新即可看到。</p>
+      {legacy.length > 0 && <details><summary>导入已有房间的语音配置</summary><p className="tiny muted">导入后加入共享库，其他房间也能使用同一来源；密钥无需重新填写。</p>{legacy.flatMap((room) => room.connections.map((item) => <div className="row" key={item.id}><span className="small">房间 {room.roomId} · {item.name}</span><button className="btn sm" disabled={busy || !!data?.error} onClick={() => void share(room.roomId, room.token, item.id)}>导入共享库</button></div>))}</details>}
+      <p className="tiny muted">密钥加密保存在服务端。房间的朗读选单只显示来源名称，其他已打开的页面刷新即可看到更新。</p>
     </dialog>
   </>;
+}
+
+async function loadLegacy() {
+  const results = await Promise.allSettled(savedRooms().map(async (room) => ({ roomId: room.roomId, token: room.hostToken, connections: (await api.speechSettings(room.roomId, room.hostToken)).connections })));
+  return results.flatMap((result) => result.status === 'fulfilled' && result.value.connections.length ? [result.value] : []);
 }

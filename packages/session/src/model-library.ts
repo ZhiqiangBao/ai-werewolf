@@ -9,8 +9,10 @@ interface SavedModel {
   apiProtocol?: ApiProtocol;
   id: string;
   name: string;
+  model?: string;
+  source?: 'imported' | 'added';
   baseUrl: string;
-  apiKeyEnc: string;
+  apiKeyEnc: string | null;
 }
 
 export interface ResolvedModel {
@@ -20,46 +22,49 @@ export interface ResolvedModel {
   model: string;
   baseUrl: string;
   apiKey: string | null;
-  source: 'settings' | 'added';
+  source: 'imported' | 'added';
 }
 
-/** 模型名单：页面里添加的保存在 data/，settings.json 里的只读合并进来。密钥不以明文落盘或返回。 */
+/** 运行时只读取项目模型库；外部配置仅由显式的一次性迁移读取。 */
 export class ModelLibrary {
   private added: SavedModel[] = [];
+  private legacyImported = false;
 
   constructor(
     private readonly secrets: SecretBox,
     private readonly file?: string,
   ) {
     if (!file || !existsSync(file)) return;
-    try {
-      const parsed = JSON.parse(readFileSync(file, 'utf8')) as { models?: SavedModel[] };
-      this.added = (parsed.models ?? []).filter((m) => m && m.id && m.name && m.baseUrl && m.apiKeyEnc);
-    } catch {
-      this.added = [];
-    }
+    const parsed = JSON.parse(readFileSync(file, 'utf8')) as { version?: number; legacyImported?: boolean; models?: SavedModel[] };
+    if ((parsed.version !== undefined && parsed.version !== 2) || !Array.isArray(parsed.models) || parsed.models.some((m) => !m || !m.id || !m.name || !m.baseUrl || (m.apiKeyEnc !== null && typeof m.apiKeyEnc !== 'string'))) throw Error('项目模型库格式无效，请检查 models.json；原文件未被覆盖');
+    this.added = parsed.models;
+    this.legacyImported = parsed.legacyImported === true;
   }
 
   list(): ResolvedModel[] {
-    const settings = loadQwenPresets().map((preset) => ({
-      id: preset.id,
-      label: preset.label,
-      model: preset.model,
-      baseUrl: preset.baseUrl,
-      apiProtocol: preset.apiProtocol ?? 'chat_completions',
-      apiKey: preset.apiKey,
-      source: 'settings' as const,
-    }));
-    const added = this.added.map((m) => ({
+    return this.added.map((m) => ({
       id: m.id,
       label: m.name,
-      model: m.name,
+      model: m.model ?? m.name,
       baseUrl: m.baseUrl,
       apiProtocol: m.apiProtocol ?? 'chat_completions',
       apiKey: this.keyOf(m),
-      source: 'added' as const,
+      source: m.source ?? 'added',
     }));
-    return [...added, ...settings];
+  }
+
+  /** 显式迁移一次，保留旧 ID、实际模型名、协议及现有密文；删除后不会重新导入。 */
+  importLegacySettings(): number {
+    if (this.legacyImported) return 0;
+    const presets = loadQwenPresets();
+    if (!presets.length) return 0;
+    const imported = presets.filter((preset) => !this.added.some((model) => model.id === preset.id)).map((preset): SavedModel => ({
+      id: preset.id, name: preset.label, model: preset.model, baseUrl: preset.baseUrl,
+      apiProtocol: preset.apiProtocol ?? 'chat_completions', source: 'imported', apiKeyEnc: preset.apiKey ? this.secrets.encrypt(preset.apiKey) : null,
+    }));
+    const previous = this.added; this.added = [...this.added, ...imported]; this.legacyImported = true;
+    try { this.persist(); } catch (error) { this.added = previous; this.legacyImported = false; throw error; }
+    return imported.length;
   }
 
   views(): ModelPresetView[] {
@@ -85,7 +90,7 @@ export class ModelLibrary {
     if (!model) throw new Error('请填写模型名称');
     if (!url) throw new Error('请填写接口地址');
     if (!key) throw new Error('请填写密钥');
-    if (this.added.some((m) => m.name === model && m.baseUrl === url && (m.apiProtocol ?? 'chat_completions') === protocol)) throw new Error('这个名称、地址和协议已经添加过了');
+    if (this.added.some((m) => (m.model ?? m.name) === model && m.baseUrl === url && (m.apiProtocol ?? 'chat_completions') === protocol)) throw new Error('这个名称、地址和协议已经添加过了');
     const saved: SavedModel = {
       id: `m_${randomBytes(8).toString('hex')}`,
       name: model.slice(0, 120),
@@ -93,8 +98,8 @@ export class ModelLibrary {
       baseUrl: url.slice(0, 300),
       apiKeyEnc: this.secrets.encrypt(key),
     };
-    this.added.unshift(saved);
-    this.persist();
+    const previous = this.added; this.added = [saved, ...this.added];
+    try { this.persist(); } catch (error) { this.added = previous; throw error; }
     return {
       id: saved.id,
       label: saved.name,
@@ -107,16 +112,15 @@ export class ModelLibrary {
   }
 
   remove(id: string): void {
-    if (this.list().some((m) => m.id === id && m.source === 'settings')) throw new Error('settings 里的模型不能在这里删除');
     const next = this.added.filter((m) => m.id !== id);
     if (next.length === this.added.length) throw new Error('没有这个模型');
-    this.added = next;
-    this.persist();
+    const previous = this.added; this.added = next;
+    try { this.persist(); } catch (error) { this.added = previous; throw error; }
   }
 
   private keyOf(m: SavedModel): string | null {
     try {
-      const key = this.secrets.decrypt(m.apiKeyEnc);
+      const key = m.apiKeyEnc ? this.secrets.decrypt(m.apiKeyEnc) : null;
       return key || null;
     } catch {
       return null;
@@ -127,7 +131,7 @@ export class ModelLibrary {
     if (!this.file) return;
     mkdirSync(dirname(this.file), { recursive: true });
     const tmp = `${this.file}.tmp`;
-    writeFileSync(tmp, JSON.stringify({ models: this.added }));
+    writeFileSync(tmp, JSON.stringify({ version: 2, legacyImported: this.legacyImported, models: this.added }), { mode: 0o600 });
     renameSync(tmp, this.file);
   }
 }

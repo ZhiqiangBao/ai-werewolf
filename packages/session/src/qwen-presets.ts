@@ -90,7 +90,7 @@ export function presetView(preset: QwenPreset): ModelPresetView {
   return { id: preset.id, label: preset.label, model: preset.model, baseUrl: preset.baseUrl, apiProtocol: preset.apiProtocol ?? 'chat_completions', hasKey: !!preset.apiKey, source: 'settings' };
 }
 
-/** 读取本机 Qwen Code 配置。文件不存在或无法解析时返回空列表，不抛出路径和内容。 */
+/** 仅供显式迁移读取旧配置；运行时模型库和 TTS 不调用此函数。 */
 export function loadQwenPresets(): QwenPreset[] {
   const file = process.env.WEREWOLF_QWEN_SETTINGS || join(homedir(), '.qwen', 'settings.json');
   if (!existsSync(file)) return [];

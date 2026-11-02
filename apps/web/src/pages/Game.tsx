@@ -13,7 +13,6 @@ import { TaskPanel } from '../components/TaskPanel';
 import { ThoughtFeed } from '../components/ThoughtFeed';
 import { HumanLobby, HumanStatus } from '../components/HumanPlayers';
 import { SpeechControls, useSpeechPlayback } from '../components/SpeechPlayback';
-import { SpeechSettings } from '../components/SpeechSettings';
 import { downloadVideoScript } from '../video';
 import { phaseLabel, seatName } from '../util';
 import { LinksPanel, Setup } from './Setup';
@@ -83,7 +82,7 @@ export function HostPage({ roomId, token }: { roomId: string; token: string }) {
   if (data.room.status === 'setup' || !data.projection) {
     return (
       <>
-        <TopBar room={data.room} projection={null} who="房主"><SpeechSettings roomId={roomId} token={token} /></TopBar>
+        <TopBar room={data.room} projection={null} who="房主" />
         <Setup roomId={roomId} token={token} onStarted={() => void refresh()} />
       </>
     );
@@ -135,7 +134,6 @@ function HostGame({ roomId, token, room, projection: p, refresh }: { roomId: str
   return (
     <>
       <TopBar room={room} projection={p} who="房主 · 上帝视角">
-        <SpeechSettings roomId={roomId} token={token} />
         {running && !room.paused && (
           <button className="btn sm" disabled={busy} onClick={() => void control('pause')}>
             暂停

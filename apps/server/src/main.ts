@@ -49,6 +49,33 @@ function tokenOf(req: IncomingMessage, url: URL): string {
   return url.searchParams.get('token') ?? '';
 }
 
+/** 首页共享库沿用模型库的服务级管理入口；旧房间配置仍先检查房主凭证。 */
+async function speechSettings(req: IncomingMessage, res: ServerResponse, method: string, id?: string, action?: string, roomId?: string): Promise<void> {
+  if (method === 'GET' && !id) return send(res, 200, { connections: roomId ? speechConnections.views(roomId) : speechConnections.sharedViews(), builtins: speech.catalog().providers, ...(speechConnections.error ? { error: speechConnections.error } : {}) });
+  if (method === 'POST' && id && action === 'test') {
+    const providers = roomId ? speechConnections.providers(roomId) : speechConnections.sharedProviders();
+    if (!providers.some((provider) => provider.id === id)) throw new ApiFailure(404, 'NOT_FOUND', '没有这个 TTS 来源');
+    try {
+      const audio = await speech.render('这是一段语音接入测试。一二三。', id, providers);
+      res.writeHead(200, { 'Content-Type': audio.mimeType, 'Content-Length': audio.bytes.length, 'Cache-Control': 'private, no-store' }); res.end(audio.bytes);
+    } catch { return send(res, 503, { code: 'SPEECH_UNAVAILABLE', message: '试听失败，请核对地址、密钥、模型、音色及所选协议；未切换其他来源。' }); }
+    return;
+  }
+  try {
+    if (method === 'POST' && roomId && id && action === 'share') return send(res, 200, speechConnections.share(roomId, id));
+    if (method === 'POST' && !id) return send(res, 201, roomId ? speechConnections.save(roomId, await readBody(req)) : speechConnections.saveShared(await readBody(req)));
+    if (method === 'PUT' && id && !action) return send(res, 200, roomId ? speechConnections.save(roomId, await readBody(req), id) : speechConnections.saveShared(await readBody(req), id));
+    if (method === 'DELETE' && id && !action) {
+      if (roomId) speechConnections.remove(roomId, id); else speechConnections.removeShared(id);
+      return send(res, 200, { ok: true });
+    }
+  } catch (error) {
+    if (error instanceof ApiFailure) throw error;
+    throw new ApiFailure(400, 'BAD_REQUEST', error instanceof Error && !('code' in error) ? error.message : '无法保存 TTS 配置，请检查服务端存储。');
+  }
+  throw new ApiFailure(404, 'NOT_FOUND', '接口不存在');
+}
+
 function stream(req: IncomingMessage, res: ServerResponse, roomId: string, token: string): void {
   const unsubscribe = manager.subscribe(roomId, token, (n) => res.write(`event: update\ndata: ${n}\n\n`));
   res.writeHead(200, {
@@ -77,6 +104,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL): Promise
     manager.deleteModel(decodeURIComponent(parts[1]));
     return send(res, 200, { ok: true });
   }
+  if (parts[0] === 'speech-settings') return speechSettings(req, res, method, parts[1], parts[2]);
   if (parts[0] !== 'rooms') throw new ApiFailure(404, 'NOT_FOUND', '接口不存在');
   if (parts.length === 1 && method === 'POST') return send(res, 201, manager.createRoom(await readBody(req)));
 
@@ -111,37 +139,18 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL): Promise
     case 'POST participate':
       return send(res, 200, manager.participate(roomId, token, await readBody(req)));
     case 'GET speech-settings':
-      manager.getSetup(roomId, token);
-      return send(res, 200, { connections: speechConnections.views(roomId), builtins: speech.catalog().providers, ...(speechConnections.error ? { error: speechConnections.error } : {}) });
     case 'POST speech-settings':
-    case 'PUT speech-settings': {
-      manager.getSetup(roomId, token);
-      if (subAction === 'test' && method === 'POST' && sub) {
-        const providers = speechConnections.providers(roomId);
-        if (!providers.some((provider) => provider.id === sub)) throw new ApiFailure(404, 'NOT_FOUND', '没有这个 TTS 来源');
-        try {
-          const audio = await speech.render('这是一段语音接入测试。一二三。', sub, providers);
-          res.writeHead(200, { 'Content-Type': audio.mimeType, 'Content-Length': audio.bytes.length, 'Cache-Control': 'private, no-store' }); res.end(audio.bytes);
-        } catch { return send(res, 503, { code: 'SPEECH_UNAVAILABLE', message: '试听失败，请核对地址、密钥、模型、音色及所选协议；未切换其他来源。' }); }
-        return;
-      }
-      if ((method === 'POST' && sub) || (method === 'PUT' && (!sub || subAction))) break;
-      try { return send(res, method === 'POST' ? 201 : 200, speechConnections.save(roomId, await readBody(req), method === 'PUT' ? sub : undefined)); }
-      catch (error) { if (error instanceof ApiFailure) throw error; throw new ApiFailure(400, 'BAD_REQUEST', error instanceof Error && !('code' in error) ? error.message : '无法保存 TTS 配置，请检查服务端存储。'); }
-    }
+    case 'PUT speech-settings':
     case 'DELETE speech-settings':
       manager.getSetup(roomId, token);
-      if (!sub || subAction) break;
-      try { speechConnections.remove(roomId, sub); }
-      catch { throw new ApiFailure(400, 'BAD_REQUEST', '无法删除此 TTS 来源'); }
-      return send(res, 200, { ok: true });
+      return speechSettings(req, res, method, sub, subAction, roomId);
     case 'GET speech-providers':
       manager.view(roomId, token);
-      return send(res, 200, speech.catalog(speechConnections.providers(roomId)));
+      return send(res, 200, speech.catalog([...speechConnections.sharedProviders(), ...speechConnections.providers(roomId)]));
     case 'POST speech': {
       const body = await readBody(req);
       const text = manager.speechText(roomId, token, body.eventSeq);
-      const providers = speechConnections.providers(roomId);
+      const providers = [...speechConnections.sharedProviders(), ...speechConnections.providers(roomId)];
       if (body.providerId !== undefined && (typeof body.providerId !== 'string' || !speech.catalog(providers).providers.some((p) => p.id === body.providerId))) {
         throw new ApiFailure(400, 'BAD_REQUEST', '请选择已配置的朗读来源');
       }

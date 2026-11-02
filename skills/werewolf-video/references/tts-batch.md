@@ -48,7 +48,7 @@ node node_modules/tsx/dist/cli.mjs scripts/video/synthesize.ts
 
 Qwen Token Plan 特例：
 
-- 保留 `qwen-token-plan` 路由和现有 Token Plan 端点；凭据由内存中的环境或获准配置读取，不落入项目、脚本或日志。
+- 保留 `qwen-token-plan` 路由和现有 Token Plan 端点；凭据优先从 `WEREWOLF_TTS_API_KEY` 读取，其次只读项目加密的 `data/models.json`。不再运行时读取 Qwen Code 全局 settings；旧安装先执行项目的 `models:migrate` 显式迁移，保留原主密钥。密钥明文不落入脚本、产物或日志。
 - 当前内置模型为 `qwen-audio-3.0-tts-plus`。使用 `input.instruction`、`word_timestamp_enabled: true` 和 SSE；语音、时间戳与结束事件都完成后才写成功缓存。
 - SSE 事件按空行分块；同一事件可能有多行 JSON。最终 WAV 可能带流式长度头，应按真实 PCM 字节数重写规范头。
 - 下载服务返回的音频 URL 时，不向存储域名转发服务商 API Key，不打印带签名 URL。

@@ -2,7 +2,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ApiFailure, MemoryStore, RoomManager, SecretBox } from '../src/index';
+import { MemoryStore, RoomManager, SecretBox } from '../src/index';
+import { ModelLibrary } from '../src/model-library';
 import { loadQwenPresets, presetsFromQwenSettings } from '../src/qwen-presets';
 
 const SECRET = 'sk-fixture-secret-value';
@@ -44,6 +45,8 @@ describe('Qwen Code 模型列表', () => {
     process.env.WEREWOLF_QWEN_SETTINGS = file;
     const manager = new RoomManager({ store: new MemoryStore(), secrets: SecretBox.ephemeral(), tickMs: 0 });
     try {
+      expect(manager.modelPresets()).toEqual([]);
+      expect(manager.importLegacyModels()).toBe(1);
       const presets = manager.modelPresets();
       expect(presets).toHaveLength(1);
       expect(presets[0].hasKey).toBe(true);
@@ -91,14 +94,15 @@ describe('Qwen Code 模型列表', () => {
     const secrets = SecretBox.ephemeral();
     const manager = new RoomManager({ store: new MemoryStore(), secrets, tickMs: 0, modelsPath });
     try {
+      expect(manager.importLegacyModels()).toBe(1);
       const added = manager.addModel({ name: 'my-chat', baseUrl: 'https://example.com', apiKey: SECRET });
       expect(added).toMatchObject({ source: 'added', model: 'my-chat', baseUrl: 'https://example.com/v1', hasKey: true });
       const raw = readFileSync(modelsPath, 'utf8');
       expect(raw).not.toContain(SECRET);
       expect(raw).toContain('"apiKeyEnc":"v1.');
-      const fromSettings = manager.modelPresets().find((p) => p.source === 'settings');
+      const fromSettings = manager.modelPresets().find((p) => p.source === 'imported');
       expect(fromSettings?.label).toBe('来自 settings');
-      expect(() => manager.deleteModel(fromSettings!.id)).toThrow(ApiFailure);
+      expect(fromSettings?.model).toBe('from-settings');
       const { roomId, hostToken } = manager.createRoom();
       const view = manager.updateSetup(roomId, hostToken, { seats: [{ seat: 1, presetId: added.id }] });
       expect(view.seats[0]).toMatchObject({ modelId: added.id, model: 'my-chat', adapter: 'openai_compatible' });
@@ -110,10 +114,43 @@ describe('Qwen Code 模型列表', () => {
       again.dispose();
       manager.deleteModel(added.id);
       expect(manager.modelPresets().some((p) => p.id === added.id)).toBe(false);
+      manager.deleteModel(fromSettings!.id);
+      expect(manager.importLegacyModels()).toBe(0);
+      expect(manager.modelPresets()).toEqual([]);
     } finally {
       manager.dispose();
       if (prev === undefined) delete process.env.WEREWOLF_QWEN_SETTINGS;
       else process.env.WEREWOLF_QWEN_SETTINGS = prev;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('迁移保留旧 ID 和已有模型；重启、修改或移除全局配置都不改变项目模型库', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ww-model-migration-'));
+    const settings = join(dir, 'settings.json'), file = join(dir, 'models.json'), secrets = SecretBox.ephemeral();
+    const raw = { env: { OLD_API_KEY: SECRET }, modelProviders: { openai: [{ id: 'actual-model', name: '显示名称', baseUrl: 'https://old.example/v1', envKey: 'OLD_API_KEY' }] } };
+    writeFileSync(settings, JSON.stringify(raw));
+    const previous = process.env.WEREWOLF_QWEN_SETTINGS; process.env.WEREWOLF_QWEN_SETTINGS = settings;
+    try {
+      const encrypted = secrets.encrypt('existing-project-secret');
+      writeFileSync(file, JSON.stringify({ models: [{ id: 'old-added-id', name: 'old-added-model', baseUrl: 'https://added.example/v1', apiKeyEnc: encrypted }] }));
+      const library = new ModelLibrary(secrets, file);
+      expect(library.list()).toHaveLength(1);
+      const oldId = presetsFromQwenSettings(raw)[0].id;
+      expect(library.importLegacySettings()).toBe(1);
+      expect(library.find(oldId)).toMatchObject({ label: '显示名称', model: 'actual-model', source: 'imported', apiKey: SECRET });
+      const persisted = JSON.parse(readFileSync(file, 'utf8'));
+      expect(persisted.models[0]).toMatchObject({ id: 'old-added-id', apiKeyEnc: encrypted });
+      expect(readFileSync(file, 'utf8')).not.toContain(SECRET);
+      expect(readFileSync(settings, 'utf8')).toBe(JSON.stringify(raw));
+      writeFileSync(settings, '{broken');
+      const restored = new ModelLibrary(secrets, file);
+      expect(restored.find(oldId)?.apiKey).toBe(SECRET);
+      expect(restored.importLegacySettings()).toBe(0);
+      restored.remove(oldId);
+      expect(new ModelLibrary(secrets, file).list().map((model) => model.id)).toEqual(['old-added-id']);
+    } finally {
+      if (previous === undefined) delete process.env.WEREWOLF_QWEN_SETTINGS; else process.env.WEREWOLF_QWEN_SETTINGS = previous;
       rmSync(dir, { recursive: true, force: true });
     }
   });

@@ -102,7 +102,7 @@ pnpm start
 
 新房间支持发言后退水：普通警上竞选期间，候选人可在他人发言时点击行动区「退水」，不附带新发言、不打断他人；最后一位发言结束后，未退水候选人均有「继续竞选／退水」最终确认，全部确认后才开放投票。竞选 PK 或投票开始后不能退水。旧房间按保存的竞选版本继续运行。
 
-对局记录支持当前视角已提交发言的自动朗读、单条重听、暂停和语速调整，可选择浏览器原生、Qwen、小米 MiMo 及其他 TTS 提供方。房主可在网页「TTS 设置」填写名称、完整 URL 和 Key，选择协议模板并补齐模型／音色，保存后手动试听；密钥加密保存。现有环境配置保持兼容，详见 [发言朗读](docs/发言朗读.md)。
+对局记录支持当前视角已提交发言的自动朗读、单条重听、暂停和语速调整，可选择浏览器原生、Qwen、小米 MiMo 及其他 TTS 提供方。在首页「模型与语音」统一管理模型和 TTS；语音服务填写名称、完整 URL 和 Key，选择协议模板并补齐模型／音色后可手动试听，各房间直接选用。密钥加密保存，现有环境配置保持兼容，详见 [发言朗读](docs/发言朗读.md)。
 
 <a id="voice-input"></a>
 
@@ -173,7 +173,7 @@ pnpm start
 
 ### 统一模型名单
 
-在房间配置页的「模型」面板选择 **接口协议**，填写 **模型名称、接口地址、API Key**。添加一次后，各座位都可以从名单中选择，也可以批量应用到 AI 座位。
+在首页「模型与语音」的「模型库」选择 **接口协议**，填写 **模型名称、接口地址、API Key**。添加一次后，各房间的座位都可以从名单中选择，也可以批量应用到 AI 座位。房间里保留选择与测试入口，连接管理统一放在首页。
 
 | 配置项 | 说明 |
 | :--- | :--- |
@@ -187,13 +187,17 @@ pnpm start
 **三种协议均已接入。** 测通按所选协议发出请求；不会在失败时自动换协议。新增接口的输出 token 上限可在座位设置中调整，依供应商计数。实现、地址示例与真实缓存验证见 [多协议实现文档](docs/模块化与多协议设计.md)。
 
 <details>
-<summary><b>📥 自动读取 Qwen Code 中已有的模型</b></summary>
+<summary><b>📥 将 Qwen Code 的旧模型一次性迁入项目</b></summary>
 
-默认从 `~/.qwen/settings.json` 读取 `modelProviders.openai`、`responses`、`anthropic` 列表，分别对应三种协议；条目也可显式填写 `apiProtocol`。通过 `envKey` 指定的环境变量，或配置文件的 `env` 字段解析密钥。原有 Chat 条目的 ID 保持兼容。
+模型统一保存在忽略的 `data/models.json`，密钥使用项目主密钥加密。**日常运行不再读取全局 settings。** 旧安装可在仓库根目录显式运行一次：
 
-这些模型以只读方式合并进模型名单，无需逐个重新输入。页面删除操作不会修改 Qwen Code 的配置。
+```powershell
+pnpm models:migrate
+```
 
-要使用其他配置文件，可以设置 `WEREWOLF_QWEN_SETTINGS`。导入器的具体行为见 `packages/session/src/qwen-presets.ts`。
+迁移只读 `~/.qwen/settings.json` 的 `openai`、`responses`、`anthropic` 模型分组，通过对应环境变量或文件内的 `env` 解析密钥；可用 `WEREWOLF_QWEN_SETTINGS` 指定一次性来源。保留旧模型 ID、实际模型名、协议和项目已有条目；写入前备份已有模型文件，原全局文件与 `data/secret.key` 保持不变。迁移结果与网页新增模型进入同一库，均可从首页删除，删除后不会自动重新导入。
+
+迁移主机或备份时同时保留 `models.json` 与原主密钥（`data/secret.key` 或原 `WEREWOLF_SECRET`）。项目文件缺少主密钥时不能通过重新生成主密钥解开已有凭据。没有 pnpm 时可用 `node node_modules/tsx/dist/cli.mjs scripts/migrate-models.ts`。成功导入后会记录迁移完成标记，无需重复执行。
 
 </details>
 
@@ -397,7 +401,7 @@ node --import tsx packages/session/scripts/probe-action-tools.ts --live --model=
 | `PORT` | `5173` | HTTP 监听端口。 |
 | `HOST` | `0.0.0.0` | 默认支持局域网连接；仅本机使用可显式设置为 `127.0.0.1`。监听设置改变后需重启服务。 |
 | `WEREWOLF_DATA` | 项目下的 `data/` | 房间、模型配置、密钥与对局数据目录。 |
-| `WEREWOLF_QWEN_SETTINGS` | `~/.qwen/settings.json` | 只读导入模型的配置文件。 |
+| `WEREWOLF_QWEN_SETTINGS` | `~/.qwen/settings.json` | 仅 `models:migrate` 使用的一次性旧配置来源，运行时不读取。 |
 | `WEREWOLF_SECRET` | 未设置时生成 `data/secret.key` | 加密 API Key 的主密钥来源，设置后需保持稳定。 |
 
 <details>

@@ -193,4 +193,29 @@ describe('真人 HTTP 与 SSE 接入', () => {
       expect((await request(`${settings}/${saved.id}/test`, room.hostToken)).status).toBe(404);
     } finally { await new Promise<void>((done, reject) => fixture.close((error) => error ? reject(error) : done())); }
   });
+  it('首页 TTS 库在所有房间可选，旧私有配置需要房主显式分享，朗读 API 仍只接受授权事件', async () => {
+    const draft = { kind: 'speech-compatible', name: '首页共享语音', url: 'https://fixture.invalid/audio/speech', apiKey: 'fixture-shared-secret' };
+    const created = await request('speech-settings', '', draft); expect(created.status).toBe(201);
+    const shared = await created.json(); expect(shared.hasKey).toBe(true); expect(JSON.stringify(shared)).not.toContain(draft.apiKey);
+    const other = await (await request('rooms', '', {})).json() as CreateRoomResult;
+    for (const [id, token] of [[room.roomId, setup.tokens.spectator], [other.roomId, other.hostToken]]) {
+      const catalog = await (await request(`rooms/${id}/speech-providers`, token, undefined, 'GET')).json();
+      expect(catalog.providers).toContainEqual({ id: shared.id, label: draft.name }); expect(JSON.stringify(catalog)).not.toMatch(/fixture.invalid|fixture-shared-secret/);
+    }
+    const privateResponse = await request(`rooms/${room.roomId}/speech-settings`, room.hostToken, { ...draft, name: '旧私有来源' });
+    const legacy = await privateResponse.json();
+    const homepage = await (await request('speech-settings', '', undefined, 'GET')).json();
+    expect(homepage.connections.some((item: any) => item.id === legacy.id)).toBe(false);
+    const share = `rooms/${room.roomId}/speech-settings/${legacy.id}/share`;
+    expect((await request(share, setup.tokens.spectator)).status).toBe(403);
+    expect((await request(share, other.hostToken)).status).toBe(403);
+    expect((await request(share, room.hostToken)).status).toBe(200);
+    const next = await (await request(`rooms/${other.roomId}/speech-providers`, other.hostToken, undefined, 'GET')).json();
+    expect(next.providers).toContainEqual({ id: legacy.id, label: '旧私有来源' });
+    expect((await request(`rooms/${other.roomId}/speech`, other.hostToken, { text: '自由文本', providerId: shared.id })).status).toBe(400);
+    expect((await request(`rooms/${other.roomId}/speech-settings/${shared.id}`, other.hostToken, undefined, 'DELETE')).status).toBe(400);
+    expect((await request(`speech-settings/${shared.id}`, '', { ...draft, apiKey: '', name: '首页修改' }, 'PUT')).status).toBe(200);
+    expect((await request(`speech-settings/${shared.id}`, '', undefined, 'DELETE')).status).toBe(200);
+    expect((await request(`speech-settings/${legacy.id}`, '', undefined, 'DELETE')).status).toBe(200);
+  });
 });

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { loadQwenPresets } from '../qwen-presets';
+import { projectQwenTokenPlanKey } from '../project-models';
 import type { VoiceProfile, AudioMeta } from './types';
 import { reuseAudio } from './audio-cache';
 export type { VoiceProfile, Word, AudioMeta } from './types';
@@ -27,8 +27,7 @@ export async function synthesizeQwen(text: string, profile: VoiceProfile, model:
   } catch { /* Missing/incomplete cache: regenerate this clip only. */ }
   const reused = await reuseAudio(cacheKey, output);
   if (reused) return reused;
-  const apiKey = explicit ? options!.apiKey : process.env.WEREWOLF_TTS_API_KEY || loadQwenPresets().find((p) =>
-    new URL(p.baseUrl).hostname === 'token-plan.maas.qianwenaiapi.com' && p.apiKey?.startsWith('sk-sp-'))?.apiKey;
+  const apiKey = explicit ? options!.apiKey : process.env.WEREWOLF_TTS_API_KEY || projectQwenTokenPlanKey();
   if (explicit ? !apiKey : !apiKey?.startsWith('sk-sp-')) throw Error('Qwen Token Plan key is unavailable');
   const response = await fetch(endpoint, { method: 'POST', ...(explicit ? { redirect: 'error' as const } : {}),
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'X-DashScope-SSE': 'enable' },

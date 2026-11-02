@@ -1,10 +1,10 @@
 # 自动化程序的结构与扩展
 
-程序源码随技能保存在 `assets/pipeline/`，与目标仓库的 `scripts/video/` 同一结构。美术资源在 `assets/art/`。`bootstrap.mjs` 复制缺失文件，并只补齐 package.json 缺失的依赖与命令；已有实现保留。它依赖该游戏仓库的导出模块和 Qwen 配置读取器，不能直接套到不同日志格式。
+程序源码随技能保存在 `assets/pipeline/`，与目标仓库的 `scripts/video/` 同一结构。美术资源在 `assets/art/`。`bootstrap.mjs` 复制缺失文件，并只补齐 package.json 缺失的依赖与命令；已有实现保留。它依赖该游戏仓库的导出模块与 `SecretBox`，不能直接套到不同日志格式。
 
 重新分发前运行 `node scripts/video/package-skill.mjs`。本仓库音频模块与网页语音共用 `packages/session/src/speech/`；打包器将对应实现放入技能的 `audio.ts`、`audio-cache.ts`、`qwen.ts`、`tts-types.ts` 并适配内部导入，不能把仅含重导出的本地入口直接作为独立模板。这样旧游戏仓库没有 `session/src/speech` 时仍能安装视频程序。
 
-新版 bundle 的 `assets/bundle.json` 为 version 8，在已有画面、主持、原话验证、波形检查、定点重配和简介同步能力上增加配音前材料检查与 `--check-only`。已有仓库升级时，不能以 bootstrap 成功认定旧文件已更新：先查看本地改动，再对照 `assets/pipeline/` 合并对应文件；不要覆盖用户改动。核对 `materials.ts`／`preflight.ts`、`workflow.ts` 的材料检查阶段、`prepare.ts` 的实际材料路径、音频质量门禁、`publish-copy.ts` 的公开字段选择、`project.ts` 的 `judgeCues`／`clipSeeds`，并保持原稿字幕、有限码率与完整事实不变。游戏导出还需包含公开 `ruleCard`；旧导出缺失时重新导出，不能让模型凭印象补规则。
+新版 bundle 的 `assets/bundle.json` 为 version 9，在已有画面、主持、原话验证、波形检查、定点重配和简介同步能力上增加配音前材料检查与 `--check-only`。已有仓库升级时，不能以 bootstrap 成功认定旧文件已更新：先查看本地改动，再对照 `assets/pipeline/` 合并对应文件；不要覆盖用户改动。升级凭据读取时同时合并 `qwen.ts` 与 `project-models.ts`；新模板只读项目模型库，不再依赖全局 settings。核对 `materials.ts`／`preflight.ts`、`workflow.ts` 的材料检查阶段、`prepare.ts` 的实际材料路径、音频质量门禁、`publish-copy.ts` 的公开字段选择、`project.ts` 的 `judgeCues`／`clipSeeds`，并保持原稿字幕、有限码率与完整事实不变。游戏导出还需包含公开 `ruleCard`；旧导出缺失时重新导出，不能让模型凭印象补规则。
 
 ## 运行环境
 
