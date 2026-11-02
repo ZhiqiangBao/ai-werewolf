@@ -1,3 +1,5 @@
+import { gameText } from './locale';
+
 export const API_PROTOCOLS = ['chat_completions', 'responses', 'anthropic_messages'] as const;
 export type ApiProtocol = (typeof API_PROTOCOLS)[number];
 
@@ -14,21 +16,21 @@ export function apiProtocol(value: unknown): ApiProtocol {
 const paths: Record<ApiProtocol, string> = { chat_completions: '/chat/completions', responses: '/responses', anthropic_messages: '/messages' };
 
 /** 同时接受 API 根地址与完整端点；绝不在协议之间自动切换。 */
-export function apiBase(value: string, protocol: ApiProtocol = 'chat_completions'): string {
+export function apiBase(value: string, protocol: ApiProtocol = 'chat_completions', locale?: string): string {
   const base = value.trim().replace(/\/+$/, '');
   if (!base || base.includes('${')) return '';
   const url = new URL(base);
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('接口地址必须是无凭证、无查询参数的 HTTP(S) 地址');
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error(gameText(locale, '接口地址必须是无凭证、无查询参数的 HTTP(S) 地址'));
   const endpoint = Object.values(paths).find((p) => url.pathname.endsWith(p));
   if (endpoint) {
-    if (endpoint !== paths[protocol]) throw new Error(`接口地址与 ${API_PROTOCOL_LABELS[protocol]} 协议不匹配`);
+    if (endpoint !== paths[protocol]) throw new Error(gameText(locale, '接口地址与 {0} 协议不匹配', API_PROTOCOL_LABELS[protocol]));
     return base;
   }
   return /\/v\d+(?:beta)?$/.test(url.pathname) ? base : `${base}/v1`;
 }
 
-export function apiUrl(value: string, protocol: ApiProtocol = 'chat_completions'): string {
-  const base = apiBase(value, protocol);
+export function apiUrl(value: string, protocol: ApiProtocol = 'chat_completions', locale?: string): string {
+  const base = apiBase(value, protocol, locale);
   return base.endsWith(paths[protocol]) ? base : `${base}${paths[protocol]}`;
 }
 

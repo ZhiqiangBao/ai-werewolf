@@ -1,3 +1,4 @@
+import { gameText } from '@werewolf/protocol';
 import { apiUrl, thinkingParameters, toolToJsonSchema, type ToolSpec } from '@werewolf/protocol';
 import { chatMessages } from './transcript';
 import { HttpError, post, runRequest, failure } from './transport';
@@ -5,7 +6,7 @@ import { jsonInstruction, parseAssistant, parseJson, tokenUsage } from './result
 import type { Adapter, AdapterConfig } from './types';
 
 export { redact } from './transport';
-export const chatUrl = (baseUrl: string) => apiUrl(baseUrl, 'chat_completions');
+export const chatUrl = (baseUrl: string, locale?: string) => apiUrl(baseUrl, 'chat_completions', locale);
 
 const noRequired = new Set<string>();
 const noJsonFormat = new Set<string>();
@@ -15,8 +16,8 @@ export const openaiAdapter: Adapter = {
   decide(req) {
     return runRequest(req, async (signal, started, onDelta) => {
       const { config, tools } = req;
-      if (!config.baseUrl.trim() || !config.model.trim()) return failure(started, '座位没有配置接口地址或模型名');
-      const url = chatUrl(config.baseUrl);
+      if (!config.baseUrl.trim() || !config.model.trim()) return failure(started, gameText(req.projection?.locale, '座位没有配置接口地址或模型名'));
+      const url = chatUrl(config.baseUrl, req.projection?.locale);
       const memo = `${url}|${config.model}`;
       const listen = req.toolChoice === 'auto';
       const json = config.toolMode === 'json' && !listen;
@@ -54,7 +55,7 @@ export const openaiAdapter: Adapter = {
         try {
           const encoded = { ...body(), ...(useStream ? { stream: true } : {}) };
           req.onRequest?.({ apiProtocol: 'chat_completions', tools: structuredClone('tools' in encoded ? encoded.tools ?? [] : []), ...('tool_choice' in encoded ? { toolChoice: encoded.tool_choice } : {}), ...(json ? { toolInstruction: jsonInstruction(tools, req.projection?.locale) } : {}) });
-          const result = await post(url, encoded, headers, signal, event);
+          const result = await post(url, encoded, headers, signal, event, req.projection?.locale);
           return result ?? { usage, choices: [{ message: { content: acc.content || null, reasoning_content: acc.reasoning_content,
             tool_calls: [...acc.calls.entries()].sort(([a], [b]) => a - b).map(([, c], i) => ({ id: c.id || `call_${i}`, type: 'function', function: { name: c.name, arguments: c.arguments } })),
           } }] };
@@ -74,7 +75,7 @@ export const openaiAdapter: Adapter = {
         data = await load(false);
       }
       const msg = data?.choices?.[0]?.message;
-      if (!msg || typeof msg !== 'object') return failure(started, '返回里没有 choices[0].message', { raw: data });
+      if (!msg || typeof msg !== 'object') return failure(started, gameText(req.projection?.locale, '返回里没有 choices[0].message'), { raw: data });
       const calls = (Array.isArray(msg.tool_calls) ? msg.tool_calls : []).map((c: any, i: number) => ({ id: c.id || `call_${i}`, name: String(c.function?.name ?? ''), arguments: String(c.function?.arguments ?? '{}') }));
       const assistant = { role: 'assistant' as const, content: listen || json ? msg.content || null : null, ...(calls.length ? { calls } : {}) };
       return { ...(json ? parseJson(started, assistant, tools, data, req.projection?.locale) : parseAssistant(started, assistant, tools, data, listen, req.projection?.locale)),

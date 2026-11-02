@@ -55,7 +55,7 @@ export function buildMessages(
     p.me.appendix,
     '',
     gameText(p.locale, "【你的目标】"),
-    gameText(p.locale, "你需要尽力帮助你真实身份所属的{0}获胜，胜利条件以规则卡为准。每次发言和行动都围绕这个目标自主决策；出局后本局尚未结束时，目标不变。", p.me.factionName),
+    gameText(p.locale, "在法官许可的发言和行动中，尽力帮助真实阵营{0}获胜；公布出局后按规则完成获准职责，随后旁观。", p.me.factionName),
     '',
     gameText(p.locale, "【扮演风格】"),
     style,

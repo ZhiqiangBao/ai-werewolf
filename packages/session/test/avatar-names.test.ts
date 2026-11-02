@@ -84,6 +84,25 @@ describe('人物默认昵称', () => {
     expect(setup.participants.map((participant) => participant.ready)).toEqual([false, true]);
   });
 
+  it('旧空昵称在切换真人与加入时恢复人物名，已有自定义名不被覆盖', () => {
+    const { manager, store, secrets, roomId, hostToken } = room('campus');
+    manager.dispose();
+    const record = store.rooms.get(roomId)!;
+    record.seats[0].name = '';
+    record.seats[1].name = '房主昵称';
+    record.seats[1].nameSource = 'custom';
+    record.seats[2].name = '';
+    record.seats[2].controller = 'human';
+    const restored = new RoomManager({ store, secrets, tickMs: 0 }); managers.push(restored);
+    const setup = restored.updateSetup(roomId, hostToken, { seats: [{ seat: 1, controller: 'human' }, { seat: 2, controller: 'human' }] });
+    expect(setup.seats.slice(0, 2).map((seat) => seat.name)).toEqual(['大老师', '房主昵称']);
+    restored.participate(roomId, setup.tokens.seats[2].token, {});
+    expect(restored.view(roomId, setup.tokens.seats[2].token).room.seats[2].name).toBe('叶山');
+    restored.participate(roomId, setup.tokens.seats[0].token, { name: '真人昵称', ready: true });
+    const next = restored.updateSetup(roomId, hostToken, { seats: [{ seat: 1, controller: 'ai' }] });
+    expect(next.seats[0].name).toBe('真人昵称');
+  });
+
   it('拒绝未知风格与座位凭证修改；开局后冻结风格和昵称', () => {
     const { manager, roomId, hostToken } = room('campus');
     const setup = manager.getSetup(roomId, hostToken);

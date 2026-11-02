@@ -37,7 +37,8 @@ export function buildRuleCard(rules: RuleSet): string {
   L.push(gameText(rules.locale, "【本局规则 · {0}】", rules.presetName));
   L.push(gameText(rules.locale, "一、配置与胜负"));
   L.push(gameText(rules.locale, "· 本局 {0} 人：{1}。配置公开，每个座位的身份随机发放、不公开。", rules.playerCount, composition(rules)));
-  L.push(gameText(rules.locale, "· 阵营决定胜负归属，角色身份决定技能。「好人」包括平民和神职，「平民」是其中一种身份；查验表现、发言声称或是否持有警徽不改变真实身份和阵营。"));
+  L.push(gameText(rules.locale, "· 阵营决定胜负，身份决定技能；好人包括平民和神职。查验表现、发言声称及警徽不改变真实身份或阵营。"));
+  L.push(gameText(rules.locale, "· 已公布出局者不再参加常规行动或夜间技能，但仍须按法官许可处理遗言、死亡触发技能和警徽等职责。首夜出局在公布前的竞选资格按下文执行。"));
   L.push(
     v.winCondition === 'side'
       ? gameText(rules.locale, "· 好人阵营：所有狼人阵营成员出局即获胜。狼人阵营：所有平民出局，或所有神职（{0}）出局即获胜（屠边）。", gods.join('、'))
@@ -46,7 +47,7 @@ export function buildRuleCard(rules: RuleSet): string {
   L.push(gameText(rules.locale, "· 先处理同批次出局技能及其引发的死亡连锁，再判定胜负；若双方获胜条件同时满足，优先判定好人阵营获胜。"));
 
   L.push(gameText(rules.locale, "二、夜晚"));
-  L.push(gameText(rules.locale, "· 对局时间顺序：第1夜（第一晚）→ 第1天（第一个白天）→ 第2夜 → 第2天 → ……，直至对局结束；先过第N夜，再进入第N天。夜间说「本夜／今晚」指正在进行的这一夜；第N天说「昨夜」指第N夜，说「今晚／下一夜」指第N+1夜。"));
+  L.push(gameText(rules.locale, "· 第 N 夜在第 N 天之前；夜间的「今晚」指本夜，第 N 天的「昨夜」指第 N 夜、「今晚」指第 N+1 夜。"));
   L.push(
     gameText(rules.locale, "· 夜间行动顺序：{0}。没有可行动者时跳过。", rules.nightOrder.map((id) => phaseNames.get(id) ?? id).join(' → ')),
   );
@@ -54,7 +55,7 @@ export function buildRuleCard(rules: RuleSet): string {
   for (const mod of new Set(rules.nightOrder.map((id) => phaseOwner.get(id)))) {
     for (const line of mod?.ruleCard?.(rules) ?? []) L.push(`· ${line}`);
   }
-  L.push(gameText(rules.locale, "· 夜间出局情况由法官明确通报：有人出局时报出局名单，无人出局时明确宣布「昨夜平安，无人出局」。在法官公开通报前，夜间出局情况为「尚未公布」，未通报不代表平安夜。此通报不公布死因或身份；自爆或技能要求公开身份的情形按相应条款处理。"));
+  L.push(gameText(rules.locale, "· 法官通报夜间出局名单或平安夜；通报前情况尚未公布，不代表平安。通报不公开死因或身份，规则要求公开时除外。"));
 
   const dayRoles = mods.filter((m) => !m.nightPhase && !m.nightPhases?.length && m.ruleCard);
   if (dayRoles.length) {
@@ -66,7 +67,7 @@ export function buildRuleCard(rules: RuleSet): string {
   if (sheriff) {
     const timing =
       v['sheriff.timing'] === 'before_announcement'
-        ? gameText(rules.locale, "第 1 天天亮后先竞选警长，再公布昨夜出局；昨夜出局的人在公布之前照常参与竞选。公布前能够上警、发言或投票，只表示有当前阶段的参与资格，不表示该玩家已经确认存活。")
+        ? gameText(rules.locale, "第 1 天先竞选，再公布昨夜出局；夜间出局者公布前仍可参与竞选，其资格不代表已确认存活。")
         : gameText(rules.locale, "第 1 天先公布昨夜出局、完成首夜遗言，再竞选警长。");
     const voters = v['sheriff.withdrawnCanVote']
       ? gameText(rules.locale, "未上警的玩家和退水的玩家投票")
@@ -74,18 +75,19 @@ export function buildRuleCard(rules: RuleSet): string {
     const explodeRule = !canExplode
       ? ''
       : v['sheriff.explodeInElection'] === 'postpone_vote'
-        ? gameText(rules.locale, "首次竞选自爆后先公布尚未公布的昨夜情况，处理猎枪等出局职责，再由自爆者及按规则有遗言的夜间出局者发表遗言，随后入夜。竞选延期到下一白天，{0}续投前存活狼人可确认是否再次自爆，再爆则警徽流失。已经公布出局或已经退水的候选人不能参选，原警下资格不因延期重置；平票仍按 PK 规则处理。", resumeOrder)
+        ? gameText(rules.locale, "首次竞选自爆后先公布昨夜情况、处理猎枪等出局职责，再由自爆者和有遗言资格的夜间出局者遗言，随后入夜。竞选延期至次日，{0}续投前存活狼人可再次选择自爆，再爆则警徽流失。已公布出局或退水者不能参选，原警下资格不重置；平票按 PK 规则处理。", resumeOrder)
       : v['sheriff.explodeInElection'] === 'postpone'
         ? gameText(rules.locale, "竞选尚未产生警长时有狼人自爆，竞选推迟到下一个白天（候选人不变）；再有自爆则警徽流失。")
         : gameText(rules.locale, "竞选尚未产生警长时有狼人自爆，警徽流失，本局没有警长。");
     L.push(
       gameText(rules.locale, "· 警长竞选：{0}存活玩家同时选择是否上警；无人上警或全员上警则本局没有警长，只有一名候选人时直接当选。", timing) +
         gameText(rules.locale, "候选人从随机起点、按随机方向依次竞选发言，发言时可以退水。") +
-        (rules.electionVersion === 3 ? gameText(rules.locale, "普通竞选发言期间，候选人也可在其他人发言时退水，但不能附带发言或打断该段发言。全部竞选发言结束后，尚未退水者同时最终确认继续竞选或退水，确认后不能修改；全部确认后公布退水并开始投票，超时默认继续竞选。竞选 PK 和投票开始后不能退水。") : '') +
-        gameText(rules.locale, "{0}，每人 1 票", voters) +
-        gameText(rules.locale, "{0}；平票者 PK 发言后，除仍在平票台上的玩家外，其余存活玩家再投一次，再平则本局没有警长。{1}", v['vote.allowAbstain'] ? gameText(rules.locale, "，可以弃票") : '', explodeRule),
+        (rules.electionVersion === 3 ? gameText(rules.locale, "普通竞选发言期间可在他人发言时退水，但不能插话或打断。发言结束后未退水者同时最终确认去留，确认不可修改、超时默认继续；确认完公布退水并投票。PK 和投票时不能退水。") : ''),
     );
-    L.push(gameText(rules.locale, "· 警徽：警长是附加职务，放逐票记 1.5 票；白天由警长选择发言方向并最后发言（可以归票）。警长出局时由本人把警徽移交给一名存活玩家，或撕毁警徽。移交只转移警长职务，不转移角色技能或私密记录。"));
+    L.push(gameText(rules.locale, "· 警长投票：{0}，每人 1 票", voters) +
+      gameText(rules.locale, "{0}；平票者 PK 发言后，除仍在平票台上的玩家外，其余存活玩家再投一次，再平则本局没有警长。", v['vote.allowAbstain'] ? gameText(rules.locale, "，可以弃票") : ''));
+    if (explodeRule) L.push(gameText(rules.locale, "· 竞选自爆：{0}", explodeRule));
+    L.push(gameText(rules.locale, "· 警徽：警长是竞选职务，任何阵营均可竞选，不代表阵营；放逐票记 1.5 票，选择白天发言方向并最后发言，可归票。出局时本人向存活玩家移交或撕毁警徽；移交不转移技能或私密记录。"));
   }
   const anchor =
     v['speech.anchor'] === 'knife_first' ? gameText(rules.locale, "狼刀出局者（刀口未出局时为其他出局者）") : gameText(rules.locale, "一名出局者（多人出局时随机取一名）");

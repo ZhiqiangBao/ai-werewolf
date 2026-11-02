@@ -10,7 +10,7 @@ describe('夜间结果的公布时序与参与资格', () => {
       expect(lastPublic(g, 'sheriff.start')?.text).toContain('尚未公布');
       expect(lastPublic(g, 'dawn')).toBeUndefined();
       expect(g.view(9).task?.tools.some((t) => t.name === 'sheriff_signup')).toBe(true);
-      expect(g.view(9).ruleCard).toContain('参与资格，不表示该玩家已经确认存活');
+      expect(g.view(9).ruleCard).toContain('其资格不代表已确认存活');
       g.noElection();
     }
     expect(lastPublic(peace, 'dawn')?.payload.deaths).toEqual([]);

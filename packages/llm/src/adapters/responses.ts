@@ -1,3 +1,4 @@
+import { gameText } from '@werewolf/protocol';
 import { apiUrl, isDashscopeEndpoint, thinkingParameters, toolToJsonSchema } from '@werewolf/protocol';
 import { nativeItems, protocolBinding } from '../transcript';
 import { failure, HttpError, post, runRequest } from '../transport';
@@ -23,6 +24,7 @@ export const responsesAdapter: Adapter = {
   decide(req) {
     return runRequest(req, async (signal, started, onDelta) => {
       const config = { ...req.config, apiProtocol: 'responses' as const };
+      const url = apiUrl(config.baseUrl, 'responses', req.projection?.locale);
       const json = config.toolMode === 'json' && req.toolChoice !== 'auto';
       const messages: TranscriptMessage[] = json ? [...req.messages, { role: 'user', content: jsonInstruction(req.tools, req.projection?.locale) }] : req.messages;
       const body: Record<string, unknown> = {
@@ -42,17 +44,17 @@ export const responsesAdapter: Adapter = {
       let completed: any;
       const items = new Map<number, Record<string, any>>();
       req.onRequest?.({ apiProtocol: 'responses', tools: structuredClone(body.tools as unknown[] ?? []), toolChoice: body.tool_choice, ...(json ? { toolInstruction: jsonInstruction(req.tools, req.projection?.locale) } : {}) });
-      const result = await post(apiUrl(config.baseUrl, 'responses'), body, config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}, signal, (e) => {
+      const result = await post(url, body, config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}, signal, (e) => {
         if (e.type === 'error' || e.type === 'response.failed') throw new HttpError(200, JSON.stringify(e.error ?? e.response?.error ?? e));
         if (e.type === 'response.output_text.delta') onDelta({ reply: e.delta ?? '' });
         if (e.type === 'response.reasoning_summary_text.delta' || e.type === 'response.reasoning_text.delta') onDelta({ thinking: e.delta ?? '' });
         if (e.type === 'response.output_item.added' || e.type === 'response.output_item.done') items.set(e.output_index, e.item);
         if (e.type === 'response.completed' || e.type === 'response.incomplete') completed = e.response;
-      });
+      }, req.projection?.locale);
       const data = result ?? completed;
-      if (!data || data.status === 'failed' || data.status === 'incomplete' || (data.status && data.status !== 'completed')) throw new HttpError(200, `Responses 回复未完成：${data?.incomplete_details?.reason ?? data?.status ?? '流式连接提前结束'}`);
+      if (!data || data.status === 'failed' || data.status === 'incomplete' || (data.status && data.status !== 'completed')) throw new HttpError(200, gameText(req.projection?.locale, 'Responses 回复未完成：{0}', data?.incomplete_details?.reason ?? data?.status ?? gameText(req.projection?.locale, '流式连接提前结束')));
       const output = Array.isArray(data.output) ? data.output : [...items.entries()].sort(([a], [b]) => a - b).map(([, item]) => item);
-      if (!output.length) return failure(started, 'Responses 没有返回 output items', { raw: data });
+      if (!output.length) return failure(started, gameText(req.projection?.locale, 'Responses 没有返回 output items'), { raw: data });
       const reply = output.filter((i: any) => i.type === 'message').flatMap((i: any) => i.content ?? []).filter((c: any) => c.type === 'output_text').map((c: any) => c.text).join('');
       const thinking = output.filter((i: any) => i.type === 'reasoning').flatMap((i: any) => i.summary ?? []).map((s: any) => s.text ?? '').join('');
       const assistant = { role: 'assistant' as const, content: json || req.toolChoice === 'auto' ? reply || null : null,

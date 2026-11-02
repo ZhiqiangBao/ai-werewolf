@@ -1,3 +1,4 @@
+import { gameText } from '@werewolf/protocol';
 import type { DecideRequest, DecideResult } from './types';
 
 export class HttpError extends Error {
@@ -20,7 +21,7 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
 /** 只在尚未读取任何响应内容前重试。所有协议、降级和退避共用调用方的总时限。 */
 export async function post(
   url: string, body: Record<string, unknown>, headers: Record<string, string>, signal: AbortSignal,
-  onEvent?: (event: Record<string, any>) => void,
+  onEvent?: (event: Record<string, any>) => void, locale?: string,
 ): Promise<any> {
   let response: Response;
   for (let attempt = 0; ; attempt++) {
@@ -42,11 +43,11 @@ export async function post(
   if (!response.ok) throw new HttpError(response.status, await response.text());
   if (!response.headers.get('content-type')?.includes('text/event-stream')) {
     const text = await response.text();
-    try { return JSON.parse(text); } catch { throw new HttpError(response.status, `返回的不是 JSON：${text.slice(0, 200)}`); }
+    try { return JSON.parse(text); } catch { throw new HttpError(response.status, gameText(locale, '返回的不是 JSON：{0}', text.slice(0, 200))); }
   }
-  if (!onEvent) throw new HttpError(response.status, '没有流式事件解析器');
+  if (!onEvent) throw new HttpError(response.status, gameText(locale, '没有流式事件解析器'));
   const reader = response.body?.getReader();
-  if (!reader) throw new HttpError(response.status, '流式响应没有正文');
+  if (!reader) throw new HttpError(response.status, gameText(locale, '流式响应没有正文'));
   const decoder = new TextDecoder();
   let buffer = '';
   let data: string[] = [];
@@ -56,7 +57,7 @@ export async function post(
     if (!text) return;
     if (text === '[DONE]') { done = true; return; }
     let event: Record<string, any>;
-    try { event = JSON.parse(text); } catch { throw new HttpError(200, '流式事件不是合法 JSON'); }
+    try { event = JSON.parse(text); } catch { throw new HttpError(200, gameText(locale, '流式事件不是合法 JSON')); }
     onEvent(event);
   };
   const line = (value: string) => {
@@ -106,9 +107,9 @@ export async function runRequest(
       ...(partial.reply ? { assistant: { role: 'assistant', content: partial.reply } } : {}),
       ...(partial.reply || partial.thinking ? { raw: { partial: true, ...partial } } : {}),
     };
-    if (req.signal?.aborted) return failure(started, '请求已取消', { ...notes, failureKind: 'cancelled' });
-    if (budget.aborted) return failure(started, `超过 ${req.config.timeoutSec} 秒没有完成回复`, { ...notes, failureKind: 'timeout' });
-    if (error instanceof HttpError) return failure(started, redact(`接口返回 ${error.status}：${error.body.slice(0, 300)}`, req.config.apiKey), { ...notes, failureKind: 'http' });
-    return failure(started, redact(`请求失败：${(error as Error).message}`, req.config.apiKey), { ...notes, failureKind: 'network' });
+    if (req.signal?.aborted) return failure(started, gameText(req.projection?.locale, '请求已取消'), { ...notes, failureKind: 'cancelled' });
+    if (budget.aborted) return failure(started, gameText(req.projection?.locale, '超过 {0} 秒没有完成回复', req.config.timeoutSec), { ...notes, failureKind: 'timeout' });
+    if (error instanceof HttpError) return failure(started, redact(gameText(req.projection?.locale, '接口返回 {0}：{1}', error.status, error.body.slice(0, 300)), req.config.apiKey), { ...notes, failureKind: 'http' });
+    return failure(started, redact(gameText(req.projection?.locale, '请求失败：{0}', (error as Error).message), req.config.apiKey), { ...notes, failureKind: 'network' });
   }
 }

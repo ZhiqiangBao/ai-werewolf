@@ -51,13 +51,13 @@ export const werewolf: RoleModule = {
   ruleCard(rules) {
     const v = rules.values;
     const lines = [
-      gameText(rules.locale, "普通狼人：{0}。每晚先按座位号各密谈一句，再同时提交刀口；密谈和落刀结果仅向当夜参与行动的存活普通狼人发送。", v['wolf.knowTeammates'] ? gameText(rules.locale, "互知队友") : gameText(rules.locale, "不知道队友")) +
-        `${v['wolf.allowEmpty'] ? gameText(rules.locale, "可以空刀，空刀不计票。只有所有存活狼人都空刀，当晚才没有刀口。") : ''}${v['wolf.allowTeammateTarget'] ? gameText(rules.locale, "可以刀狼队友或自己。") : gameText(rules.locale, "不能刀狼队友。")}` +
-        gameText(rules.locale, "有人落刀时，得票最多的座位成为刀口") +
+      gameText(rules.locale, "普通狼人：{0}。每晚按座位号各密谈一句，再同时交刀；仅当夜参与的存活普通狼可见密谈和结果。", v['wolf.knowTeammates'] ? gameText(rules.locale, "互知队友") : gameText(rules.locale, "不知道队友")) +
+        `${v['wolf.allowEmpty'] ? gameText(rules.locale, "可空刀且不计票；全空才无刀口。") : ''}${v['wolf.allowTeammateTarget'] ? gameText(rules.locale, "可刀队友或自己。") : gameText(rules.locale, "不能刀狼队友。")}` +
+        gameText(rules.locale, "最高票为刀口") +
         (Number(v['wolf.killRounds']) > 1
-          ? gameText(rules.locale, "；得票并列时仅向参与本轮落刀的普通狼人公布各自选择并重投一次，仍然并列则座位号较小的目标成为刀口。")
-          : gameText(rules.locale, "；得票并列时，座位号较小的目标成为刀口。")) +
-        gameText(rules.locale, "只剩一名狼人时，他的提交直接生效。"),
+          ? gameText(rules.locale, "；并列时仅向本轮参与狼公布各自选择并重投一次，再并列取较小座位号。")
+          : gameText(rules.locale, "；并列取较小座位号。")) +
+        gameText(rules.locale, "独狼的提交直接生效。"),
     ];
     return lines;
   },

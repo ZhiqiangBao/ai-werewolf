@@ -36,11 +36,11 @@ export const guard: RoleModule = {
     return [
       gameText(rules.locale, "守卫：每晚守护一名存活玩家，也可以空守。{0}", v['guard.allowSelf'] ? gameText(rules.locale, "可以守护自己。") : gameText(rules.locale, "不能守护自己。")) +
         (v['guard.noConsecutive']
-          ? gameText(rules.locale, "不能连续两晚守护同一人；上一晚空守的话，下一晚可以守护任何人。")
+          ? gameText(rules.locale, "不能连守同一人；空守后次夜不限。")
           : gameText(rules.locale, "可以连续守护同一人。")) +
         gameText(rules.locale, "守护只挡狼刀，挡不住毒药。") +
-        gameText(rules.locale, "法官仅向守卫本人反馈守护选择，不告知刀口或是否挡住攻击，不向被守护者另发通知。") +
-        (v['resolve.guardAndSaveKills'] ? gameText(rules.locale, "同一晚守卫守护了刀口、女巫也救了刀口，该玩家出局（同守同救）。") : ''),
+        gameText(rules.locale, "仅本人收到选择回执；不获知刀口或是否挡住攻击，目标不获通知。") +
+        (v['resolve.guardAndSaveKills'] ? gameText(rules.locale, "守卫和女巫同夜守救刀口，该玩家出局（同守同救）。") : ''),
     ];
   },
 

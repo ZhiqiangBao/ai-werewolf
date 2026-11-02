@@ -403,6 +403,11 @@ export class RoomManager {
     const current = rec.seats.find((x) => x.seat === s.seat);
     if (!current) throw new ApiFailure(400, 'BAD_REQUEST', `没有 ${s.seat} 号座位`);
     const seat = { ...current };
+    // 兼容旧房间遗留的空昵称；切换控制者时保留已有自定义昵称。
+    if (!seat.name?.trim()) {
+      seat.name = avatarDefaultName(rec.avatarStyle ?? 'storybook', seat.seat);
+      seat.nameSource = 'avatar';
+    }
     if (s.apiProtocol !== undefined) {
       try { seat.apiProtocol = apiProtocol(s.apiProtocol); } catch (error) { throw new ApiFailure(400, 'BAD_REQUEST', (error as Error).message); }
     }
@@ -615,6 +620,10 @@ export class RoomManager {
     if (input.ready !== undefined && typeof input.ready !== 'boolean') throw new ApiFailure(400, 'BAD_REQUEST', '准备状态必须是布尔值');
     if (input.name !== undefined && (typeof input.name !== 'string' || !input.name.trim() || [...input.name.trim()].length > 12)) throw new ApiFailure(400, 'BAD_REQUEST', '昵称须为 1–12 个字符');
     if (rec.status !== 'setup' && (input.name !== undefined || input.ready !== undefined)) throw new ApiFailure(409, 'ALREADY_STARTED', '开局后不能修改昵称或准备状态');
+    if (rec.status === 'setup' && !seat.name?.trim()) {
+      seat.name = avatarDefaultName(rec.avatarStyle ?? 'storybook', seat.seat);
+      seat.nameSource = 'avatar';
+    }
     rec.participants ??= {};
     const participant = rec.participants[viewer.seat] ??= { joined: false, ready: false };
     participant.joined = true;

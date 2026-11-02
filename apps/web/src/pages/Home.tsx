@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, forgetRoom, rememberRoom, savedRooms, type SavedRoom } from '../api';
+import { api, rememberRoom } from '../api';
 import { go, useCatalog } from '../hooks';
 import { Icon, Logo } from '../components/Icons';
 import { Avatar } from '../components/Avatar';
@@ -7,6 +7,7 @@ import { AvatarStylePicker } from '../components/AvatarStylePicker';
 import { currentAvatarStyle } from '../avatar-style';
 import { ModelLibrary } from '../components/ModelLibrary';
 import { SpeechSettings } from '../components/SpeechSettings';
+import { RecentRooms } from '../components/RecentRooms';
 
 export function Home() {
   const catalog = useCatalog();
@@ -22,7 +23,6 @@ export function Home() {
     setPhase(next);
     try { localStorage.setItem('werewolf.lobby-phase', next); } catch { /* The switch still works. */ }
   };
-  const [rooms, setRooms] = useState<SavedRoom[]>(savedRooms);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const create = async () => {
@@ -52,10 +52,7 @@ export function Home() {
             <ModelLibrary />
             <div className="panel home-speech-library"><div><h3>语音服务库</h3><p className="small muted">添加朗读服务、管理音色并试听，进入房间后选择使用。</p></div><SpeechSettings /></div>
           </section>
-          <section className="room-section" id="recent-rooms"><div className="section-heading"><div><span className="eyebrow">YOUR COUNCILS</span><h2>继续你的故事</h2></div><span className="muted small">本机房间 · {rooms.length} 场</span></div>
-            {rooms.length ? <div className="room-grid">{rooms.map((r) => <article className="room-item" key={r.roomId}><span className="room-emblem"><Logo size={28} /></span><div className="room-info"><span className="eyebrow">COUNCIL ROOM</span><h3>房间 {r.roomId}</h3><span className="dim tiny">{new Date(r.createdAt).toLocaleString('zh-CN')}</span></div><button className="btn sm" onClick={() => go('/host/' + r.roomId + '/' + r.hostToken)}>入席<Icon name="arrow" size={14} /></button><button className="icon-button remove-room" title="从本机列表移除" aria-label={'移除房间 ' + r.roomId} onClick={() => { forgetRoom(r.roomId); setRooms(savedRooms()); }}><Icon name="close" size={14} /></button></article>)}</div> : <div className="empty-rooms"><Icon name="cards" size={30} /><div><h3>第一场故事，等你开启</h3><p>创建房间，邀请玩家，或让不同的大模型入席。</p></div><button className="btn sm" disabled={busy} onClick={() => void create()}>创建房间<Icon name="arrow" size={14} /></button></div>}
-            <p className="room-privacy"><Icon name="shield" size={13} />房主链接仅保存在当前浏览器中。</p>
-          </section>
+          <RecentRooms busy={busy} onCreate={() => void create()} />
           <footer className="home-footer"><span><Logo size={19} />AI 狼人杀</span><span>{catalog ? catalog.presets.length + ' 种版型 · ' + catalog.roles.length + ' 种身份' : '真相，藏在下一轮发言里。'}</span><span>THE NIGHT HAS ITS SECRETS</span></footer>
         </div>
       </main>

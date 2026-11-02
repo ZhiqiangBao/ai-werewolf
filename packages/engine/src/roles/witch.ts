@@ -80,9 +80,9 @@ export const witch: RoleModule = {
       v['witch.selfSave'] === 'always' ? gameText(rules.locale, "可以自救") : v['witch.selfSave'] === 'first_night' ? gameText(rules.locale, "仅第 1 夜可以自救") : gameText(rules.locale, "不能自救");
     const knife = rules.roles.includes('guard') ? gameText(rules.locale, "狼人选择的目标，不含守卫结果") : gameText(rules.locale, "狼人选择的目标");
     return [
-      gameText(rules.locale, "女巫：有解药和毒药各一瓶。只有解药还在时，法官才告诉她当晚刀口（{0}；空刀则告知没有落刀）；解药用掉后不再得知刀口。", knife) +
+      gameText(rules.locale, "女巫：解药、毒药各一瓶。仅持有解药时得知当晚刀口（{0}；空刀会告知）。", knife) +
         gameText(rules.locale, "解药只能救当晚刀口，{0}。{1}", self, v['witch.bothPotionsSameNight'] ? gameText(rules.locale, "同一晚可以既救又毒。") : gameText(rules.locale, "同一晚不能既救又毒。")) +
-        gameText(rules.locale, "毒药可以毒任何其他存活玩家（包括当晚刀口），不能毒自己。刀口和用药回执仅向女巫本人反馈，不向被救者或被毒者另发用药通知。两瓶药都用完后女巫夜里不再行动。"),
+        gameText(rules.locale, "毒药可毒其他存活者（含刀口），不能毒自己。刀口和用药仅反馈本人，不通知目标；双药用尽后夜里不再行动。"),
     ];
   },
 

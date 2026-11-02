@@ -33,6 +33,22 @@ describe('版型与规则', () => {
     expect(buildRuleCard(r12)).toContain('守卫');
   });
 
+  it('精简规则卡保留特殊身份及可配置结算边界', () => {
+    const mirror = buildRuleCard(buildRules('mirror12'));
+    expect(mirror).toContain('阵营查验始终显示好人');
+    expect(mirror).toContain('学习夜天亮出局时开枪');
+    expect(mirror).toContain('同守同救按本局规则结算狼刀');
+    const base = buildRules('standard12');
+    const card = buildRuleCard({ ...base, electionVersion: 3, values: { ...base.values,
+      'sheriff.explodeInElection': 'postpone_vote', 'lastWords.shotAfterFirstNight': false,
+      'witch.selfSave': 'first_night', 'guard.noConsecutive': true } });
+    expect(card).toContain('竞选延期至次日');
+    expect(card).toContain('PK 和投票时不能退水');
+    expect(card).toContain('猎人第 1 夜出局时没有遗言');
+    expect(card).toContain('仅第 1 夜可以自救');
+    expect(card).toContain('不能连守同一人');
+  });
+
   it('非法版型给出中文原因', () => {
     const base = buildRules('standard12');
     expect(validateRules({ ...base, roles: [...base.roles.slice(0, 11), 'nobody'] })).toContain('身份「nobody」没有注册');

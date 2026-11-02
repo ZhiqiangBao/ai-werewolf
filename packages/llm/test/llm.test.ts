@@ -87,8 +87,8 @@ describe('提示词', () => {
     for (const p of projections) {
       const system = buildMessages(p, '均衡。')[0].content as string;
       const goal = system.split('【你的目标】\n')[1].split('\n\n')[0];
-      expect(goal).toContain(`帮助你真实身份所属的${p.me!.factionName}获胜`);
-      expect(goal).toContain('出局后本局尚未结束时，目标不变');
+      expect(goal).toContain(`帮助真实阵营${p.me!.factionName}获胜`);
+      expect(goal).toContain('公布出局后按规则完成获准职责，随后旁观');
       expect(system.indexOf('【你的身份】')).toBeLessThan(system.indexOf('【你的目标】'));
       expect(system.indexOf('【你的目标】')).toBeLessThan(system.indexOf('【扮演风格】'));
       expect(goal).not.toMatch(/\d+号|守卫|猎人|女巫|模仿|悍跳|倒钩/);

@@ -128,4 +128,14 @@ describe('信息隔离', () => {
     expect(cards.size).toBe(1);
     expect(g.spectator().ruleCard).toBe(g.view(1).ruleCard);
   });
+
+  it('公共规则说明出局职责例外和警长与阵营的关系', () => {
+    const g = new TestGame({ deal: DEAL12 });
+    const card = g.view(1).ruleCard;
+    expect(card).toContain('已公布出局者不再参加常规行动或夜间技能');
+    expect(card).toContain('死亡触发技能和警徽等职责');
+    expect(card).toContain('任何阵营均可竞选，不代表阵营');
+    expect(card).toContain('首夜出局在公布前的竞选资格');
+    expect(card).not.toContain('查验者出局或移交警徽');
+  });
 });

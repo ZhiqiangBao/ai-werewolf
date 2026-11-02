@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { API_PROTOCOLS, API_PROTOCOL_LABELS, type ApiProtocol, type ModelPresetView } from '@werewolf/protocol';
 import { api } from '../api';
+import { ModelList } from './ModelList';
 
 export function ModelLibrary() {
   const [name, setName] = useState('');
@@ -9,18 +10,20 @@ export function ModelLibrary() {
   const [protocol, setProtocol] = useState<ApiProtocol>('chat_completions');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [models, setModels] = useState<ModelPresetView[]>([]);
   const onChange = useCallback(() => { void api.modelPresets().then(setModels, (e: Error) => setError(e.message)); }, []);
   useEffect(onChange, [onChange]);
-  const added = models;
   const add = async () => {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
-      await api.addModel({ name: name.trim(), baseUrl: baseUrl.trim(), apiKey: apiKey.trim(), apiProtocol: protocol });
+      const added = await api.addModel({ name: name.trim(), baseUrl: baseUrl.trim(), apiKey: apiKey.trim(), apiProtocol: protocol });
       setName('');
       setBaseUrl('');
       setApiKey('');
+      setNotice(`已添加模型「${added.label}」。`);
       onChange();
     } catch (e) {
       setError((e as Error).message);
@@ -30,6 +33,7 @@ export function ModelLibrary() {
   };
   const remove = async (id: string) => {
     setError(null);
+    setNotice(null);
     try {
       await api.deleteModel(id);
       onChange();
@@ -67,19 +71,8 @@ export function ModelLibrary() {
         </button>
       </div>
       {error && <div className="error-box small" style={{ marginTop: 8 }}>{error}</div>}
-      {added.length > 0 && (
-        <div className="model-list">
-          {added.map((m) => (
-            <div key={m.id} className="model-item">
-              <span>{m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}{m.source !== 'added' ? ' · 已迁移' : ''}{!m.hasKey ? ' · 未配置密钥' : ''}</span>
-              <span className="tiny dim">{m.baseUrl}</span>
-              <button className="btn sm ghost" type="button" onClick={() => void remove(m.id)}>
-                删除
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      {notice && <div className="small muted model-notice" role="status">{notice}</div>}
+      <ModelList models={models} onRemove={remove} />
       <div className="tiny dim" style={{ marginTop: 8 }}>
         模型与密钥由当前项目管理，不再实时读取 Qwen Code 的全局配置。
       </div>

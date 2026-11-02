@@ -21,7 +21,7 @@ describe('offline match replay', () => {
     script.ruleCard = buildRuleCard(buildRules('standard12'));
     const cards = allRoleRules(script);
     expect(cards.map((c) => c.role)).toEqual(['werewolf', 'seer', 'witch', 'guard', 'hunter', 'villager', 'sheriff']);
-    expect(cards.find((c) => c.role === 'witch')?.text).toContain('两瓶药都用完后女巫夜里不再行动');
+    expect(cards.find((c) => c.role === 'witch')?.text).toContain('双药用尽后夜里不再行动');
     expect(cards.find((c) => c.role === 'villager')?.text).toContain('没有夜间技能');
     expect(cards.some((c) => c.role === 'idiot')).toBe(false);
   });

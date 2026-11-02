@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { HumanParticipant, RoomBrief } from '@werewolf/protocol';
+import { avatarDefaultName, type HumanParticipant, type RoomBrief } from '@werewolf/protocol';
 import { api } from '../api';
 import { RuleCard } from './Cards';
 import { seatName } from '../util';
@@ -20,15 +20,16 @@ export function HumanStatus({ participants, seats }: { participants: HumanPartic
 export function HumanLobby({ room, token, refresh }: { room: RoomBrief; token: string; refresh: () => Promise<void> }) {
   const mine = room.seats.find((s) => s.seat === room.seat)!;
   const participant = room.participants?.find((p) => p.seat === room.seat);
-  const [name, setName] = useState(mine.name);
-  const previousName = useRef(mine.name);
+  const serverName = mine.name?.trim() ? mine.name : avatarDefaultName(room.avatarStyle ?? 'storybook', mine.seat);
+  const [name, setName] = useState(serverName);
+  const previousName = useRef(serverName);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     const previous = previousName.current;
-    setName((current) => current === previous ? mine.name : current);
-    previousName.current = mine.name;
-  }, [mine.name]);
+    setName((current) => current === previous ? serverName : current);
+    previousName.current = serverName;
+  }, [serverName]);
   useEffect(() => {
     api.participate(room.roomId, token, {}).then(refresh).catch((e: Error) => setError(e.message));
   }, [room.roomId, token, refresh]);
