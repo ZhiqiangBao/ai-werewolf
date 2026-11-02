@@ -115,6 +115,14 @@ export async function runSyntheticBaseline(options: { scenario: RunnableSyntheti
     }
   } };
   const loop = monitorEventLoopDelay({ resolution: 10 });
+  const samplerWarmupMs = 20;
+  let samplerStartedAt: number | undefined, eventLoopSampleWindowMs: number | null = null;
+  let samplerWarmupActualMs: number | null = null, samplerWarmupSamples: number | null = null;
+  const stopSampler = () => {
+    if (samplerStartedAt === undefined || eventLoopSampleWindowMs !== null) return;
+    loop.disable();
+    eventLoopSampleWindowMs = performance.now() - samplerStartedAt;
+  };
   let cpu: NodeJS.CpuUsage | null = null, elu: number | null = null, wallMs: number | null = null;
   let error: string | undefined;
   try {
@@ -229,14 +237,24 @@ export async function runSyntheticBaseline(options: { scenario: RunnableSyntheti
       };
       restoreFixture = () => { runtime.prepareWave = original; };
     }
-    const cpuStart = process.cpuUsage(), eluStart = performance.eventLoopUtilization(), wallStart = performance.now();
     loop.enable();
+    samplerStartedAt = performance.now();
+    await new Promise<void>((resolve) => setTimeout(resolve, samplerWarmupMs));
+    while (loop.count === 0) {
+      const remaining = 1000 - (performance.now() - samplerStartedAt);
+      if (remaining <= 0) break;
+      await new Promise<void>((resolve) => setTimeout(resolve, Math.min(10, remaining)));
+    }
+    samplerWarmupActualMs = performance.now() - samplerStartedAt;
+    samplerWarmupSamples = loop.count;
+    if (samplerWarmupSamples === 0) throw new Error('Event-loop sampler did not initialize');
+    const cpuStart = process.cpuUsage(), eluStart = performance.eventLoopUtilization(), wallStart = performance.now();
     injectPersistence = true;
     for (const roomId of roomIds) { roomStart.set(roomId, performance.now()); manager.control(roomId, 'host', 'resume'); }
     await Promise.all(roomIds.map(async (roomId) => { await manager!.whenIdle(roomId); if (!roomEnd.has(roomId)) roomEnd.set(roomId, performance.now()); }));
     wallMs = Math.max(...roomEnd.values()) - wallStart;
     cpu = process.cpuUsage(cpuStart); elu = performance.eventLoopUtilization(eluStart).utilization;
-    loop.disable();
+    stopSampler();
     for (const [index, roomId] of roomIds.entries()) {
       const room = manager.view(roomId, 'host').room, waves = waveCounts.get(`r${index + 1}`) ?? 0;
       if (room.status === 'ended' && waves > 0 && waves <= 30) endReasons[roomId] = 'natural_end';
@@ -249,6 +267,7 @@ export async function runSyntheticBaseline(options: { scenario: RunnableSyntheti
       throw new Error('Requested synthetic injection was not exercised');
   } catch (caught) { error = caught instanceof Error ? caught.message : 'synthetic run failed'; }
   finally {
+    stopSampler();
     restoreFixture?.();
     manager?.dispose();
     const internal = (manager as unknown as { observability?: { stats: { callbackErrors: number; lateEvents: number; activeSpans: number } } } | undefined)?.observability;
@@ -256,7 +275,6 @@ export async function runSyntheticBaseline(options: { scenario: RunnableSyntheti
     await buffered.close();
     for (const service of services) await service.close();
     if (internal) collectorRuntimeStats = { ...internal.stats };
-    loop.disable();
   }
   const sourceEnd = await sourceFingerprint(), gitEnd = gitState();
   let lockSha256 = 'unknown';
@@ -317,7 +335,10 @@ export async function runSyntheticBaseline(options: { scenario: RunnableSyntheti
     observationsEnabled: observed, windowFixture: fixtureWindow ? 'prepareWave_wrapper' : 'wave_end_watcher',
     stream: options.scenario !== 'S06', repetition: options.repetition ?? 1, warmup: options.warmup ?? false, intervalMs: 0, timing,
     scenarioCoverage: ['S01', 'S02', 'S03'].includes(options.scenario) ? 'basic_topology_only' : 'partial_fault_case', acceptance: 'not_evaluated',
-    samplerResolutionMs: 10, eventLoopDelayMs: { mean: Number.isFinite(loop.mean) ? loop.mean / 1e6 : null, p95: loop.percentile(95) / 1e6 },
+    samplerResolutionMs: 10, samplerWarmupMs, samplerWarmupActualMs, samplerWarmupSamples,
+    eventLoopSampleWindowMs, eventLoopSampleIncludesWarmup: true,
+    eventLoopDelayMs: { mean: Number.isFinite(loop.mean) ? loop.mean / 1e6 : null, p95: loop.percentile(95) / 1e6,
+      max: loop.count > 0 ? loop.max / 1e6 : null },
     eventLoopUtilization: elu, cpuMicros: cpu, windowWallMs: wallMs,
     fixtureCallMs: distribution(callDurations.map((valueMs) => ({ valueMs, source: 'client' }))),
     fixtureHeapBytes: heaps.length ? { samples: heaps.length, median: heaps.sort((a, b) => a - b)[Math.ceil(heaps.length / 2) - 1] } : null,

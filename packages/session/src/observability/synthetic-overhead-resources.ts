@@ -1,7 +1,7 @@
 /** Offline descriptive statistics; this module does not decide benchmark status. */
 export interface ResourceManifest {
   cpuMicros?: { user?: unknown; system?: unknown } | null;
-  eventLoopDelayMs?: { mean?: unknown; p95?: unknown } | null;
+  eventLoopDelayMs?: { mean?: unknown; p95?: unknown; max?: unknown } | null;
   eventLoopUtilization?: unknown;
   fixtureHeapBytes?: { median?: unknown } | null;
   collector?: { writtenBytes?: unknown; writtenRecords?: unknown; writeMs?: unknown; peakBytes?: unknown; peakRecords?: unknown } | null;
@@ -60,6 +60,7 @@ const pairedMetrics: Record<string, { label: string; unit: string; get: Accessor
   } },
   eventLoopMeanMs: { label: '事件循环延迟均值', unit: 'ms', get: (m) => nonnegative(m?.eventLoopDelayMs?.mean) },
   eventLoopP95Ms: { label: '事件循环延迟 P95', unit: 'ms', get: (m) => nonnegative(m?.eventLoopDelayMs?.p95) },
+  eventLoopMaxMs: { label: '事件循环延迟最大值', unit: 'ms', get: (m) => nonnegative(m?.eventLoopDelayMs?.max) },
   eventLoopUtilization: { label: '事件循环利用率（ELU）', unit: '比率', get: (m) => nonnegative(m?.eventLoopUtilization) },
   steadyHeapBytes: { label: '稳态堆采样中位数', unit: 'bytes', get: (m) => nonnegative(m?.fixtureHeapBytes?.median) },
 };
