@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { assertRunningCount, runSequentialFixtures, releaseFixture } from '../client-server-fixture-lifecycle.mjs';
+import { EventEmitter } from 'node:events';
+import { assertRunningCount, runSequentialFixtures, releaseFixture, trackFixtureChild } from '../client-server-fixture-lifecycle.mjs';
 
 describe('synthetic fixture lifecycle', () => {
   it('releases each locale before creating the next', async () => {
@@ -56,7 +57,7 @@ describe('synthetic fixture lifecycle', () => {
           fs.mkdirSync(context.storage);
           fs.writeFileSync(path.join(context.storage, 'record.json'), '{"status":"running"}');
           context.manager = { dispose() {}, async whenDisposed() { return { durable: true }; } };
-          context.child = { connected: true, send() {}, kill() { assert.fail('should not kill'); } };
+          context.child = { connected: true, send(_message, callback) { callback(null); }, kill() { assert.fail('should not kill'); } };
           context.exited = Promise.resolve({ code: 0 });
         },
         async verify() {},
@@ -76,4 +77,101 @@ describe('synthetic fixture lifecycle', () => {
       assert.equal(fs.existsSync(storage), true);
     } finally { fs.rmSync(base, { recursive: true, force: true }); }
   });
+  for (const failure of ['send throws', 'error without exit', 'send callback error']) {
+    it(`still kills, awaits exit and checks the lease after ${failure}`, async () => {
+      const base = fs.mkdtempSync(path.join(os.tmpdir(), 'fixture-test-'));
+      try {
+        const storage = path.join(base, 'runtime'); fs.mkdirSync(storage);
+        // Keep the lease after exit: cleanup must check it even after an IPC failure.
+        fs.writeFileSync(path.join(storage, '.writer-lease'), 'synthetic');
+        const events = [];
+        const original = Error(failure);
+        const child = new EventEmitter();
+        child.connected = true;
+        child.send = (_message, callback) => {
+          events.push('send');
+          if (failure === 'send throws') throw original;
+          if (failure === 'error without exit') child.emit('error', original);
+          else queueMicrotask(() => callback(original));
+        };
+        child.kill = () => {
+          events.push('kill');
+          setTimeout(() => { events.push('exit'); child.emit('exit', 0, null); }, 1);
+          return true;
+        };
+        await assert.rejects(runSequentialFixtures(['en', 'ja'], {
+          async create(locale, context) {
+            events.push(`create:${locale}`); context.storage = storage;
+            trackFixtureChild(context, child);
+          },
+          async verify() {},
+          async release(locale, context) { await releaseFixture(locale, context, base, 20); },
+        }), error => {
+          assert.ok(error instanceof AggregateError);
+          assert.ok(error.errors.includes(original));
+          assert.ok(error.errors.some(cause => cause.message.includes('writer lease released')));
+          return true;
+        });
+        assert.deepEqual(events, ['create:en', 'send', 'kill', 'exit']);
+        assert.equal(fs.existsSync(path.join(storage, '.writer-lease')), true);
+        assert.equal(fs.existsSync(path.join(base, 'server-en.log')), true);
+      } finally { fs.rmSync(base, { recursive: true, force: true }); }
+    });
+  }
+  for (const killThrows of [false, true]) {
+    it(`fails within the deadline when kill ${killThrows ? 'throws' : 'returns without exit'}`, { timeout: 1000 }, async () => {
+      const base = fs.mkdtempSync(path.join(os.tmpdir(), 'fixture-test-'));
+      try {
+        const events = [];
+        const original = Error('IPC failed'); const killError = Error('kill failed');
+        const child = new EventEmitter(); child.connected = true;
+        child.send = () => { throw original; };
+        child.kill = () => { events.push('kill'); if (killThrows) throw killError; return true; };
+        await assert.rejects(runSequentialFixtures(['en', 'ja'], {
+          async create(locale, context) {
+            events.push(`create:${locale}`); context.storage = base;
+            trackFixtureChild(context, child);
+          },
+          async verify() {},
+          async release(locale, context) { await releaseFixture(locale, context, base, 10); },
+        }), error => {
+          assert.ok(error.errors.includes(original));
+          assert.equal(error.errors.includes(killError), killThrows);
+          assert.ok(error.errors.some(cause => cause.message.includes('server must exit')));
+          return true;
+        });
+        assert.deepEqual(events, ['create:en', 'kill']);
+        assert.equal(fs.existsSync(base), true);
+      } finally { fs.rmSync(base, { recursive: true, force: true }); }
+    });
+  }
+  for (const callbackArrives of [true, false]) {
+    it(`waits after exit for a send callback that ${callbackArrives ? 'fails late' : 'never arrives'}`, { timeout: 1000 }, async () => {
+      const base = fs.mkdtempSync(path.join(os.tmpdir(), 'fixture-test-'));
+      try {
+        const events = []; const original = Error('late IPC failure');
+        const child = new EventEmitter(); child.connected = true;
+        child.send = (_message, callback) => {
+          events.push('exit'); child.emit('exit', 0, null);
+          if (callbackArrives) setTimeout(() => { events.push('callback'); callback(original); }, 1);
+        };
+        child.kill = () => assert.fail('already exited');
+        await assert.rejects(runSequentialFixtures(['en', 'ja'], {
+          async create(locale, context) {
+            events.push(`create:${locale}`); context.storage = base;
+            trackFixtureChild(context, child);
+          },
+          async verify() {},
+          async release(locale, context) { await releaseFixture(locale, context, base, 20); },
+        }), error => {
+          assert.ok(error instanceof AggregateError);
+          if (callbackArrives) assert.ok(error.errors.includes(original));
+          else assert.ok(error.errors.some(cause => cause.message.includes('shutdown IPC completion')));
+          return true;
+        });
+        assert.deepEqual(events, callbackArrives ? ['create:en', 'exit', 'callback'] : ['create:en', 'exit']);
+        assert.equal(fs.existsSync(base), true);
+      } finally { fs.rmSync(base, { recursive: true, force: true }); }
+    });
+  }
 });

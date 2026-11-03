@@ -37,6 +37,26 @@ export async function runSequentialFixtures(locales, { create, verify, release }
   assert.equal(live, 0, 'all fixtures must be released');
 }
 
+// An error can describe failed IPC while the process is still alive. Only exit proves termination.
+export function trackFixtureChild(context, child) {
+  context.child = child;
+  context.childErrors = [];
+  child.on('error', error => context.childErrors.push(error));
+  context.exited = new Promise(resolve => {
+    child.once('exit', (code, signal) => resolve({ code, signal }));
+  });
+}
+
+async function waitForResult(result, timeoutMs) {
+  let timer;
+  try {
+    return await Promise.race([
+      result,
+      new Promise(resolve => { timer = setTimeout(() => resolve(null), timeoutMs); }),
+    ]);
+  } finally { clearTimeout(timer); }
+}
+
 // An unconfirmed server exit or lease release keeps the storage in place and stops the run.
 export async function releaseFixture(locale, context, base, timeoutMs = 6000) {
   const errors = [];
@@ -50,22 +70,34 @@ export async function releaseFixture(locale, context, base, timeoutMs = 6000) {
     } catch (error) { errors.push(error); }
   }
   if (context.child) {
+    const child = context.child;
+    // IPC completion may arrive after exit. Never let that late error escape the final report.
+    const sent = new Promise(resolve => {
+      if (!child.connected) { resolve(true); return; }
+      try {
+        child.send('shutdown', error => { if (error) errors.push(error); resolve(true); });
+      } catch (error) { errors.push(error); resolve(true); }
+    });
     try {
-      const child = context.child;
-      if (child.connected) child.send('shutdown');
-      const wait = () => new Promise(resolve => { const timer = setTimeout(() => resolve(null), timeoutMs); timer.unref(); });
-      let exit = await Promise.race([context.exited, wait()]);
-      if (!exit) { child.kill(); exit = await Promise.race([context.exited, wait()]); }
+      let exit = await waitForResult(context.exited, timeoutMs);
+      if (!exit) {
+        try { child.kill(); } catch (error) { errors.push(error); }
+        exit = await waitForResult(context.exited, timeoutMs);
+      }
       assert.ok(exit, 'server must exit before fixture storage is released');
-      assert.equal(exit.code, 0, 'graceful server exit');
       proof.serverExited = true;
+      try { assert.equal(exit.code, 0, 'graceful server exit'); }
+      catch (error) { errors.push(error); }
       assert.equal(fs.existsSync(path.join(context.storage, '.writer-lease')), false, 'writer lease released');
       proof.leaseReleased = true;
     } catch (error) { errors.push(error); }
+    try { assert.ok(await waitForResult(sent, timeoutMs), 'shutdown IPC completion must be confirmed'); }
+    catch (error) { errors.push(error); }
     try { fs.writeFileSync(path.join(base, `server-${locale}.log`), context.serverLog ?? ''); }
     catch (error) { errors.push(error); }
   }
   if (context.storage) proof.storagePreserved = fs.existsSync(context.storage);
-  if (errors.length) throw new AggregateError(errors, `Failed to release ${locale} fixture`);
+  errors.push(...(context.childErrors ?? []));
+  if (errors.length) throw new AggregateError([...new Set(errors)], `Failed to release ${locale} fixture`);
   return proof;
 }

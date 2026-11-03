@@ -8,7 +8,7 @@ import net from 'node:net';
 import { RoomManager, MemoryStore, FileStore, SecretBox } from '../packages/session/src/index.ts';
 import { mockDecision } from '../packages/llm/src/index.ts';
 
-import { runSequentialFixtures, assertRunningCount, releaseFixture } from './client-server-fixture-lifecycle.mjs';
+import { runSequentialFixtures, assertRunningCount, releaseFixture, trackFixtureChild } from './client-server-fixture-lifecycle.mjs';
 
 // Historical V-01 evidence remains at data/diagnostics/p1-20261103/client-server-check.mjs.
 // Run from the repository root with: pnpm exec tsx scripts/client-server-check.mjs <new-run-name>
@@ -105,12 +105,12 @@ await runSequentialFixtures(['zh-CN', 'en', 'ja'], {
     const env = { ...process.env, PORT: String(port), HOST: '127.0.0.1', WEREWOLF_DATA: context.storage, P1_NETWORK_LEDGER: ledger, P1_MODEL_BUDGET: path.resolve('data/diagnostics/p1-20261103/budget.json') };
     env.NODE_OPTIONS = `--import ${pathToFileURL(path.resolve('data/diagnostics/p1-20261103/network-preload.mjs')).href}`;
     clientEnv = env;
-    const child = fork(path.resolve('apps/server/src/main.ts'), [], { env, execArgv: ['--import', 'tsx', '--import', pathToFileURL(path.resolve('apps/server/test/signal-fixture.mjs')).href], stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
-    context.child = child;
-    context.exited = new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', (code, signal) => resolve({ code, signal })); });
+    const child = fork(path.resolve('apps/server/src/main.ts'), [], { env, windowsHide: true, execArgv: ['--import', 'tsx', '--import', pathToFileURL(path.resolve('apps/server/test/signal-fixture.mjs')).href], stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+    trackFixtureChild(context, child);
     context.serverLog = '';
     child.stdout.on('data', b => context.serverLog += b); child.stderr.on('data', b => context.serverLog += b);
     for (let n = 0; n < 100 && !context.serverLog.includes('已启动'); n++) {
+      if (context.childErrors.length) throw context.childErrors[0];
       if (child.exitCode !== null || child.signalCode !== null) throw Error('Server exited before ready');
       await new Promise(r => setTimeout(r, 100));
     }
