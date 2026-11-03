@@ -1,23 +1,31 @@
-import { useEffect, useRef, useState } from 'react';
-import type { GameEvent, Projection, SpeechProviderView } from '@werewolf/protocol';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { GameEvent, Projection, RoomBrief, SpeechProviderView, ViewResponse } from '@werewolf/protocol';
 import { api } from '../api';
+import { audibleSpeech } from '../speech';
+import { browserSpeechOutput, serverSpeechOutput } from '../speech-output';
+import { humanDecisionWindow, SpeechPlaybackController, type PlaybackState } from '../speech-playback';
 import { useI18n } from '../i18n';
-import { audibleSpeech, SpeechCursor, type SpeechItem } from '../speech';
-import { browserSpeechOutput, serverSpeechOutput, type SpeechOutput } from '../speech-output';
 
-export function useSpeechPlayback(roomId: string, token: string, projection: Projection | null) {
-  const [enabled, setEnabled] = useState(false), [paused, setPaused] = useState(false);
-  const [current, setCurrent] = useState<SpeechItem | null>(null), [queue, setQueue] = useState<SpeechItem[]>([]);
-  const [loading, setLoading] = useState(false), [error, setError] = useState(''), [rate, setRate] = useState(1);
+export function useSpeechPlayback(roomId: string, token: string, projection: Projection | null, room?: RoomBrief, presentation?: ViewResponse['presentation']) {
+  const [snapshot, setSnapshot] = useState<{ player: SpeechPlaybackController; state: PlaybackState } | null>(null);
+  const [rate, setRate] = useState(1);
   const [providers, setProviders] = useState<SpeechProviderView[]>([]), [providerError, setProviderError] = useState('');
   const [source, setSource] = useState(''), [voice, setVoice] = useState(''), [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const native = typeof window.speechSynthesis !== 'undefined' && typeof window.SpeechSynthesisUtterance !== 'undefined';
-  const audio = useRef<HTMLAudioElement | null>(null), output = useRef<SpeechOutput | null>(null);
-  const cursor = useRef(new SpeechCursor()), enabledRef = useRef(false), pausedRef = useRef(false), rateRef = useRef(rate);
-  const sourceRef = useRef(source), stopRef = useRef<() => void>(() => {});
-  sourceRef.current = source;
-  rateRef.current = rate;
+  const audio = useRef<HTMLAudioElement | null>(null);
+  // 凭证或视角改变时创建独立的游标和队列，旧控制器在 effect 清理阶段停止。
+  const currentPlayer = useRef<SpeechPlaybackController | null>(null);
+  const player = useMemo(() => {
+    const own: SpeechPlaybackController = new SpeechPlaybackController((state) => {
+      if (currentPlayer.current === own) setSnapshot({ player: own, state });
+    });
+    return own;
+  }, [roomId, token, room?.viewer, room?.seat]);
+  currentPlayer.current = player;
+  const state = snapshot?.player === player ? snapshot.state : player.snapshot();
+  const sourceRef = useRef(source); sourceRef.current = source;
   const items = audibleSpeech(projection?.events ?? [], projection?.locale);
+  const decision = humanDecisionWindow(room, projection, presentation);
 
   useEffect(() => {
     if (!native) return;
@@ -26,8 +34,7 @@ export function useSpeechPlayback(roomId: string, token: string, projection: Pro
     return () => window.speechSynthesis.removeEventListener('voiceschanged', refresh);
   }, [native]);
   useEffect(() => {
-    let active = true;
-    let request = 0;
+    let active = true, request = 0;
     const refresh = (initial = false) => {
       const own = ++request;
       void api.speechProviders(roomId, token).then((data) => {
@@ -35,7 +42,7 @@ export function useSpeechPlayback(roomId: string, token: string, projection: Pro
         setProviders(data.providers); setProviderError(data.error ?? '');
         if (!initial && sourceRef.current) {
           if (sourceRef.current !== 'browser' && !data.providers.some((p) => p.id === sourceRef.current)) {
-            stopRef.current(); setSource(''); setError('所选朗读来源已删除，请重新选择。');
+            player.setSource(null, '所选朗读来源已删除，请重新选择。'); setSource('');
           }
           return;
         }
@@ -43,92 +50,36 @@ export function useSpeechPlayback(roomId: string, token: string, projection: Pro
         setSource(preferred === 'browser' && native ? 'browser' : data.providers.some((p) => p.id === preferred) ? preferred! : native ? 'browser' : data.defaultProviderId ?? '');
       }, () => { if (active && own === request) { setProviderError('无法载入服务端朗读来源。'); if (initial && native) setSource('browser'); } });
     };
-    const changed = (event: Event) => {
-      if (!['*', roomId].includes((event as CustomEvent).detail)) return;
-      if (sourceRef.current.startsWith('tts_')) stopRef.current();
-      refresh();
-    };
+    const changed = (event: Event) => { if (['*', roomId].includes((event as CustomEvent).detail)) refresh(); };
     const focus = () => refresh();
     refresh(true);
     window.addEventListener('werewolf-speech-providers-updated', changed); window.addEventListener('focus', focus);
     return () => { active = false; window.removeEventListener('werewolf-speech-providers-updated', changed); window.removeEventListener('focus', focus); };
-  }, [roomId, token, native]);
+  }, [roomId, token, native, player]);
+  useEffect(() => { player.setDecision(decision); }, [decision?.id, decision?.availableAt, player]);
   useEffect(() => {
-    if (!projection) return;
-    const fresh = cursor.current.sync(audibleSpeech(projection.events, projection.locale), enabledRef.current);
-    if (fresh.length) setQueue((q) => [...q, ...fresh]);
-  }, [projection]);
-  useEffect(() => {
-    if (current || paused || !queue.length) return;
-    setCurrent(queue[0]); setQueue((q) => q.slice(1));
-  }, [current, paused, queue]);
-  useEffect(() => {
-    if (!current || !source) return;
-    let active = true;
-    const fail = (message: string) => {
-      if (!active) return;
-      setError(message); setLoading(false); enabledRef.current = false; setEnabled(false); setQueue([]); setCurrent(null);
-    };
-    if (source === 'browser' && !native) { fail('当前浏览器不支持原生朗读，请选择其他来源。'); return; }
-    audio.current ??= new Audio();
-    const driver = source === 'browser'
-      ? browserSpeechOutput(window.speechSynthesis, () => new SpeechSynthesisUtterance(), voice)
-      : serverSpeechOutput(audio.current, roomId, token, source);
-    output.current = driver; setLoading(true); setError('');
-    void driver.play(current, rateRef.current, {
-      ready: () => { if (active) setLoading(false); },
-      ended: () => { if (active) setCurrent(null); },
-      blocked: (message) => { if (active) { pausedRef.current = true; setPaused(true); setError(message); } },
-      failed: fail,
-    }).catch((e: Error) => fail(e.message));
-    if (pausedRef.current) driver.pause();
-    return () => { active = false; driver.stop(); if (output.current === driver) output.current = null; };
-  }, [current, source, voice, roomId, token, native]);
-  useEffect(() => { output.current?.setRate(rate); }, [rate]);
-  useEffect(() => () => { output.current?.stop(); }, []);
+    if (!source) return;
+    player.setSource(() => {
+      audio.current ??= new Audio();
+      return source === 'browser'
+        ? browserSpeechOutput(window.speechSynthesis, () => new SpeechSynthesisUtterance(), voice)
+        : serverSpeechOutput(audio.current, roomId, token, source);
+    });
+  }, [source, voice, roomId, token, player]);
+  useEffect(() => { if (projection) player.sync(audibleSpeech(projection.events, projection.locale)); }, [projection, player]);
+  useEffect(() => { player.setRate(rate); }, [rate, player]);
+  useEffect(() => () => player.dispose(), [player]);
 
-  const stop = () => {
-    enabledRef.current = false; pausedRef.current = false;
-    setEnabled(false); setPaused(false); setCurrent(null); setQueue([]); setLoading(false); output.current?.stop();
-  };
-  stopRef.current = stop;
-  const read = (event: GameEvent) => {
-    const item = audibleSpeech([event], projection?.locale)[0];
-    if (!item) return;
-    if (!source) { setError('请先选择可用的朗读来源。'); return; }
-    pausedRef.current = false; setPaused(false); setQueue([]); setCurrent({ ...item });
-  };
-  const resume = async () => {
-    pausedRef.current = false; setPaused(false); setError('');
-    try { await output.current?.resume(); }
-    catch { pausedRef.current = true; setPaused(true); setError('浏览器未能播放，请再次点击继续。'); }
-  };
-  const start = () => {
-    if (!source) { setError('请先选择可用的朗读来源。'); return; }
-    // 与点击时的快照对齐，防止尚未运行的投影 effect 把刚选中的最新一条再次入队。
-    cursor.current.sync(items, false);
-    enabledRef.current = true; setEnabled(true); setError('');
-    if (current) void resume();
-    else { pausedRef.current = false; setPaused(false); if (items.length) setCurrent({ ...items[items.length - 1] }); }
-  };
-  const togglePause = () => {
-    if (pausedRef.current) return resume();
-    pausedRef.current = true; setPaused(true); output.current?.pause();
-  };
-  const changeSource = (value: string) => { stop(); setSource(value); setError(''); localStorage.setItem('werewolf-speech-source', value); };
-  const changeVoice = (value: string) => { stop(); setVoice(value); setError(''); };
-  return { audio, enabled, paused, current, queued: queue.length, loading, error, rate, setRate, read, start, stop, togglePause, source, providers, providerError, native, voices, voice, changeVoice, changeSource };
+  const read = (event: GameEvent) => { const item = audibleSpeech([event], projection?.locale)[0]; if (item) player.read(item); };
+  const changeSource = (value: string) => { if (!value) player.setSource(null); setSource(value); localStorage.setItem('werewolf-speech-source', value); };
+  return { audio, ...state, rate, setRate, read, start: () => player.start(items), stop: () => player.stop(),
+    retry: () => player.retry(), togglePause: () => player.togglePause(), source, providers, providerError, native, voices, voice, changeVoice: setVoice, changeSource };
 }
 
 export type SpeechPlayback = ReturnType<typeof useSpeechPlayback>;
 export function SpeechControls({ player }: { player: SpeechPlayback }) {
   const { t } = useI18n();
-  // Only translate fixed playback errors; server messages and player speech pass through unchanged.
-  const localError = (error: string) => {
-    const nativeFailure = /^浏览器原生朗读失败（([a-z-]+)），请检查系统音色或选择其他来源。$/.exec(error);
-    if (nativeFailure) return t('浏览器原生朗读失败（{0}），请检查系统音色或选择其他来源。', nativeFailure[1]);
-    return ['无法载入服务端朗读来源。', '所选朗读来源已删除，请重新选择。', '当前浏览器不支持原生朗读，请选择其他来源。', '请先选择可用的朗读来源。', '浏览器未能播放，请再次点击继续。', '浏览器没有启动原生朗读，请检查系统音色或选择其他来源。', '朗读来源暂时不可用。', '音频播放失败，可重听该条或选择其他来源。', '请点击继续播放以启用声音。'].includes(error) ? t(error) : error;
-  };
+  const localError = (error: string) => ['无法载入服务端朗读来源。', '所选朗读来源已删除，请重新选择。', '请先选择可用的朗读来源。', '浏览器未能播放，请再次点击继续。', '浏览器没有启动原生朗读，请检查系统音色或选择其他来源。', '音频播放失败，可重听该条或选择其他来源。', '请点击继续播放以启用声音。'].includes(error) ? t(error) : error;
   return <section className="speech-controls" aria-label={t('发言朗读')}>
     <audio ref={player.audio} preload="auto" />
     <div className="row" style={{ flexWrap: 'wrap', marginBottom: 8 }}>
@@ -140,20 +91,22 @@ export function SpeechControls({ player }: { player: SpeechPlayback }) {
       </select>
       {player.source === 'browser' && <select className="speech-source" aria-label={t('浏览器朗读音色')} value={player.voice} onChange={(e) => player.changeVoice(e.target.value)}>
         <option value="">{t('系统默认音色')}</option>
-        {player.voices.map((voice) => <option key={voice.voiceURI} value={voice.voiceURI}>{voice.name} · {voice.lang}</option>)}
+        {player.voices.map((v) => <option key={v.voiceURI} value={v.voiceURI}>{v.name} · {v.lang}</option>)}
       </select>}
     </div>
     <div className="row" style={{ flexWrap: 'wrap' }}>
-      <button className="btn sm primary" disabled={!player.source} onClick={player.enabled ? player.stop : player.start}>{player.enabled ? t('关闭自动朗读') : t('开启自动朗读')}</button>
-      <button className="btn sm" disabled={!player.current} onClick={() => void player.togglePause()}>{player.paused ? t('继续播放') : t('暂停')}</button>
-      <button className="btn sm" disabled={!player.current && !player.queued} onClick={player.stop}>{t('停止')}</button>
+      <button className="btn sm primary" disabled={!player.source && !player.enabled} onClick={player.enabled ? player.stop : player.start}>{t(player.enabled ? '关闭自动朗读并清空队列' : '开启自动朗读')}</button>
+      <button className="btn sm" disabled={(!player.current && !player.queued && !player.paused) || player.failed || player.yielding} onClick={() => void player.togglePause()}>{t(player.paused ? '继续播放' : '暂停')}</button>
+      {player.failed && <button className="btn sm primary" disabled={!player.source || player.yielding} onClick={player.retry}>{t('重试当前发言')}</button>}
+      <button className="btn sm" disabled={!player.current && !player.queued} onClick={player.stop}>{t('停止并清空队列')}</button>
       <label className="row small">{t('语速')} <select aria-label={t('朗读语速')} value={player.rate} onChange={(e) => player.setRate(Number(e.target.value))}>
-        {[.8, 1, 1.25, 1.5, 2].map((rate) => <option key={rate} value={rate}>{rate}×</option>)}
+        {[.8, 1, 1.25, 1.5, 2].map((value) => <option key={value} value={value}>{value}×</option>)}
       </select></label>
     </div>
     <div className="small muted" role="status" style={{ marginTop: 8 }}>
-      {player.current ? t('{0}：{1}号发言{2}', player.loading ? t('正在准备') : player.paused ? t('已暂停') : t('正在朗读'), player.current.seat, player.queued ? ` · ${t('后续 {0} 条', player.queued)}` : '') : player.enabled ? t('等待当前视角的新发言，重连不会重读历史。') : t('开启后先读最新一条，再按顺序朗读当前视角的新发言；「朗读」可重听单条。')}
+      {player.yielding ? t('轮到你行动，自动朗读已让行。手动重听会继续播放，行动倒计时仍在进行。') : player.current ? t('{0}：{1}号发言{2}', t(player.failed ? '等待重试' : player.loading ? '正在准备' : player.paused ? '已暂停' : '正在朗读'), player.current.seat, player.queued ? ` · ${t('后续 {0} 条', player.queued)}` : '') : player.paused ? t('自动朗读已暂停{0}。', player.queued ? ` · ${t('待播 {0} 条', player.queued)}` : '') : player.enabled ? t('等待当前视角的新发言，重连不会重读历史。') : t('开启后先读最新一条，再按顺序朗读当前视角的新发言；「朗读」可重听单条。')}
     </div>
+    {player.overriding && <div className="small muted">{t('正在手动重听，行动倒计时仍在进行。')}</div>}
     {player.source === 'browser' && <div className="tiny muted">{t('原生音色由系统提供；部分浏览器的语速调整在下一条朗读时生效。')}</div>}
     {player.providerError && <div className="small muted">{localError(player.providerError)}</div>}
     {player.error && <div className="error-box small" role="alert">{localError(player.error)}</div>}

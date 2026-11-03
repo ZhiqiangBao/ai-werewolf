@@ -21,6 +21,7 @@ export function createHttpServer({ manager, speech, speechConnections, webRoot }
 }) {
   let stopping = false;
   function send(res: ServerResponse, status: number, body: unknown): void {
+    if (res.destroyed || res.writableEnded) return;
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(body));
   }
@@ -51,6 +52,25 @@ export function createHttpServer({ manager, speech, speechConnections, webRoot }
     return url.searchParams.get('token') ?? '';
   }
 
+  async function renderSpeech(req: IncomingMessage, res: ServerResponse, render: (signal: AbortSignal) => ReturnType<SpeechService['render']>, message: string): Promise<void> {
+    const controller = new AbortController();
+    const disconnected = () => { if (!res.writableFinished) controller.abort(); };
+    req.once('aborted', disconnected);
+    res.once('close', disconnected);
+    if (req.aborted || res.destroyed) controller.abort();
+    try {
+      const audio = await render(controller.signal);
+      if (controller.signal.aborted || res.destroyed || res.writableEnded) return;
+      res.writeHead(200, { 'Content-Type': audio.mimeType, 'Content-Length': audio.bytes.length, 'Cache-Control': 'private, no-store' });
+      res.end(audio.bytes);
+    } catch {
+      if (!controller.signal.aborted) send(res, 503, errorBody(requestLanguage(req), 'SPEECH_UNAVAILABLE', { key: message }));
+    } finally {
+      req.removeListener('aborted', disconnected);
+      res.removeListener('close', disconnected);
+    }
+  }
+
   /** 首页共享库沿用模型库的服务级管理入口；旧房间配置仍先检查房主凭证。 */
   async function speechSettings(req: IncomingMessage, res: ServerResponse, method: string, id?: string, action?: string, roomId?: string): Promise<void> {
     if (method === 'GET' && !id) return send(res, 200, { connections: roomId ? speechConnections.views(roomId) : speechConnections.sharedViews(), builtins: speech.catalog().providers, ...(speechConnections.error ? { error: speechConnections.error } : {}) });
@@ -58,11 +78,7 @@ export function createHttpServer({ manager, speech, speechConnections, webRoot }
       const providers = roomId ? speechConnections.providers(roomId) : speechConnections.sharedProviders();
       if (!providers.some((provider) => provider.id === id)) throw new ApiFailure(404, 'NOT_FOUND', '没有这个 TTS 来源', { key: '没有这个 TTS 来源' });
       const locale = requestLanguage(req);
-      try {
-        const audio = await speech.render(gameText(locale, '这是一段语音接入测试。一二三。'), id, providers, locale);
-        res.writeHead(200, { 'Content-Type': audio.mimeType, 'Content-Length': audio.bytes.length, 'Cache-Control': 'private, no-store' }); res.end(audio.bytes);
-      } catch { return send(res, 503, errorBody(locale, 'SPEECH_UNAVAILABLE', { key: '试听失败，请核对地址、密钥、模型、音色及所选协议；未切换其他来源。' })); }
-      return;
+      return renderSpeech(req, res, (signal) => speech.render(gameText(locale, '这是一段语音接入测试。一二三。'), id, providers, locale, { signal }), '试听失败，请核对地址、密钥、模型、音色及所选协议；未切换其他来源。');
     }
     try {
       if (method === 'POST' && roomId && id && action === 'share') return send(res, 200, speechConnections.share(roomId, id));
@@ -147,11 +163,7 @@ export function createHttpServer({ manager, speech, speechConnections, webRoot }
         if (body.providerId !== undefined && (typeof body.providerId !== 'string' || !speech.catalog(providers).providers.some((p) => p.id === body.providerId))) {
           throw new ApiFailure(400, 'BAD_REQUEST', '请选择已配置的朗读来源', { key: '请选择已配置的朗读来源' });
         }
-        try {
-          const audio = await speech.render(text, body.providerId as string | undefined, providers, manager.speechLocale(roomId, token));
-          res.writeHead(200, { 'Content-Type': audio.mimeType, 'Content-Length': audio.bytes.length, 'Cache-Control': 'private, no-store' }); res.end(audio.bytes);
-        } catch { return send(res, 503, errorBody(requestLanguage(req), 'SPEECH_UNAVAILABLE', { key: '所选来源朗读失败，请检查服务配置或稍后重试；未切换到其他来源。' })); }
-        return;
+        return renderSpeech(req, res, (signal) => speech.render(text, body.providerId as string | undefined, providers, manager.speechLocale(roomId, token), { signal }), '所选来源朗读失败，请检查服务配置或稍后重试；未切换到其他来源。');
       }
       case 'GET stream':
         return stream(req, res, roomId, token);
@@ -215,6 +227,7 @@ export function createHttpServer({ manager, speech, speechConnections, webRoot }
         }
         return send(res, e.status, errorBody(locale, e.code, e.localization));
       }
+      if (res.destroyed || res.writableEnded) return;
       console.error('请求处理失败：', (e as Error).message);
       if (!res.headersSent) send(res, 500, errorBody(requestLanguage(req), 'INTERNAL'));
     }
@@ -231,7 +244,8 @@ export function createHttpServer({ manager, speech, speechConnections, webRoot }
       shutdownPromise = shutdownResources({
         stopAccepting: () => { const closed = new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); server.closeIdleConnections(); return closed; },
         closeStreams: () => { let failed = false; for (const close of [...streams]) { try { close(); } catch { failed = true; } } if (failed) throw new Error('STREAM_RELEASE_FAILED'); },
-        dispose: () => manager.dispose(), whenDisposed: () => manager.whenDisposed(),
+        dispose: () => { try { manager.dispose(); } finally { speech.dispose(); } },
+        whenDisposed: async () => { const [result] = await Promise.all([manager.whenDisposed(), speech.whenDisposed()]); return result; },
         closeFrontend: () => vite?.close() ?? Promise.resolve(),
         forceConnections: () => server.closeAllConnections(), release, graceMs,
       });

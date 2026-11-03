@@ -1,0 +1,205 @@
+{
+  "date": "2026-11-03",
+  "baseCommit": "627bce95d7685109bf566cd2bb9677914bf2b0ae",
+  "branch": "codex/audio-resilience",
+  "isolated": true,
+  "node": "v24.18.1",
+  "platform": "win32",
+  "tests": {
+    "success": true,
+    "total": 157,
+    "passed": 157,
+    "failed": 0,
+    "fileCount": 26,
+    "files": [
+      {
+        "path": "apps/web/test/death-mark.test.ts",
+        "status": "passed",
+        "tests": 5
+      },
+      {
+        "path": "apps/web/test/game-ui.test.ts",
+        "status": "passed",
+        "tests": 26
+      },
+      {
+        "path": "apps/web/test/invites.test.ts",
+        "status": "passed",
+        "tests": 21
+      },
+      {
+        "path": "apps/web/test/lobby-lists.test.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "apps/web/test/speech-output.test.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "apps/web/test/speech-playback.test.ts",
+        "status": "passed",
+        "tests": 12
+      },
+      {
+        "path": "apps/web/test/speech.test.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "apps/web/test/view-loader.test.ts",
+        "status": "passed",
+        "tests": 2
+      },
+      {
+        "path": "apps/server/test/http-factory.test.ts",
+        "status": "passed",
+        "tests": 2
+      },
+      {
+        "path": "apps/server/test/human-http.test.ts",
+        "status": "passed",
+        "tests": 6
+      },
+      {
+        "path": "apps/server/test/invite-network.test.ts",
+        "status": "passed",
+        "tests": 7
+      },
+      {
+        "path": "apps/server/test/shutdown-integration.test.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "apps/server/test/shutdown.test.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "packages/session/test/audio-lifecycle-http.test.ts",
+        "status": "passed",
+        "tests": 2
+      },
+      {
+        "path": "packages/session/test/audio-lifecycle.test.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "packages/session/test/human.test.ts",
+        "status": "passed",
+        "tests": 12
+      },
+      {
+        "path": "packages/session/test/locale-timing-presentation.test.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "packages/session/test/mimo-speech.test.ts",
+        "status": "passed",
+        "tests": 9
+      },
+      {
+        "path": "packages/session/test/model-certainty-evaluation.test.ts",
+        "status": "passed",
+        "tests": 2
+      },
+      {
+        "path": "packages/session/test/model-quality-evaluation.test.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "packages/session/test/qwen-speech-seed.test.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "packages/session/test/speech-cancel-read.test.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "packages/session/test/speech-cancel.test.ts",
+        "status": "passed",
+        "tests": 6
+      },
+      {
+        "path": "packages/session/test/speech-connections.test.ts",
+        "status": "passed",
+        "tests": 7
+      },
+      {
+        "path": "packages/session/test/speech.test.ts",
+        "status": "passed",
+        "tests": 6
+      },
+      {
+        "path": "packages/session/test/timing-boundaries.test.ts",
+        "status": "passed",
+        "tests": 5
+      }
+    ],
+    "rawSha256": "55984aa4d60819c3f35e6831769e8648e33a3954baafea6c6631e66c9b085879"
+  },
+  "typecheck": {
+    "command": "node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
+    "exitCode": 0
+  },
+  "build": {
+    "command": "node ../../node_modules/vite/bin/vite.js build",
+    "cwd": "apps/web",
+    "exitCode": 0,
+    "note": "existing >500kB chunk advisory"
+  },
+  "browser": {
+    "kind": "in-app-browser",
+    "fixture": "synthetic API and silent WAV provider; no real rooms or TTS",
+    "verified": [
+      "failed current retained with two subsequent items",
+      "retry retained current",
+      "manual interruption preserves original user pause",
+      "human action yields auto speech without deadline changes",
+      "manual single-item override then yield"
+    ],
+    "screenshots": [
+      {
+        "path": "data/diagnostics/certainty/playback-failure-proof.png",
+        "sha256": "a678664c5cc0bc24b71b38e0e5ede1c18c13f3ec8527b74897359b2b42b48054"
+      },
+      {
+        "path": "data/diagnostics/certainty/playback-yield-proof.png",
+        "sha256": "114e8145eb941b15a41f9e7e2b07a85f3c815c323df76756ae1872910bc9b3cf"
+      }
+    ],
+    "notVerified": [
+      "real speakers onset",
+      "actual provider billing cancellation",
+      "all-device behavior",
+      "real browser credential switching; independently tested loaders/controllers"
+    ]
+  },
+  "sourceHashMode": "isolated working tree raw bytes; Git line-ending conversion may differ",
+  "sourceSha256": {
+    "apps/server/src/http-server.ts": "757c91b3c2989b7bfe777147dc39edef9e422bfaaaf7561eac0f5c1e71c085b1",
+    "apps/web/src/components/SpeechPlayback.tsx": "a7e78578fc3a4164967300a600a8b9eca61899f7b1276483227200bb3a99c1e8",
+    "apps/web/src/hooks.ts": "0ce0351b5663defc734f5314c37deaf53f87bf1495ae9307d27f26e9f95c6fb8",
+    "apps/web/src/pages/Game.tsx": "8eff5fbdfe36e4cb3ab51735d6a9299524e196d6d720fbc55fb6f893749a9ed6",
+    "apps/web/src/speech-playback.ts": "eb1eed07bfd888549329f11a9ea4d0ff09cf2116ff3b08735caee8f549aeff76",
+    "apps/web/src/view-loader.ts": "b2ce8c0a5d215ae6b11d1384e5d03fc30dea62565dc0d7792ef7f1a51dbcf76e",
+    "apps/web/test/speech-playback.test.ts": "473b4b473eca9821b95533d5687bec0943789c1fa8cb87d49fe72f63a9dc01a3",
+    "apps/web/test/view-loader.test.ts": "7a01fb372c7226f437ea613ecf13b058b08e12e5f0b35a769c0e9bd5d4dc4820",
+    "packages/session/src/speech.ts": "fad9b325b522451972f8a6c11b322c30a7d8d82dee1779ed9669fb0e9a59b3dc",
+    "packages/session/src/speech/qwen.ts": "c5dea676a950cfeab2f5a354fd9792eb41ca86710a77ac3b2a2dfa2d16ae9071",
+    "packages/session/scripts/model-certainty-evaluation.ts": "70986414951d38e67d0540ff81a48cfaa860f736706d3e64d544f133b23d85f2",
+    "packages/session/test/model-certainty-evaluation.test.ts": "0746d36f75f22d414fe73c5a17ad708638d1f4c31c4c3d77de4827f0f0fb7321",
+    "packages/session/test/speech-cancel-read.test.ts": "352f4628bdc8f3819a647bebd4d405b5c5c87082b31278d61828e07917fb91ad",
+    "packages/session/test/speech-cancel.test.ts": "5f92baaf4d3efd4cc226ff9999f7ce70862d23a992cb819903f5e470ca2f4d35",
+    "packages/session/test/audio-lifecycle.test.ts": "eabba600ea2c164bed5584a807d306589b3eeba01c1b7d59dd305e86d0f40515",
+    "packages/session/test/audio-lifecycle-http.test.ts": "e57909072ca52692738a2dd8dc9d5df0697ef552614468bf85955b7d52f9cc46"
+  },
+  "implementationCommit": "0dc07ea"
+}

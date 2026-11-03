@@ -20,8 +20,8 @@ it('合成并发限制为二，失败释放槽位，同文合并且成功结果�
   const a = service.render('a'), same = service.render('a'), b = service.render('b');
   await vi.waitFor(() => expect(started).toHaveLength(2));
   const c = service.render('c'); await tick();
-  expect(same).toBe(a); expect(started).not.toContain('c');
-  const failed = expect(a).rejects.toThrow('fixture failure');
+  expect(same).not.toBe(a); expect(started).not.toContain('c');
+  const failed = Promise.all([expect(a).rejects.toThrow('fixture failure'), expect(same).rejects.toThrow('fixture failure')]);
   completions.get('a')!.reject(); await failed;
   await vi.waitFor(() => expect(started).toContain('c'));
   completions.get('b')!.resolve(); completions.get('c')!.resolve();
