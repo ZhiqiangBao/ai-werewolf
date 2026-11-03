@@ -3,6 +3,10 @@ import { lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 export type SourceEntry = { path: string; sha256: string; bytes: number };
+export function sourceRunId(sourceHash: string, run: string): string {
+  if (!/^[a-f0-9]{64}$/.test(sourceHash) || !/^[a-zA-Z0-9_-]+$/.test(run)) throw new Error('invalid source or run');
+  return `${sourceHash}/${run}`;
+}
 export function sourceSnapshot(root: string): { entries: SourceEntry[]; sha256: string } {
   const files: string[] = [];
   const walk = (path: string) => {

@@ -9,6 +9,18 @@ import { anthropicInput, chatMessages, protocolBinding, responsesInput, type Ada
 export type Protocol = 'chat-completions' | 'responses' | 'anthropic-messages';
 export type Candidate = 'A' | 'B' | 'A+D';
 export type WindowConfig = { run: string; protocol: Protocol; candidate: Candidate; rooms: 1 | 2; providers: 1 | 2; slowMs: number; baseMs: number; slots: 4 | 8; serverSlots?: 4 | 8; faultStatus?: 429 | 503; sourceHash: string; budgetPath: string; budgetGroup: BudgetGroup; totalLimit: number; windowLimit: number; projections: Record<string, [string, string]>; signal?: AbortSignal };
+export type FailureDiagnostic = { name: string; code: string | null; causeCode: string | null; message: string };
+const errorNames = new Set(['Error', 'TypeError', 'AbortError', 'TimeoutError']);
+const errorCodes = new Set(['EACCES', 'EPERM', 'ECONNREFUSED', 'ECONNRESET', 'ECONNABORTED', 'ETIMEDOUT', 'EADDRINUSE', 'EADDRNOTAVAIL', 'ENETUNREACH', 'EHOSTUNREACH', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET', 'ABORT_ERR']);
+const localMessages = new Set(['fetch failed', 'budget exhausted', 'cancelled', 'cancelled while waiting for slot', 'server close timed out', 'settlement timed out', 'local native history order', 'action overtook listen', 'HTTP/native response mismatch', 'retry exhausted', 'missing response']);
+/** Never persist arbitrary error text, URLs, request bodies, or credentials. */
+export function safeFailure(error: unknown): FailureDiagnostic {
+  const value = error instanceof Error ? error : undefined;
+  const cause = value?.cause && typeof value.cause === 'object' ? value.cause as { code?: unknown } : undefined;
+  const code = typeof cause?.code === 'string' && errorCodes.has(cause.code) ? cause.code : null;
+  const direct = value as (Error & { code?: unknown }) | undefined;
+  return { name: value && errorNames.has(value.name) ? value.name : 'UnknownError', code: typeof direct?.code === 'string' && errorCodes.has(direct.code) ? direct.code : null, causeCode: code, message: value && localMessages.has(value.message) ? value.message : 'unclassified local failure' };
+}
 
 // The payloads deliberately differ in shape. They are synthetic native items, not
 // claims of compatibility with an actual provider's complete protocol.
@@ -93,7 +105,7 @@ export function planWindow(config: WindowConfig): { expected: Expected[]; plans:
   return { expected, plans };
 }
 
-export async function runLoopbackWindow(config: WindowConfig): Promise<{ evidence: Evidence; clientTrace: Trace[]; serverTruth: Trace[]; errors: string[]; segments: Array<{ name: string; wallMs: number; actionWaitMs: number[] }> }> {
+export async function runLoopbackWindow(config: WindowConfig): Promise<{ evidence: Evidence; clientTrace: Trace[]; serverTruth: Trace[]; errors: string[]; segments: Array<{ name: string; wallMs: number; actionWaitMs: number[] }>; failure: FailureDiagnostic | null }> {
   if (!config.run || !Number.isFinite(config.baseMs) || config.baseMs < 0 || !Number.isFinite(config.slowMs) || config.slowMs < 0 || config.rooms > 2 || config.providers > config.rooms || config.windowLimit > 512) throw new Error('invalid configuration');
   const clientTrace: Trace[] = []; const serverTruth: Trace[] = []; const { expected, plans } = planWindow(config); const segments: Array<{ name: string; wallMs: number; actionWaitMs: number[] }> = [];
   let reserved = 0; let status: Evidence['status'] = 'complete'; let firstFailure: unknown;
@@ -124,7 +136,11 @@ export async function runLoopbackWindow(config: WindowConfig): Promise<{ evidenc
     });
   });
   try { await waitWithSignal(new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); }), signal); }
-  catch (error) { server.closeAllConnections(); await closeWithTimeout(server, 1000).catch(() => {}); throw error; }
+  catch (error) {
+    server.closeAllConnections(); await closeWithTimeout(server, 1000).catch(() => {});
+    const evidence: Evidence = { run: config.run, sourceHash: config.sourceHash, expectedHash: hashExpected(expected), expected, trace: [], budgetLimit: config.windowLimit, reserved, status: config.signal?.aborted ? 'cancelled' : 'failed' };
+    return { evidence, clientTrace, serverTruth, errors: validateEvidence(evidence, config.sourceHash), segments, failure: safeFailure(error) };
+  }
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('loopback address');
   const url = `http://127.0.0.1:${address.port}/model`; const localLimits = new Map<string, Slots>();
   const abortConnections = () => server.closeAllConnections(); signal.addEventListener('abort', abortConnections, { once: true });
@@ -175,13 +191,14 @@ export async function runLoopbackWindow(config: WindowConfig): Promise<{ evidenc
       segments.push({ name: segment, wallMs: performance.now() - began, actionWaitMs });
     }
   } catch (error) {
+    if (firstFailure === undefined) firstFailure = error;
     status = config.signal?.aborted ? 'cancelled' : String(firstFailure ?? error).includes('budget exhausted') ? 'budget_exhausted' : 'failed';
   } finally {
     if (signal.aborted) server.closeAllConnections();
-    try { await closeWithTimeout(server, 1000); } catch { status = config.signal?.aborted ? 'cancelled' : 'failed'; localAbort.abort(); }
-    try { await settleWithTimeout(Promise.allSettled([...pendingServer]), 1000); } catch { status = config.signal?.aborted ? 'cancelled' : 'failed'; localAbort.abort(); }
+    try { await closeWithTimeout(server, 1000); } catch (error) { if (firstFailure === undefined) firstFailure = error; status = config.signal?.aborted ? 'cancelled' : 'failed'; localAbort.abort(); }
+    try { await settleWithTimeout(Promise.allSettled([...pendingServer]), 1000); } catch (error) { if (firstFailure === undefined) firstFailure = error; status = config.signal?.aborted ? 'cancelled' : 'failed'; localAbort.abort(); }
     signal.removeEventListener('abort', abortConnections);
   }
   const evidence: Evidence = { run: config.run, sourceHash: config.sourceHash, expectedHash: hashExpected(expected), expected, trace: [...clientTrace, ...serverTruth], budgetLimit: config.windowLimit, reserved, status };
-  return { evidence, clientTrace, serverTruth, errors: validateEvidence(evidence, config.sourceHash), segments };
+  return { evidence, clientTrace, serverTruth, errors: validateEvidence(evidence, config.sourceHash), segments, failure: firstFailure === undefined ? null : safeFailure(firstFailure) };
 }

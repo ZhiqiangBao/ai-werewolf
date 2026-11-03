@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { archiveEvidence, verifyEvidenceArchive, type ArchiveProof, type StorageUsage } from '../packages/session/src/experiments/passive-archive';
 import { runLoopbackWindow, type Candidate, type Protocol } from '../packages/session/src/experiments/passive-loopback';
 import { fixedProjections } from '../packages/session/src/experiments/passive-projections';
-import { sourceSnapshot } from '../packages/session/src/experiments/passive-source';
+import { sourceRunId, sourceSnapshot } from '../packages/session/src/experiments/passive-source';
 import { compareScreen } from '../packages/session/src/experiments/passive-screen';
 
 const protocols: Protocol[] = ['chat-completions', 'responses', 'anthropic-messages'];
@@ -26,10 +26,14 @@ if (args.join(' ') === '--dry-run') {
   const dirty = execFileSync('git', ['status', '--porcelain', '--untracked-files=all', '--', 'packages/protocol/src', 'packages/protocol/package.json', 'packages/engine/src', 'packages/engine/package.json', 'packages/engine/test/harness.ts', 'packages/llm/src', 'packages/llm/package.json', 'packages/session/src', 'packages/session/package.json', 'packages/session/test', 'scripts/passive-experiment.ts', 'package.json', 'tsconfig.json', 'pnpm-lock.yaml', 'docs/P1剩余四项一揽子实施方案.md'], { encoding: 'utf8' });
   if (dirty.trim()) throw new Error('source or validator files are not committed');
   const initial = sourceSnapshot(root); const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  const clockPath = join(batch, 'batch-clock.json');
+  if (!existsSync(clockPath) || lstatSync(clockPath).isSymbolicLink()) throw new Error('original cross-version batch clock is required');
+  const clock = JSON.parse(readFileSync(clockPath, 'utf8')) as { startedAt: number };
+  if (!Number.isSafeInteger(clock.startedAt) || Date.now() < clock.startedAt || Date.now() - clock.startedAt >= 180 * 60 * 1000) throw new Error('invalid or expired batch clock');
   const metaPath = join(directory, 'batch-meta.json');
-  if (!existsSync(metaPath)) { if (mode !== 'preflight') throw new Error('preflight must initialize batch metadata'); writeFileSync(metaPath, JSON.stringify({ sourceHash: initial.sha256, startedAt: Date.now() }), { flag: 'wx' }); }
+  if (!existsSync(metaPath)) { if (mode !== 'preflight') throw new Error('preflight must initialize batch metadata'); writeFileSync(metaPath, JSON.stringify({ sourceHash: initial.sha256, startedAt: clock.startedAt }), { flag: 'wx' }); }
   const meta = JSON.parse(readFileSync(metaPath, 'utf8')) as { sourceHash: string; startedAt: number };
-  if (meta.sourceHash !== initial.sha256 || !Number.isSafeInteger(meta.startedAt) || Date.now() < meta.startedAt || Date.now() - meta.startedAt >= 180 * 60 * 1000) throw new Error('source mismatch or batch wall-clock limit');
+  if (meta.sourceHash !== initial.sha256 || meta.startedAt !== clock.startedAt) throw new Error('source mismatch or batch wall-clock limit');
   const env = { node: process.version, pnpmVersion: null, os: `${platform()} ${release()}`, cpu: cpus()[0]?.model, cpus: cpus().length, totalMemoryBytes: totalmem(), freeMemoryBytes: freemem(), loadAverage: platform() === 'win32' ? null : loadavg(), powerCondition: null, sourceCommit, sourceHash: initial.sha256, command: process.argv.slice(1), seed };
   const files = readdirSync(directory); if (files.some(name => lstatSync(join(directory, name)).isSymbolicLink())) throw new Error('diagnostics symlink');
   if (files.some(name => name.endsWith('.gz') && !files.includes(name.replace(/\.gz$/, '.manifest.json')))) throw new Error('unindexed archive; inspect previous incomplete run');
@@ -38,6 +42,7 @@ if (args.join(' ') === '--dry-run') {
   const usage: StorageUsage = { logical: manifests.reduce((n, m) => n + m.logicalBytes, 0), compressed: manifests.reduce((n, m) => n + m.compressedBytes, 0), compact: files.filter(name => name.endsWith('.json')).reduce((n, name) => n + lstatSync(join(directory, name)).size, 0), peak: files.reduce((n, name) => n + lstatSync(join(directory, name)).size, 0) };
   const frames = fixedProjections(seed); const inputHash = createHash('sha256').update(JSON.stringify(frames)).digest('hex');
   const runOne = async (run: string, protocol: Protocol, topology: typeof topologies[number], candidate: Candidate, slots: 4 | 8, fault: boolean) => {
+    const runId = sourceRunId(initial.sha256, run);
     if (sourceSnapshot(root).sha256 !== initial.sha256) throw new Error('source changed during batch');
     if (Date.now() < meta.startedAt || Date.now() - meta.startedAt >= 180 * 60 * 1000) throw new Error('batch wall-clock limit');
     const remainingMs = meta.startedAt + 180 * 60 * 1000 - Date.now();
@@ -48,16 +53,16 @@ if (args.join(' ') === '--dry-run') {
     if (existsSync(output) || existsSync(manifestPath)) {
       if (!existsSync(output) || !existsSync(manifestPath) || lstatSync(output).isSymbolicLink() || lstatSync(manifestPath).isSymbolicLink()) throw new Error(`incomplete or unsafe prior run: ${run}`);
       const prior = JSON.parse(readFileSync(manifestPath, 'utf8')) as ArchiveProof & { run: string; protocol: Protocol; topology: string; candidate: Candidate; slots: number; sourceHash: string; inputHash: string; status: string; errors: string[]; segments: Array<{ name: string; wallMs: number; actionWaitMs: number[] }> };
-      if (prior.run !== run || prior.protocol !== protocol || prior.topology !== topology || prior.candidate !== candidate || prior.slots !== slots || prior.sourceHash !== initial.sha256 || prior.inputHash !== inputHash || prior.status !== 'complete' || !Array.isArray(prior.errors) || prior.errors.length) throw new Error(`incompatible prior run: ${run}`);
+      if (prior.run !== runId || prior.protocol !== protocol || prior.topology !== topology || prior.candidate !== candidate || prior.slots !== slots || prior.sourceHash !== initial.sha256 || prior.inputHash !== inputHash || prior.status !== 'complete' || !Array.isArray(prior.errors) || prior.errors.length) throw new Error(`incompatible prior run: ${run}`);
       await verifyEvidenceArchive(output, prior, AbortSignal.timeout(remainingMs - 200)); return prior;
     }
-    const config = { run, protocol, candidate, rooms: (topology === 'S01' ? 1 : 2) as 1 | 2, providers: (topology === 'S03' ? 2 : 1) as 1 | 2, baseMs: 80, slowMs: 400, slots, ...(fault ? { serverSlots: 4 as const, faultStatus: (mode === 'fault503' ? 503 : 429) as 429 | 503 } : {}), sourceHash: initial.sha256, budgetPath: budget, budgetGroup: (mode === 'preflight' ? 'preflight' : fault ? 'fault' : 'screen') as 'preflight' | 'fault' | 'screen', totalLimit: 150000, windowLimit: mode === 'preflight' ? 48 : 512, projections: frames, signal: AbortSignal.timeout(remainingMs - 3000) };
+    const config = { run: runId, protocol, candidate, rooms: (topology === 'S01' ? 1 : 2) as 1 | 2, providers: (topology === 'S03' ? 2 : 1) as 1 | 2, baseMs: 80, slowMs: 400, slots, ...(fault ? { serverSlots: 4 as const, faultStatus: (mode === 'fault503' ? 503 : 429) as 429 | 503 } : {}), sourceHash: initial.sha256, budgetPath: budget, budgetGroup: (mode === 'preflight' ? 'preflight' : fault ? 'fault' : 'screen') as 'preflight' | 'fault' | 'screen', totalLimit: 150000, windowLimit: mode === 'preflight' ? 48 : 512, projections: frames, signal: AbortSignal.timeout(remainingMs - 3000) };
     const result = await runLoopbackWindow(config);
     if (sourceSnapshot(root).sha256 !== initial.sha256) { result.evidence.status = 'failed'; result.errors.push('source changed during window'); }
     const archiveRemainingMs = meta.startedAt + 180 * 60 * 1000 - Date.now() - 200;
     if (archiveRemainingMs <= 0) throw new Error('no time to archive incomplete window');
-    const archive = await archiveEvidence(output, { config: { ...config, projections: undefined, budgetPath: undefined, signal: undefined }, inputHash, frames, env, sourceEntries: initial.entries, expectedHash: result.evidence.expectedHash, expected: result.evidence.expected, clientTrace: result.clientTrace, serverTruth: result.serverTruth, segments: result.segments, status: result.evidence.status, errors: result.errors }, usage, AbortSignal.timeout(archiveRemainingMs));
-    const compact = { issue: 'ARCH-PASSIVE', mode, run, protocol, topology, candidate, slots, seed, environment: env, sourceHash: initial.sha256, inputHash, expectedHash: result.evidence.expectedHash, status: result.evidence.status, errors: result.errors, reserved: result.evidence.reserved, segments: result.segments, ...archive };
+    const archive = await archiveEvidence(output, { config: { ...config, projections: undefined, budgetPath: undefined, signal: undefined }, inputHash, frames, env, sourceEntries: initial.entries, expectedHash: result.evidence.expectedHash, expected: result.evidence.expected, clientTrace: result.clientTrace, serverTruth: result.serverTruth, segments: result.segments, status: result.evidence.status, errors: result.errors, failure: result.failure }, usage, AbortSignal.timeout(archiveRemainingMs));
+    const compact = { issue: 'ARCH-PASSIVE', mode, run: runId, protocol, topology, candidate, slots, seed, environment: env, sourceHash: initial.sha256, inputHash, expectedHash: result.evidence.expectedHash, status: result.evidence.status, errors: result.errors, failure: result.failure, reserved: result.evidence.reserved, segments: result.segments, ...archive };
     const encoded = JSON.stringify(compact); if (usage.compact + Buffer.byteLength(encoded) >= 128 * 1024 ** 2 * .9 || usage.peak + Buffer.byteLength(encoded) >= 1.25 * 1024 ** 3 * .9) throw new Error('compact stop threshold');
     writeFileSync(manifestPath, encoded, { flag: 'wx' }); usage.compact += Buffer.byteLength(encoded); usage.peak += Buffer.byteLength(encoded);
     if (result.errors.length || result.evidence.status !== 'complete') throw new Error(`incomplete window: ${run}`);
