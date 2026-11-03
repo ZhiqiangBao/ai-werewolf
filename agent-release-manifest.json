@@ -1,6 +1,9 @@
 {
   "version": "agent-v0.1.0",
-  "status": "validated-ready-to-publish",
+  "status": "published",
+  "releaseUrl": "https://github.com/ZhiqiangBao/ai-werewolf/releases/tag/agent-v0.1.0",
+  "zipUrl": "https://github.com/ZhiqiangBao/ai-werewolf/releases/download/agent-v0.1.0/agent-v0.1.0.zip",
+  "releaseTargetCommit": "accd21234ec002e6735a70e7b3352933e13fd30c",
   "sha256": "5483cf9a9f0ec828ea1f74f590cf79139c9da32d02a528fa74298aeaaabc67bd",
   "size": 73210,
   "treeSha256": "fb442a6e96890d1df53b9257ec998e79585a46c62af66a073f179e6ffd58497f",

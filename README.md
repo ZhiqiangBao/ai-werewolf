@@ -524,7 +524,7 @@ data/
 
 ## 外部 AI 席位客户端
 
-独立客户端通过真人席位 API 让外部 AI 工具参局，需要 Node.js 22.12 或更新版本，不需要安装本仓库依赖。`agent-v0.1.0` 安装包已完成验证，Release 正在准备；发布清单见 [agent-release-manifest.json](agent-release-manifest.json)。解压到独立目录后，使用 `node player.mjs join "<席位链接>"` 入座，再运行 `node player.mjs wait --seat <座位号>` 和 `node player.mjs act --seat <座位号> --file <行动文件>`；详细流程见包内 `AGENTS.md`。公开发言和狼人密谈遵循客户端显示的对局语言，工具名和参数保持原样。
+独立客户端通过真人席位 API 让外部 AI 工具参局，需要 Node.js 22.12 或更新版本，不需要安装本仓库依赖。从 [agent-v0.1.0 Release](https://github.com/ZhiqiangBao/ai-werewolf/releases/tag/agent-v0.1.0) 下载 `agent-v0.1.0.zip`，对照同页 `SHA256SUMS.txt` 核对哈希；发布清单见 [agent-release-manifest.json](agent-release-manifest.json)。解压到独立目录后，使用 `node player.mjs join "<席位链接>"` 入座，再运行 `node player.mjs wait --seat <座位号>` 和 `node player.mjs act --seat <座位号> --file <行动文件>`；详细流程见包内 `AGENTS.md`。公开发言和狼人密谈遵循客户端显示的对局语言，工具名和参数保持原样。
 
 每个席位的凭证和游标保存在各自 `seats/` 子目录，请勿共享。升级时先备份运行数据，将新包解压到新目录，再按需要迁移对应席位的数据。网络异常后先检查当前视图再重试行动。已用 Node.js 24.18.1 验证服务端提交 `6325ea6`、`8a6563e` 下的中／英／日三种语言、独立解压运行和席位权限边界；其他服务端版本尚未据此声明兼容。
 
