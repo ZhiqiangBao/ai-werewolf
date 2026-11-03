@@ -1,0 +1,13 @@
+{
+  "version": "agent-v0.1.0",
+  "status": "validated-ready-to-publish",
+  "sha256": "5483cf9a9f0ec828ea1f74f590cf79139c9da32d02a528fa74298aeaaabc67bd",
+  "size": 73210,
+  "treeSha256": "fb442a6e96890d1df53b9257ec998e79585a46c62af66a073f179e6ffd58497f",
+  "minimumNode": "22.12",
+  "testedNode": "24.18.1",
+  "validatedServerCommits": [
+    "6325ea652731dcc9e5c99b2b170adbbe69e5659e",
+    "8a6563ebc1678412c8a5e1bdf563cb4e59f40b3e"
+  ]
+}

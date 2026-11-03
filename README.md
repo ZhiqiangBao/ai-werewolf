@@ -201,11 +201,26 @@ pnpm start
 pnpm models:migrate
 ```
 
-迁移只读 `~/.qwen/settings.json` 的 `openai`、`responses`、`anthropic` 模型分组，通过对应环境变量或文件内的 `env` 解析密钥；可用 `WEREWOLF_QWEN_SETTINGS` 指定一次性来源。保留旧模型 ID、实际模型名、协议和项目已有条目；写入前备份已有模型文件，原全局文件与 `data/secret.key` 保持不变。迁移结果与网页新增模型进入同一库，均可从首页删除，删除后不会自动重新导入。
+迁移只读 `~/.qwen/settings.json` 的 `openai`、`responses`、`anthropic` 模型分组，通过对应环境变量或文件内的 `env` 解析密钥；可用 `WEREWOLF_QWEN_SETTINGS` 指定一次性来源。保留旧模型 ID、实际模型名、协议和项目已有条目；写入前备份已有模型文件，原全局文件与 `data/secret.key` 保持不变。迁移结果与网页新增模型进入同一库，清理时使用下述本机维护入口；归档后不会自动重新导入。
 
 迁移主机或备份时同时保留 `models.json` 与原主密钥（`data/secret.key` 或原 `WEREWOLF_SECRET`）。项目文件缺少主密钥时不能通过重新生成主密钥解开已有凭据。没有 pnpm 时可用 `node node_modules/tsx/dist/cli.mjs scripts/migrate-models.ts`。成功导入后会记录迁移完成标记，无需重复执行。
 
 </details>
+
+### 模型停用、归档与别名归并
+
+首页保留维护说明；实际清理先停止使用同一数据目录的服务，备份 `data/models.json` 和原主密钥，再在仓库根目录执行维护命令。使用自定义数据目录时，为维护命令设置相同的 `WEREWOLF_DATA`。以下占位参数替换为预览结果中的值：
+
+```bash
+pnpm models:maintain preview <modelId> --old-server-stopped
+pnpm models:maintain disable <modelId> <revision> <inventoryDigest> --old-server-stopped
+# 每次变更后重新 preview，再使用新的 revision 和 inventoryDigest
+pnpm models:maintain archive <modelId> <revision> <inventoryDigest> --old-server-stopped
+```
+
+预览会列出房间引用、凭据依赖和阻塞原因。停用阻止新选用；待开局或运行中的房间仍引用该模型时，归档会拒绝。归档保留密钥与历史对局，恢复使用 `restore`，恢复后保持停用，再显式 `enable`；两项命令的参数与 `archive` 相同，执行前各自重新预览。套餐未开通、鉴权失败和暂时故障不代表厂商已经停供，核验证据可用 `record <modelId> <revision> <证据JSON路径>` 保存。
+
+归并先运行 `preview-merge <来源ID> <目标ID> [映射JSON]`，再以返回的版本与引用摘要运行 `merge <来源ID> <目标ID> <revision> <inventoryDigest> [映射JSON]`，均附加 `--old-server-stopped`。只有同协议、同端点、同密钥且实际为同一模型的条目可归并；模型名称不同还须提供官方别名证据。旧 ID 保留映射，历史房间快照保持原样。出现 `MODEL_STORE_BUSY` 时先检查服务是否仍在使用数据目录；预览过期则重新预览，不手工删除租约文件绕过检查。
 
 ### 思考强度：给推理留出合适的空间
 
@@ -506,6 +521,14 @@ data/
 配置与对局保存在服务端本地数据目录。浏览器是客户端，关闭页面不会停止服务端自动推进；使用房主页面的暂停或终结控制对局。
 
 </details>
+
+## 外部 AI 席位客户端
+
+独立客户端通过真人席位 API 让外部 AI 工具参局，需要 Node.js 22.12 或更新版本，不需要安装本仓库依赖。`agent-v0.1.0` 安装包已完成验证，Release 正在准备；发布清单见 [agent-release-manifest.json](agent-release-manifest.json)。解压到独立目录后，使用 `node player.mjs join "<席位链接>"` 入座，再运行 `node player.mjs wait --seat <座位号>` 和 `node player.mjs act --seat <座位号> --file <行动文件>`；详细流程见包内 `AGENTS.md`。公开发言和狼人密谈遵循客户端显示的对局语言，工具名和参数保持原样。
+
+每个席位的凭证和游标保存在各自 `seats/` 子目录，请勿共享。升级时先备份运行数据，将新包解压到新目录，再按需要迁移对应席位的数据。网络异常后先检查当前视图再重试行动。已用 Node.js 24.18.1 验证服务端提交 `6325ea6`、`8a6563e` 下的中／英／日三种语言、独立解压运行和席位权限边界；其他服务端版本尚未据此声明兼容。
+
+客户端本地源码维护在被 Git 忽略的 `local-clients/werewolf-agent/`。`scripts/package-agent.mjs` 按白名单打包并固定文件清单、源码树哈希与已验证的服务端提交；ZIP 不包含运行数据，客户端源码不进入主仓库 Git。
 
 ## 🤝 贡献与协作
 
