@@ -35,6 +35,24 @@ it('Qwen 请求区分英语、日语及方言提示；缓存不混用，原文�
   expect(inputs.every((input) => input.text === 'same text {0}' && input.voice === 'fixture-voice')).toBe(true);
 });
 
+it('空指令不发送 instruction 字段，非空指令原样保留且使用不同缓存', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'werewolf-language-media-')); directories.push(directory);
+  const bytes = Buffer.concat([wavHeader(1000, 24000), Buffer.alloc(2000)]);
+  const requests: { model: string; input: Record<string, unknown> }[] = [];
+  vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (_url, init) => {
+    requests.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify({ output: { audio: { data: bytes.toString('base64') } } }), { headers: { 'Content-Type': 'application/json' } });
+  }));
+  const profile = { voice: 'longchengtaohui', label: '', instruction: '', rate: 1, locale: 'ja', languageHints: ['ja'] };
+  const options = { endpoint: 'https://example.invalid/tts', apiKey: 'fixture-key' };
+  const empty = await synthesizeQwen('3番です。', profile, 'qwen-audio-3.0-tts-plus', join(directory, 'empty.wav'), options);
+  const withInstruction = await synthesizeQwen('3番です。', { ...profile, instruction: '  指示  ' }, 'qwen-audio-3.0-tts-plus', join(directory, 'with-instruction.wav'), options);
+  expect(requests[0]).toMatchObject({ model: 'qwen-audio-3.0-tts-plus', input: { text: '3番です。', voice: 'longchengtaohui', language_hints: ['ja'] } });
+  expect(requests[0].input).not.toHaveProperty('instruction');
+  expect(requests[1].input.instruction).toBe('  指示  ');
+  expect(empty.cacheKey).not.toBe(withInstruction.cacheKey);
+});
+
 it('视频仅从当前事实前缀恢复具体死因，旧记录缺少原因时不猜测', () => {
   const fact = (sourceSeq: number, type: string, data: Fact['data']): Fact => ({ sourceSeq, day: 1, phase: 'day', type, data, text: '', audience: 'public', spoken: false });
   const script: Script = { roomId: 'fixture', perspective: 'god', presetName: 'fixture', status: 'ended', cast: [1, 2, 3, 4, 5, 6].map((seat) => ({ seat, name: String(seat), role: 'villager', roleName: '村人', factionName: '好人', voiceKey: 'seat-' + seat })), chapters: [], result: null, events: [

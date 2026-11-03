@@ -15,7 +15,7 @@ export interface Fact { sourceSeq: number; day: number; phase: string; type: str
 export interface Entry { sourceSeq: number; type: string; speaker: string; voiceKey: string; seat?: number; text: string; visibility: string; data: Record<string, any> }
 export interface Script { locale?: string; roomId: string; perspective: string; playerSeat?: number; presetName: string; status: string; ruleCard?: string; sample?: boolean; cast: Cast[]; events: Fact[]; chapters: { day: number; phase: string; title: string; entries: Entry[] }[]; result: any }
 export interface Clip extends Entry { id: string; day: number; phase: string; chapter: string; part: number; parts: number; spokenText: string; audioFile: string }
-export interface TimedClip extends Clip { frames: number; startFrame: number; audioDuration: number; audioMeta: AudioMeta; captions: { text: string; start: number; end: number }[]; envelope: number[]; normalizedAudioSha256?: string }
+export interface TimedClip extends Clip { frames: number; startFrame: number; audioDuration: number; audioMeta: AudioMeta; captions: { text: string; start: number; end: number }[]; envelope: number[]; normalizedAudioSha256?: string; captionAlignment?: import('./audio-alignment').AlignmentSummary }
 export async function loadScript(): Promise<Script> {
   const seat = process.env.VIDEO_PLAYER_SEAT;
   if (seat && !/^[1-9][0-9]*$/.test(seat)) throw Error('Invalid player seat');

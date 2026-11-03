@@ -11,11 +11,14 @@ import { projectDir, ffmpeg, FPS, type Script, type TimedClip } from './project'
 import { encodingSettings, videoEncodingArgs } from './encoding';
 import { assertAuthorizedProject, assertPlayerAudio } from './integrity';
 import { clipSkillEffect, videoEffectVersion, writeSkillFrames } from './video-effect';
+import { videoAudioLanguage } from './video-locale';
 import assert from 'node:assert/strict';
+import { assertTimelineAlignments } from './audio-alignment';
 
 const timeline = JSON.parse(await readFile(`${projectDir}/timeline.json`, 'utf8')) as { frames: number; duration: number; clips: TimedClip[] };
 const script = JSON.parse(await readFile(`${projectDir}/script.json`, 'utf8')) as Script;
 const { source } = await assertAuthorizedProject(timeline.clips);
+await assertTimelineAlignments(timeline.clips, source.locale ?? 'zh-CN');
 const masterSha256 = await assertPlayerAudio(timeline.clips);
 const viewHash = createHash('sha256').update(JSON.stringify(source)).digest('hex');
 for (const folder of ['plates', 'segments', 'output']) await mkdir(`${projectDir}/${folder}`, { recursive: true });
@@ -98,7 +101,7 @@ await writeFile(`${projectDir}/chapters.txt`, chapters);
 if (source.perspective === 'player') assert.equal(await assertPlayerAudio(timeline.clips), masterSha256, 'Player master audio changed during rendering');
 await run(['-f', 'concat', '-safe', '0', '-i', 'segments.ffconcat', '-i', 'master.wav', '-i', 'chapters.txt',
   '-map', '0:v:0', '-map', '1:a:0', '-map_metadata', '2', '-map_chapters', '2', '-c:v', 'copy', '-c:a', 'aac', '-b:a', `${settings.audioKbps}k`,
-  '-metadata:s:a:0', 'language=zho', '-movflags', '+faststart', 'output/latest-match.partial.mp4'], `${projectDir}/output/mux.log`);
+  '-metadata:s:a:0', `language=${videoAudioLanguage(script.locale)}`, '-movflags', '+faststart', 'output/latest-match.partial.mp4'], `${projectDir}/output/mux.log`);
 await rename(`${projectDir}/output/latest-match.partial.mp4`, `${projectDir}/output/latest-match.mp4`);
 await writeFile(`${projectDir}/output/render-report.json`, JSON.stringify({ ...encodingIdentity, elapsedSeconds: (Date.now() - renderStarted) / 1000,
   durationSeconds: timeline.duration, bytes: (await stat(`${projectDir}/output/latest-match.mp4`)).size, compactFromFirstEncode: true, videoReencodedAtMux: false,

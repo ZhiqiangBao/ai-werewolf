@@ -16,6 +16,12 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 
 describe('玩家视角视频权限', () => {
+  it('工作流在访问房间或调用配音前拒绝无效 ASR 配置', () => {
+    const result = spawnSync(process.execPath, ['--import', 'tsx', 'scripts/video/workflow.ts', '--room=missing', '--asr-provider=unknown'], { cwd: process.cwd(), encoding: 'utf8', windowsHide: true });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('Unsupported ASR provider');
+    expect(result.stdout).not.toContain('VIDEO_STAGE');
+  });
   it('玩家视角不支持自动修复时在启动前拒绝，不改项目也不调用配音', async () => {
     const root = process.cwd(), base = resolve(root, 'data', 'player-repair-guard-tests');
     await mkdir(base, { recursive: true });
@@ -122,12 +128,16 @@ describe('玩家视角视频权限', () => {
     await writeFile(join(data, 'rooms', 'synthetic.json'), JSON.stringify(record));
     const run = (file: string, args: string[], env: NodeJS.ProcessEnv) => execFileSync(process.execPath, ['--import', 'tsx', file, ...args], { cwd: root, env: { ...process.env, ...env }, stdio: 'pipe', timeout: 120000 });
     run('scripts/video/workflow.ts', ['--room=synthetic', `--player-seat=${own}`, `--data-dir=${data}`, '--prepare-only', '--encoder=cpu'], {});
+    expect(existsSync(join(data, 'local-asr', 'service-state.json'))).toBe(false);
     const dir = join(data, 'video', `synthetic-player-${own}`);
     const env = { VIDEO_DATA_DIR: data, VIDEO_ROOM: 'synthetic', VIDEO_PLAYER_SEAT: String(own), VIDEO_PROJECT_DIR: dir, VIDEO_ENCODER: 'libx264' };
     const narration = JSON.parse(await readFile(join(dir, 'narration.json'), 'utf8'));
     narration.review = { status: 'reviewed', method: '合成测试核对', factsChecked: true, playerQuotesUntouched: true, futureResultsNotUsedInProcessCommentary: true };
     await writeFile(join(dir, 'narration.json'), JSON.stringify(narration));
-    run('scripts/video/workflow.ts', ['--room=synthetic', `--player-seat=${own}`, `--data-dir=${data}`, '--encoder=cpu', '--resume', '--tts-provider=synthetic-test', `--tts-adapter=${resolve(root, 'packages/session/test/fixtures/synthetic-video-tts.ts')}`], {});
+    run('scripts/video/workflow.ts', ['--room=synthetic', `--player-seat=${own}`, `--data-dir=${data}`, '--encoder=cpu', '--resume', '--asr-provider=off', '--tts-provider=synthetic-test', `--tts-adapter=${resolve(root, 'packages/session/test/fixtures/synthetic-video-tts.ts')}`], {});
+    const workflowStatus = JSON.parse(await readFile(join(dir, 'workflow-status.json'), 'utf8'));
+    expect(workflowStatus).toMatchObject({ status: 'complete', asr: { requestedProvider: 'off', audioSemanticReview: 'not-checked-explicitly-disabled' } });
+    expect(workflowStatus.completed).toContain('review-audio');
     const clips = JSON.parse(await readFile(join(dir, 'clips.json'), 'utf8'));
     const timeline = JSON.parse(await readFile(join(dir, 'timeline.json'), 'utf8'));
     const source = JSON.parse(await readFile(join(dir, 'source.json'), 'utf8'));

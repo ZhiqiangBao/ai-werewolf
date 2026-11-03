@@ -14,14 +14,18 @@ const required = [
   ['packages/engine/src/index.ts', /\bprojectSeat\b/],
   ['packages/protocol/src/index.ts', /\bbuildVideoScript\b/],
   ['packages/session/src/secret.ts', /\bSecretBox\b/],
+  ['packages/session/src/asr.ts', /export\s+async\s+function\s+transcribeAudio\s*\(/],
+  ['packages/session/src/asr.ts', /export\s+async\s+function\s+ensureLocalAsrReady\s*\(/],
+  ['scripts/asr/service.mjs', /server\.py/],
+  ['scripts/asr/server.py', /class\s+PythonSocketGuard\b/],
 ];
 for (const [file, marker] of required) {
   let source;
   try { source = await readFile(join(root, file), 'utf8'); } catch (error) {
     if (error.code !== 'ENOENT') throw error;
-    throw Error(`Incompatible game repository: missing ${file}. Update the game with authorized player-video export support before bootstrap; no files were installed.`);
+    throw Error(`Incompatible game repository: missing ${file}. Update the game with authorized player-video export and ASR workflow support before bootstrap; no files were installed.`);
   }
-  if (!marker.test(source)) throw Error(`Incompatible game repository: ${file} lacks required player-video export capability. Update the game before bootstrap; no files were installed.`);
+  if (!marker.test(source)) throw Error(`Incompatible game repository: ${file} lacks required video capability. Update the game before bootstrap; no files were installed.`);
 }
 const target = join(root, 'scripts', 'video'); await mkdir(target, { recursive: true });
 const checkedTarget = await realpath(target);
@@ -44,7 +48,7 @@ for (const file of await readdir(artSource, { withFileTypes: true })) {
 }
 let packageUpdated = false;
 pkg.scripts ??= {}; pkg.devDependencies ??= {};
-for (const [name, script] of Object.entries({ 'video:make': 'tsx scripts/video/workflow.ts', 'video:compress': 'tsx scripts/video/compress.ts', 'video:audit-audio': 'tsx scripts/video/audit-audio.ts', 'video:repair-audio': 'tsx scripts/video/repair-audio.ts', 'video:publish-copy': 'tsx scripts/video/publish-copy.ts' })) {
+for (const [name, script] of Object.entries({ 'video:make': 'tsx scripts/video/workflow.ts', 'video:compress': 'tsx scripts/video/compress.ts', 'video:audit-audio': 'tsx scripts/video/audit-audio.ts', 'video:review-audio': 'tsx scripts/video/review-audio.ts', 'video:import-alignment': 'tsx scripts/video/import-audio-alignment.ts', 'video:repair-audio': 'tsx scripts/video/repair-audio.ts', 'video:publish-copy': 'tsx scripts/video/publish-copy.ts', 'asr:start': 'node scripts/asr/service.mjs start', 'asr:status': 'node scripts/asr/service.mjs status', 'asr:restart': 'node scripts/asr/service.mjs restart', 'asr:stop': 'node scripts/asr/service.mjs stop' })) {
   if (!pkg.scripts[name]) { pkg.scripts[name] = script; packageUpdated = true; }
 }
 if (!pkg.devDependencies['@napi-rs/canvas'] && !pkg.dependencies?.['@napi-rs/canvas']) { pkg.devDependencies['@napi-rs/canvas'] = '0.1.100'; packageUpdated = true; }

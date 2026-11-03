@@ -68,7 +68,7 @@ describe('玩家视频三种身份的权限与成片音频', () => {
       const narration = JSON.parse(await readFile(join(dir, 'narration.json'), 'utf8'));
       narration.review = { status: 'reviewed', method: '合成座位权限核对', factsChecked: true, playerQuotesUntouched: true, futureResultsNotUsedInProcessCommentary: true };
       await writeFile(join(dir, 'narration.json'), JSON.stringify(narration));
-      run('scripts/video/workflow.ts', [...args, '--through=render', '--tts-provider=synthetic-test', `--tts-adapter=${resolve(root, 'packages/session/test/fixtures/synthetic-video-tts.ts')}`]);
+      run('scripts/video/workflow.ts', [...args, '--through=render', '--asr-provider=off', '--tts-provider=synthetic-test', `--tts-adapter=${resolve(root, 'packages/session/test/fixtures/synthetic-video-tts.ts')}`]);
       const clips = JSON.parse(await readFile(join(dir, 'clips.json'), 'utf8'));
       const timeline = JSON.parse(await readFile(join(dir, 'timeline.json'), 'utf8'));
       expect(clips.find((clip: any) => clip.type === 'speech')?.text).toBe(publicSpeech);

@@ -1,10 +1,12 @@
 {
   "format": "werewolf-video-skill-bundle",
-  "version": 11,
-  "pipelineFiles": 43,
+  "version": 12,
+  "pipelineFiles": 48,
   "artFiles": 10,
   "source": "scripts/video/",
   "features": [
+    "locale-routed-independent-asr",
+    "verified-external-transcript-timing",
     "authorized-player-view",
     "player-audio-provenance",
     "shared-skill-animation",
@@ -30,5 +32,5 @@
     "native-compact-export",
     "strict-gpu-encoding"
   ],
-  "generatedAt": "2026-11-03T08:35:33.167Z"
+  "generatedAt": "2026-11-03T10:05:25.177Z"
 }

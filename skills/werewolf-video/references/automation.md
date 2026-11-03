@@ -28,6 +28,8 @@ Windows 读取微软雅黑字体。其他系统应在 `scene.ts` 的字体注册
 | qwen.ts / synthesize.ts | Qwen 协议适配与通用的多段合成调度 |
 | audio-cache.ts | 显式指定缓存目录 → 仅复用完整请求键相同的音频与元数据 |
 | audio-inspection.ts / audit-audio.ts | 原始 PCM → 非零平段、削波、静音及时间戳检查，定位报告和试听片段 |
+| review-audio.ts / asr-comparison.ts | 规范化同一原音 → 独立识别、原稿比较与缓存；中文/英语默认本地，日语仅在线 Qwen |
+| audio-alignment.ts / import-audio-alignment.ts | 核实英语/日语独立转写与真实词边界，创建绑定原音/原稿/响应的 sidecar；不覆盖原 TTS 元数据 |
 | repair-audio.ts | 异常报告／显式选择 → 有限次新种子重配、备份、质量通过后替换及可选重建成片 |
 | project.ts | 路径、类型、原文分段、号码读法、按法官 cue 选择已审核的连读／语速配置 |
 | audio.ts / timeline.ts | 实际 PCM → 规范音轨、字幕、绝对帧时间轴 |
@@ -47,6 +49,8 @@ Windows 读取微软雅黑字体。其他系统应在 `scene.ts` 的字体注册
 `workflow.ts --player-seat=N` 导出前调用 `buildPlayerVideo`；它通过 `projectSeat` 取该座位与公开事件，排除全知终局 `review`，再构造只包含本人真实身份的 cast，其余座位角色统一为 `unknown`。授权可见的查验结果、狼队密谈和其他私密原话仍保留在事件流中；它们不改变其他座位的身份标签。不能用终局 `review`、当前状态或 `knownIdentities` 回填早先画面。`project.ts` 会按当前存档重建投影并与导出逐项比较，`verify.ts` 再检查没有私密越权、完整规则卡或真实身份泄漏；不要以改摘要、重用旧导出或复制上帝视角缓存绕过这些检查。操作、审核和样片规则见[单玩家视角制作](player-view.md)。
 
 `workflow.ts` 用参数数组启动子进程，设置 cwd 和本次房间环境变量，不拼接 shell 字符串。每个阶段成功后写检查点；出错停止，保留前面产物。新程序也应保持这个接口，方便低成本模型直接运行而不重新手写整套流程。
+
+配音继续使用在线 Qwen；配音后的机械步骤是波形检查 → 独立 ASR 原话核对 → 完整字幕时间检查 → timeline。`--asr-provider=auto` 只在中文、英语核对时按配置复用或启动本地服务，日语始终选择在线 Qwen；准备/材料检查不启动 ASR，也不下载模型。日语显式本地/MiMo 在读取识别缓存或请求前就拒绝。原稿或明确别名的审核变化可复用原识别；音频、模型及识别参数变化必须重新识别。本地/MiMo 缺少可靠字时则停在 `alignment-required`，只有明确 `--alignment-provider=qwen-token-plan` 才额外请求英语词边界；中文外部对齐尚不支持。参数、恢复及批量入口见 [音频核对操作指南](local-asr.md)。
 
 ## 核心数据契约
 

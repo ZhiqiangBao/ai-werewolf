@@ -156,15 +156,16 @@ export async function rebuildAudioVideo(directory: string) {
 
 if (process.argv[1]?.replace(/\\/g, '/').endsWith('/repair-audio.ts')) {
   const args = process.argv.slice(2);
-  for (const arg of args) if (!['--auto', '--rebuild'].includes(arg) && !['--clips=', '--audit=', '--max-attempts='].some((p) => arg.startsWith(p))) throw Error(`Unknown audio repair option ${arg}`);
+  for (const arg of args) if (!['--auto', '--rebuild', '--waveform-only'].includes(arg) && !['--clips=', '--audit=', '--max-attempts='].some((p) => arg.startsWith(p))) throw Error(`Unknown audio repair option ${arg}`);
+  if (args.includes('--waveform-only') && args.includes('--rebuild')) throw Error('Waveform-only repair requires full caption validation before rebuilding');
   const auditFile = args.find((a) => a.startsWith('--audit='))?.slice(8);
   const report = await repairAudio(projectDir, { auto: args.includes('--auto'),
     ids: args.find((a) => a.startsWith('--clips='))?.slice(8).split(','),
     ...(auditFile ? { audit: JSON.parse(await readFile(resolve(projectDir, auditFile), 'utf8')) as AudioAudit } : {}),
     maxAttempts: Number(args.find((a) => a.startsWith('--max-attempts='))?.slice(15) ?? 3) });
   if (!report.complete) throw Error('Some audio repairs failed; originals and successful replacements were preserved');
-  const after = await auditAudio(projectDir, resolve(projectDir, 'output/audio-audit-after.json'));
+  const after = await auditAudio(projectDir, resolve(projectDir, 'output/audio-audit-after.json'), true, args.includes('--waveform-only'));
   if (after.failedClipIds.length) throw Error(`Audio issues remain: ${after.failedClipIds.join(', ')}`);
   if (args.includes('--rebuild')) await rebuildAudioVideo(projectDir);
-  console.log(JSON.stringify({ complete: true, repaired: report.entries.map((c) => c.id), audioAuditPassed: true, rebuilt: args.includes('--rebuild') }));
+  console.log(JSON.stringify({ complete: true, repaired: report.entries.map((c) => c.id), audioAuditPassed: true, validationScope: after.validationScope, rebuilt: args.includes('--rebuild') }));
 }

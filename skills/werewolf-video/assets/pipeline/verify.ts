@@ -8,11 +8,13 @@ import { assertPlayerSources, assertAuthorizedProject, assertPlayerAudio, assert
 import { captionContent } from './timeline';
 import { encodingSettings } from './encoding';
 import { inspectAudio } from './audio-inspection';
+import { assertTimelineAlignments } from './audio-alignment';
 
 const source = JSON.parse(await readFile(`${projectDir}/source.json`, 'utf8')) as Script;
 const script = JSON.parse(await readFile(`${projectDir}/script.json`, 'utf8')) as Script;
 const timeline = JSON.parse(await readFile(`${projectDir}/timeline.json`, 'utf8')) as { frames: number; duration: number; clips: TimedClip[] };
 await assertAuthorizedProject(timeline.clips);
+await assertTimelineAlignments(timeline.clips, source.locale ?? 'zh-CN');
 const masterSha256 = await assertPlayerAudio(timeline.clips);
 assert.deepEqual(script.events, source.events, 'Editorial changed the game facts');
 assertPlayerSources(source, script, timeline.clips);
@@ -65,6 +67,8 @@ assert.equal(media.chapters.length, source.chapters.length);
 const report = { roomId: source.roomId, video, bytes: (await stat(video)).size, durationSeconds: timeline.duration, frames: timeline.frames,
   resolution: '1920×1080', fps: FPS, chapters: media.chapters.length, clips: timeline.clips.length, captions,
   originalPlayerEntriesPreserved: sourcePlayers.length, privateWolfChatIncluded: source.events.some((e) => e.type === 'wolf.chat'), perspective: source.perspective, playerSeat: source.playerSeat, factsUnchanged: true,
+  validationScope: 'script-and-timing-only', audioSemanticReview: 'not-checked', voiceIdentityReview: 'not-checked',
+  timestampSources: [...new Set(timeline.clips.map((clip) => clip.captionAlignment ? `external-transcript:${clip.captionAlignment.engine}` : 'provider'))],
   finalAliveSeats: [...final.alive], winner: final.result.winnerName, audioVideoDifferenceSeconds: Math.abs(Number(picture.duration) - Number(audio.duration)),
   voices: [...new Set(timeline.clips.map((c) => c.audioMeta.voice))].length,
   audioWaveformAuditPassed: true,

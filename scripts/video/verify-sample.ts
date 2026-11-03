@@ -7,11 +7,13 @@ import { replay } from './replay';
 import { assertPlayerSources, assertAuthorizedProject, assertPlayerAudio, assertPlayerVideo } from './integrity';
 import { captionContent } from './timeline';
 import { inspectAudio } from './audio-inspection';
+import { assertTimelineAlignments } from './audio-alignment';
 const source: Script = JSON.parse(await readFile(`${projectDir}/source.json`, 'utf8'));
 const script: Script = JSON.parse(await readFile(`${projectDir}/script.json`, 'utf8'));
 const timeline: { frames: number; duration: number; clips: TimedClip[] } = JSON.parse(await readFile(`${projectDir}/timeline.json`, 'utf8'));
 const selection = JSON.parse(await readFile(`${projectDir}/sample-selection.json`, 'utf8'));
 await assertAuthorizedProject(timeline.clips);
+await assertTimelineAlignments(timeline.clips, source.locale ?? 'zh-CN');
 const masterSha256 = await assertPlayerAudio(timeline.clips);
 assert(script.sample);
 if (source.perspective === 'player') assert.deepEqual(source, await loadScript(), 'Player sample source differs from authorized export');
@@ -50,6 +52,8 @@ assert(Math.abs(Number(audio.duration) - Number(picture.duration)) < .06);
 const report = { video, bytes: (await stat(video)).size, durationSeconds: timeline.duration, clips: timeline.clips.length,
   selectedOriginalPlayerParts: timeline.clips.filter((c) => c.seat !== undefined && !c.data.presentationOnly).length,
   originalSelectedPlayerTextPreserved: true, factsUnchanged: true, nonContinuousExcerpt: true,
+  validationScope: 'script-and-timing-only', audioSemanticReview: 'not-checked', voiceIdentityReview: 'not-checked',
+  timestampSources: [...new Set(timeline.clips.map((clip) => clip.captionAlignment ? `external-transcript:${clip.captionAlignment.engine}` : 'provider'))],
   audioWaveformAuditPassed: true,
   reconstructedActionChoicesLabeled: true, reusedAudio: selection.reusedAudio,
   audioVideoDifferenceSeconds: Math.abs(Number(audio.duration) - Number(picture.duration)),

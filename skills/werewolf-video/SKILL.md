@@ -38,7 +38,7 @@ pnpm video:make --room=ROOM_ID --check-only --encoder=cpu
 pnpm video:make --room=ROOM_ID --resume
 ```
 
-这一条依次完成导出、材料准备、配音前材料检查、TTS、自动波形检查、音频时间轴、直接小体积渲染、预览和检查。**首次直接启动也会在材料检查处拦住未审核模板；它不会自动创作完整上帝解说。** `review` 是制作者真实核对的记录，程序检查格式、锚点、音色与原话，表达质量仍需按写作步骤审核。原话/法官取舍见 [剪辑规则](references/editing.md)。
+这一条依次完成导出、材料准备、配音前材料检查、TTS、波形检查、独立 ASR 原话核对、字幕时间检查、音频时间轴、直接小体积渲染、预览和检查。默认中文、英语使用已配置的本地 ASR，日语只使用 Qwen Token Plan 在线 ASR；本地服务在需要时自动复用或启动，模型须已安装。ASR 不接收原稿提示，不改写玩家原话；有差异时停在 `output/asr-review/report.json`，核对明确的专名别名后可复用识别缓存续跑。配置、服务选项及恢复步骤见 [本地与在线音频核对](references/local-asr.md)。**首次直接启动也会在材料检查处拦住未审核模板；它不会自动创作完整上帝解说。** `review` 是制作者真实核对的记录，程序检查格式、锚点、音色与原话，表达质量仍需按写作步骤审核。原话/法官取舍见 [剪辑规则](references/editing.md)。
 
 上帝视角检测到破音时停止在检查点；已授权的范围内加 `--repair-audio` 可自动重配异常片段并复查。该选项不支持单玩家视角。第一遍编码就限制码率，最终只拼接视频并编码主音轨，不先生成大母版再压缩。已成功的音频与视频片段自动复用。没有 pnpm，或 PowerShell 的 pnpm 启动器不能运行时，可直接运行同一个入口：
 
@@ -46,7 +46,7 @@ pnpm video:make --room=ROOM_ID --resume
 node node_modules/tsx/dist/cli.mjs scripts/video/workflow.ts --room=ROOM_ID --resume
 ```
 
-其他 agent 可用本技能的 `scripts/run.mjs --project=仓库绝对路径` 启动同一程序。如果目标仓库缺少制作程序，使用 `scripts/bootstrap.mjs --project=仓库绝对路径` 安装随技能附带的程序和美术资源，并补齐缺失的依赖声明与启动命令；已有实现保持原样。随后用项目包管理器安装依赖。游戏导出模块仍来自目标游戏仓库。
+其他 agent 可用本技能的 `scripts/run.mjs --project=仓库绝对路径` 启动同一程序。如果目标仓库缺少制作程序，使用 `scripts/bootstrap.mjs --project=仓库绝对路径` 安装随技能附带的程序和美术资源，并补齐缺失的依赖声明与启动命令；已有实现保持原样。随后用项目包管理器安装依赖。游戏导出模块、ASR 客户端与本地服务仍来自目标游戏仓库；缺少当前玩家导出或 ASR 能力时，bootstrap 会在安装前停止，先更新游戏仓库。技能包不附带模型权重或凭据。
 
 ## 必须保持的约束
 
@@ -58,7 +58,7 @@ node node_modules/tsx/dist/cli.mjs scripts/video/workflow.ts --room=ROOM_ID --re
 - 一位玩家固定一个声音，法官、解说分别固定声音。依据昵称、人设与人物图核对声线，不给全桌同一音色。
 - 上帝视角右栏展示本局全部身份的技能，长内容连续循环滚动，不固定展示某一个身份；单玩家视角只展示本人身份与简介，其他座位保持未知。授权的查验或密谈原话仍按历史顺序保留，但不能用终局 `review`、`knownIdentities` 或后来获知的信息回填此前身份。票型框按行数收紧，投票人号码和票数清楚。
 - 上帝视角底栏按本局 cast 显示头像、编号、身份与昵称；单玩家视角只显示本人真实身份，其他座位标“身份未知”。法官使用法槌徽记，上帝解说使用眼睛与星芒徽记，各有固定标签与声线。字幕在右侧独立文字区垂直居中；保留“行动转述／系统托管”等来源标记。画面细则见 [制作前准备](references/preproduction.md) 与 [单玩家视角制作](references/player-view.md)。
-- 使用实际 WAV 样本数与服务商真实时间戳/强制对齐。无时间戳时停止并做真实对齐；不估算阅读时长冒充正式时间轴。
+- 使用实际 WAV 样本数与服务商真实时间戳、核实后的独立 ASR 词边界或强制对齐。连续近似均分的词时会被拦截，不估算阅读时长冒充正式时间轴。英语、日语可从同次 Qwen ASR 响应核实原文映射后生成对齐 sidecar；这属于独立转写时间映射，不称作强制对齐。当前中文外部对齐尚不支持，缺少可靠字时就停止。
 - 字幕文字以已确认的朗读稿为准，服务商时间戳标签只用于定位；必须核对字幕与原稿，不能把标签里的同音错字直接烧进视频。字词漏增或无法可靠对应时做真实对齐。
 - TTS 后检查原始波形，不能只看平均音量或归一化后的峰值。使用自动工具定位异常、有限次重配并复查；正常片段保持缓存。排查破音、使用独立工具或维护检测规则时读 [配音质量检查与定点修复](references/audio-quality.md)。
 - `--player-seat=N` 已支持单玩家视角，并在导出时按席位权限过滤；它与含私密夜间信息的上帝视角是不同产物，不能复用全知素材。完整限制和验收要求见 [单玩家视角制作](references/player-view.md)。
@@ -74,13 +74,18 @@ node node_modules/tsx/dist/cli.mjs scripts/video/workflow.ts --room=ROOM_ID --re
 - `--video-locale=zh-CN|en|ja`：覆盖画面标签语言；也可设置环境变量 `VIDEO_LOCALE`。未覆盖时优先使用原局语言，旧记录缺失语言时使用 `zh-CN`。其他语言或方言可通过 `scripts/video/video-locale.ts` 的注册表扩展，并在制作进程中加载。
 - `--voices=绝对路径`、`--narration=绝对路径`：显式使用已整理的配置。
 - `--tts-provider=ID --tts-adapter=文件路径`：显式接入其他 TTS；内置仍为 `qwen-token-plan`，不自动换服务或计费线路。
+- `--asr-provider=auto|local|qwen-token-plan|mimo-token-plan|off`：默认 `auto`，中文/英语走本地，日语走 Qwen；日语显式 local/MiMo 会被拒绝。`off` 明确记录语义核对未执行，字幕时间检查仍执行。准备和材料检查阶段不启动本地 ASR。
+- `--asr-aliases=JSON文件`：按片段 ID 记录已经核对的专名或字形映射；差异未解决前不生成正式时间轴。原音频和识别参数未变时复用识别结果。
+- `--alignment-provider=qwen-token-plan`：本地/MiMo 识别通过但原字幕字时不可靠时，明确允许额外 Qwen 请求补充英语词边界。日语默认 Qwen 可复用同次响应；中文当前需另行提供可靠字时。没有该选项就停在 `alignment-required`，不悄悄改用在线服务。
 - `--repair-audio`：仅上帝视角在波形检测失败时重配异常片段，保留原文、固定声线与成功缓存，最多尝试三次；当前自动重配支持 Qwen Token Plan。单玩家视角不支持此选项。
 - `--check-only`：导出并刷新材料，执行配音前检查后停止，不调用 TTS 或渲染；缺项写入 `output/materials-check.json`。
-- `--through=plan|preflight|tts|audit-audio|timeline|render|preview|verify`：停在完整的阶段检查点；旧文件再压缩是独立工具，不在默认流程中。
+- `--through=plan|preflight|tts|audit-audio|review-audio|timeline|render|preview|verify`：停在完整的阶段检查点；旧文件再压缩是独立工具，不在默认流程中。
 
 画面语言覆盖只改变程序绘制的标签，不翻译历史玩家原话、音频或本局规则正文。规则正文与画面语言不同时，画面标明正文原语言；没有本局对应条款时标明中文默认身份简介。上帝／玩家视角由 `--player-seat` 和权限投影决定，不能把画面语言切换当作权限过滤。
 
 默认单路编码；显存与性能判断读 [硬件说明](references/hardware.md)。批量配音、Qwen 特例和接入其他服务时，读 [批量 TTS 与适配器修改](references/tts-batch.md)，其中逐项说明改哪些文件、输出什么、怎么配置和验证。维护程序或适配新日志读 [程序设计](references/automation.md)；小体积交付见 [压缩方案](references/compression.md)。
+
+英、日真实 TTS 的实际服务、用户反馈、日语 instruction 问题和修正样片范围见 [真实配音样品记录](references/real-tts-samples.md)。独立转写和时间检查不代替声线身份或听感审核，不把样品验收扩大为全局视频验收。
 
 ## 制作封面
 

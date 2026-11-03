@@ -6,9 +6,11 @@ import { encodingSettings } from './encoding';
 import { assertAuthorizedProject, assertPlayerAudio, assertPlayerVideo } from './integrity';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
+import { assertTimelineAlignments } from './audio-alignment';
 const timeline = JSON.parse(await readFile(`${projectDir}/timeline.json`, 'utf8')) as { clips: TimedClip[] };
 const script = JSON.parse(await readFile(`${projectDir}/script.json`, 'utf8')) as Script;
 const { source } = await assertAuthorizedProject(timeline.clips);
+await assertTimelineAlignments(timeline.clips, source.locale ?? 'zh-CN');
 const masterSha256 = await assertPlayerAudio(timeline.clips);
 if (source.perspective === 'player') {
   const digest = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');

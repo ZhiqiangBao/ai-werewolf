@@ -36,6 +36,9 @@ describe('video skill bundle bootstrap', () => {
       ['packages/engine/src/index.ts', 'export const projectSeat = 1'],
       ['packages/protocol/src/index.ts', 'export const buildVideoScript = 1'],
       ['packages/session/src/secret.ts', 'export class SecretBox {}'],
+      ['packages/session/src/asr.ts', 'export async function transcribeAudio() {} export async function ensureLocalAsrReady() {}'],
+      ['scripts/asr/service.mjs', '// server.py'],
+      ['scripts/asr/server.py', 'class PythonSocketGuard: pass'],
       ['scripts/video/voices.json', '{"custom":"preserved"}'],
     ]) await put(dir, file, text);
     const result = invoke(dir);
@@ -43,7 +46,7 @@ describe('video skill bundle bootstrap', () => {
     expect(JSON.parse(await readFile(join(dir, 'scripts/video/voices.json'), 'utf8'))).toEqual({ custom: 'preserved' });
     const directory = join(dir, 'scripts/video');
     const names = await readdir(directory);
-    for (const name of ['skill-effects-core.ts', 'skill-effects.ts', 'video-effect.ts', 'player-audio-provenance.ts']) expect(names).toContain(name);
+    for (const name of ['skill-effects-core.ts', 'skill-effects.ts', 'video-effect.ts', 'player-audio-provenance.ts', 'review-audio.ts', 'asr-comparison.ts', 'import-audio-alignment.ts']) expect(names).toContain(name);
     for (const file of names.filter((name) => name.endsWith('.ts'))) {
       const content = await readFile(join(directory, file), 'utf8');
       expect(content).not.toContain("../../packages/protocol/src/skill-effects");

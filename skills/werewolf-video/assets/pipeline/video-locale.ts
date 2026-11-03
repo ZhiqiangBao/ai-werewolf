@@ -1,5 +1,10 @@
 /** 画面文案注册表；只处理程序标签，不改写对局事实、原话或配音。 */
 export interface VideoLanguage { id: string; fallback?: string; messages: Readonly<Record<string, string>> }
+/** ISO 639-2/T language tag for the recorded audio. */
+export function videoAudioLanguage(locale?: string): string {
+  try { return ({ zh: 'zho', en: 'eng', ja: 'jpn' } as Record<string, string>)[new Intl.Locale(locale ?? 'zh-CN').language] ?? 'und'; }
+  catch { return 'und'; }
+}
 const packs = new Map<string, VideoLanguage>();
 export function registerVideoLanguage(pack: VideoLanguage): void {
   if (Intl.getCanonicalLocales(pack.id)[0] !== pack.id || packs.has(pack.id) || (pack.fallback && !packs.has(pack.fallback))) throw Error(`Invalid video language: ${pack.id}`);
