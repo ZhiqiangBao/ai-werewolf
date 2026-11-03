@@ -2,7 +2,7 @@ import { gameText } from '@werewolf/protocol';
 import type { GameResult } from '@werewolf/protocol';
 import type { Ctx } from '../context';
 
-/** 胜负检查点：开枪全部处理完之后。狼人全部出局优先判定好人获胜。 */
+/** 新版在死亡批次及各项出局职责前检查；旧版在技能处理后检查。双方同时满足时好人优先。 */
 export function evaluateWin(ctx: Ctx): GameResult | null {
   const players = ctx.state.players.map((p) => ({ p, mod: ctx.roleOf(p.seat) }));
   const alive = players.filter((x) => x.p.alive);

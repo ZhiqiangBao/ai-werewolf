@@ -44,7 +44,9 @@ export function buildRuleCard(rules: RuleSet): string {
       ? gameText(rules.locale, "· 好人阵营：所有狼人阵营成员出局即获胜。狼人阵营：所有平民出局，或所有神职（{0}）出局即获胜（屠边）。", gods.join('、'))
       : gameText(rules.locale, "· 好人阵营：所有狼人阵营成员出局即获胜。狼人阵营：所有好人出局即获胜（屠城）。"),
   );
-  L.push(gameText(rules.locale, "· 先处理同批次出局技能及其引发的死亡连锁，再判定胜负；若双方获胜条件同时满足，优先判定好人阵营获胜。"));
+  L.push(gameText(rules.locale, rules.deathResolutionVersion === 2
+    ? "· 每批死亡后先判定胜负；胜负已分立即结束，不再发动猎人开枪等出局技能。胜负未分才处理出局技能，每项技能前重新检查；若双方获胜条件同时满足，优先判定好人阵营获胜。"
+    : "· 先处理同批次出局技能及其引发的死亡连锁，再判定胜负；若双方获胜条件同时满足，优先判定好人阵营获胜。"));
 
   L.push(gameText(rules.locale, "二、夜晚"));
   L.push(gameText(rules.locale, "· 第 N 夜在第 N 天之前；夜间的「今晚」指本夜，第 N 天的「昨夜」指第 N 夜、「今晚」指第 N+1 夜。"));

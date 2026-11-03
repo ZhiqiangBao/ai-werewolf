@@ -8,6 +8,7 @@ import { validateRules } from './rules';
 import { err, normalizeCall, validateArgs } from './tools';
 import type { GameState, RuleError } from './types';
 import { migrateGameState } from './role-data';
+import { evaluateWin } from './flow/win';
 
 export interface CreateGameOptions {
   id: string;
@@ -67,6 +68,12 @@ function runAgenda(ctx: Ctx): void {
     if (++guard > 100_000) throw new Error(gameText(ctx.rules.locale, "议程没有收敛"));
     const step = s.agenda.shift();
     if (!step) throw new Error(gameText(ctx.rules.locale, "议程为空，但对局还没有结束"));
+    // 每批死亡及其各项职责开始前重新检查；前一枪致胜时取消已排队的后续技能。
+    if (s.rules.deathResolutionVersion === 2 &&
+      (step.type === 'deaths.batch' || step.dutySeat !== undefined) && evaluateWin(ctx)) {
+      getStep('win.check').run(ctx, { type: 'win.check' });
+      continue;
+    }
     getStep(step.type).run(ctx, step);
   }
 }
