@@ -1,4 +1,5 @@
 export { RoomManager, ApiFailure, type ManagerOptions } from './manager';
+export type { DisposeReport } from './manager';
 export { SecretBox, maskKey } from './secret';
 export { SpeechService } from './speech';
 export { SpeechConnections } from './speech/connections';

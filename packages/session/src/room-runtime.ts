@@ -40,10 +40,10 @@ interface SeatActionIds {
 
 function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
-    const abort = () => reject(new Error('Request cancelled'));
-    if (signal.aborted) return abort();
+    const abort = () => { signal.removeEventListener('abort', abort); reject(new Error('Request cancelled')); };
+    if (signal.aborted) { work.catch(() => {}); return abort(); }
     signal.addEventListener('abort', abort, { once: true });
-    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+    work.then((value) => { signal.removeEventListener('abort', abort); resolve(value); }, (error) => { signal.removeEventListener('abort', abort); reject(error); });
   });
 }
 
@@ -84,7 +84,7 @@ function clampTexts(call: ToolCall, tools: ToolSpec[]): ToolCall {
 export class RoomRuntimeService {
   private readonly rooms = new Map<string, RoomRuntimeState>();
   private timer: ReturnType<typeof setInterval> | null = null;
-  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly sleep?: (ms: number) => Promise<void>;
   private readonly cancelReasons = new WeakMap<AbortSignal, CancelReason>();
   /** Per room and seat, retain only IDs for that seat's most recent decision. */
   private readonly actionIds = new Map<string, Map<Seat, SeatActionIds>>();
@@ -96,8 +96,9 @@ export class RoomRuntimeService {
     private readonly adapters: Partial<Record<AdapterKind, Adapter>>,
     private readonly ports: RuntimePorts,
     private readonly observability?: RoomObservability,
+    private readonly isActive: () => boolean = () => true,
   ) {
-    this.sleep = sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+    this.sleep = sleep;
   }
 
   startTimer(tickMs: number): void {
@@ -121,6 +122,7 @@ export class RoomRuntimeService {
 
   /** 服务启动后继续推进进行中的对局。 */
   resumeAll(): void {
+    if (!this.isActive()) return;
     for (const live of this.rooms.values()) {
       if (live.rec.status === 'running') {
         this.armDeadlines(live, true);
@@ -131,12 +133,26 @@ export class RoomRuntimeService {
 
   stopTimer(): void {
     if (this.timer) clearInterval(this.timer);
+    this.timer = null;
   }
 
   /** 由兼容入口逐房间调用，保留取消该房间后立即落盘的退出顺序。 */
-  disposeRoom(rec: RoomRuntimeRecord): void {
-    for (const c of this.state(rec).inflight.values()) this.cancel(c, 'dispose');
+  disposeRoom(rec: RoomRuntimeRecord): { pending: number; auditFailures: number } {
+    const live = this.state(rec);
+    live.gen += 1; live.again = false; live.stepBudget = 0;
+    live.disposeController.abort();
+    const pending = live.inflight.size + live.externalWaits;
+    let auditFailures = 0;
+    for (const call of live.pendingCalls.values()) {
+      try { this.ports.writeAudit(rec, { ...call.entry, latencyMs: Math.max(0, Math.round(performance.now() - call.startedAt)) }); }
+      catch { auditFailures++; }
+    }
+    live.pendingCalls.clear();
+    for (const c of live.inflight.values()) this.cancel(c, 'dispose');
+    live.inflight.clear();
+    for (const thought of rec.thoughts ?? []) thought.live = false;
     this.actionIds.delete(rec.id);
+    return { pending, auditFailures };
   }
 
   private actionId(roomId: string, seat: Seat, decisionId: string | undefined, interrupt = false): string {
@@ -251,6 +267,9 @@ export class RoomRuntimeService {
       gatePausedAt: rec.paused && rec.timing && rec.actionAvailableAt ? this.now() : undefined,
       gen: 0,
       inflight: new Map(),
+      disposeController: new AbortController(),
+      externalWaits: 0,
+      pendingCalls: new Map(),
     };
   }
 
@@ -398,6 +417,7 @@ export class RoomRuntimeService {
   }
 
   tick(): void {
+    if (!this.isActive()) return;
     for (const live of this.rooms.values()) {
       const rec = live.rec;
       const d = rec.state?.pending;
@@ -421,7 +441,7 @@ export class RoomRuntimeService {
 
   /** 每房间复用一个推进任务；重复触发只安排当前任务结束后重新检查。 */
   private pump(live: RoomRuntimeState): Promise<void> {
-    if (live.rec.status === 'ended') return Promise.resolve();
+    if (!this.isActive() || live.rec.status === 'ended') return Promise.resolve();
     if (live.running) {
       live.again = true;
       return live.running;
@@ -441,7 +461,7 @@ export class RoomRuntimeService {
         this.changedState(live);
       } finally {
         live.running = null;
-        if (live.again && live.rec.status === 'running') void this.pump(live);
+        if (this.isActive() && live.again && live.rec.status === 'running') void this.pump(live);
       }
     })();
     return live.running;
@@ -504,6 +524,7 @@ export class RoomRuntimeService {
       try {
         await Promise.all(wave.map((w, i) => (w.action ? this.runAi(live, w.seat, decision, members[i]) : this.receive(live, w.seat, decision, members[i]))));
       } finally { if (awaitStarted !== undefined) awaitMs = observed!.clock.monotonicMs() - awaitStarted; }
+      if (live.gen !== gen || !this.isActive()) return;
       const waveAwaitEnded = awaitStarted === undefined || awaitMs === undefined ? undefined : awaitStarted + awaitMs;
       if (observed && waveAwaitEnded !== undefined) for (const member of members) if (member.endedAt !== undefined) {
         const tail = observed.begin('local_span', member.ref, { parentId: member.id, ...member.fields });
@@ -700,8 +721,23 @@ export class RoomRuntimeService {
   }
 
   private invokeCall(live: RoomRuntimeState, adapter: Adapter, request: DecideRequest, controller: AbortController,
-    context: WorkObservation | undefined): Promise<DecideResult> {
-    if (!context || !this.observability) return abortable(adapter.decide(request), controller.signal);
+    context: WorkObservation | undefined, decisionId: string): Promise<DecideResult> {
+    const gen = live.gen;
+    const valid = () => this.isActive() && live.gen === gen && !controller.signal.aborted;
+    const guarded: DecideRequest = { ...request,
+      onDelta: request.onDelta ? (delta) => { if (valid()) request.onDelta!(delta); } : undefined,
+      onRequest: request.onRequest ? (info) => { if (valid()) request.onRequest!(info); } : undefined };
+    const track = (dispatch: () => Promise<DecideResult>): Promise<DecideResult> => {
+      const cfg = live.rec.seats[request.seat - 1];
+      const item = { startedAt: performance.now(), entry: { seat: request.seat, model: cfg.adapter === 'mock' ? 'mock' : cfg.model,
+        decisionId, projectionVersion: request.projection?.version ?? 0, purpose: request.toolChoice === 'auto' ? 'listen' as const : 'action' as const,
+        apiProtocol: request.config.apiProtocol, ok: false, failureKind: 'cancelled' as const, error: 'dispose' } };
+      live.pendingCalls.set(controller, item);
+      let pending: Promise<DecideResult>;
+      try { pending = dispatch(); } catch (error) { live.pendingCalls.delete(controller); throw error; }
+      return pending.then((result) => { if (live.pendingCalls.get(controller) === item) live.pendingCalls.delete(controller); return result; }, (error) => { if (live.pendingCalls.get(controller) === item) live.pendingCalls.delete(controller); throw error; });
+    };
+    if (!context || !this.observability) return track(() => abortable(adapter.decide(guarded), controller.signal));
     const callId = this.observability.id('call');
     const ref: ObservationRef = { ...context.ref, callId };
     const metadata = this.observability.provider(live.rec.seats[request.seat - 1]);
@@ -719,10 +755,11 @@ export class RoomRuntimeService {
     let pending: Promise<DecideResult>;
     try {
       const port = this.observability.adapter(ref);
-      pending = abortable(adapter.decide({ ...request, observation: { ...port, emit: (event) => {
+      pending = track(() => abortable(adapter.decide({ ...guarded, observation: { ...port, emit: (event) => {
+        if (!valid()) return;
         if (event.kind === 'adapter_execution' && event.phase === 'end') context.adapterOutcome = event.outcome;
         port.emit(event);
-      } } }), controller.signal);
+      } } }), controller.signal));
     } catch (error) {
       controller.signal.removeEventListener('abort', cancel);
       context.endedAt = this.observability.clock.monotonicMs();
@@ -766,12 +803,25 @@ export class RoomRuntimeService {
   }
 
   private observedWait(live: RoomRuntimeState, operation: 'gate_wait' | 'pacing_wait', plannedMs: number, ref?: ObservationRef): Promise<void> {
-    if (!this.observability) return this.sleep(plannedMs);
-    const span = this.observability.begin('local_span', ref ?? this.observability.ref(live.rec), { operation });
+    const signal = live.disposeController.signal;
+    const span = this.observability?.begin('local_span', ref ?? this.observability.ref(live.rec), { operation });
     const gen = live.gen;
-    return this.sleep(plannedMs).then(() => span.finish(live.gen === gen ? 'success' : 'cancelled', {
+    let wait: Promise<void>;
+    if (this.sleep) {
+      const external = this.sleep(plannedMs);
+      live.externalWaits++;
+      void external.then(() => { live.externalWaits--; }, () => { live.externalWaits--; });
+      wait = abortable(external, signal);
+    } else wait = new Promise<void>((resolve, reject) => {
+      if (signal.aborted) return reject(new Error('Request cancelled'));
+      const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve(); }, plannedMs);
+      const abort = () => { clearTimeout(timer); signal.removeEventListener('abort', abort); reject(new Error('Request cancelled')); };
+      signal.addEventListener('abort', abort, { once: true });
+    });
+    if (!span) return wait;
+    return wait.then(() => span.finish(live.gen === gen ? 'success' : 'cancelled', {
       plannedWaitMs: measured(plannedMs), [operation === 'gate_wait' ? 'gateWaitMs' : 'pacingWaitMs']: measured(span.elapsed())
-    }), (error) => { span.finish('local_error'); throw error; });
+    }), (error) => { span.finish(live.gen === gen ? 'local_error' : 'cancelled'); throw error; });
   }
 
   /** 旁听属于消息；阶段变化不直接取消，提交打断前再次校验当前许可。 */
@@ -822,7 +872,7 @@ export class RoomRuntimeService {
             thinkingChars += delta.thinking?.length ?? 0;
             replyChars += delta.reply?.length ?? 0;
           },
-        }, ctrl, context);
+        }, ctrl, context, decision);
       } catch (e) {
         if (live.gen !== gen || ctrl.signal.aborted) return;
         result = { ok: false, fatal: true, error: redact((e as Error).message, config.apiKey), failureKind: 'network', toolCallIds: [], latencyMs: 0 };
@@ -927,7 +977,7 @@ export class RoomRuntimeService {
               replyChars += delta.reply?.length ?? 0;
               if (stillWaiting() && !ctrl.signal.aborted) this.pushThought(live, seat, decision, delta);
             },
-          }, ctrl, context);
+          }, ctrl, context, decision);
           last = result;
         } catch (e) {
           if (live.gen !== gen || ctrl.signal.aborted || rec.status !== 'running') return;
@@ -971,7 +1021,7 @@ export class RoomRuntimeService {
       }
       this.fallbackIfWaiting(live, seat, decision, 'invalid_tool');
     } finally {
-      this.finishThought(live, seat, decision, last);
+      if (live.gen === gen && this.isActive()) this.finishThought(live, seat, decision, last);
       if (live.inflight.get(key) === ctrl) live.inflight.delete(key);
     }
   }

@@ -261,13 +261,13 @@ export class RoomLobbyService {
     return errors;
   }
 
-  async testSeat(rec: RoomReadRecord, seat: Seat): Promise<SeatTestResult> {
+  async testSeat(rec: RoomReadRecord, seat: Seat, signal?: AbortSignal): Promise<SeatTestResult> {
     const s = rec.seats.find((x) => x.seat === seat);
     if (!s) throw new ApiFailure(404, 'NOT_FOUND', `没有 ${seat} 号座位`);
     if (s.adapter === 'mock') return { ok: true, message: '模拟玩家不需要联网。', latencyMs: 0 };
     const config = adapterConfig(s, this.secrets);
     if (!config.baseUrl || !config.model) return { ok: false, message: '请先为这个座位选择模型。', latencyMs: 0 };
-    const r = await testConnection(config);
+    const r = await testConnection(config, signal);
     return { ...r, message: redact(r.message, config.apiKey) };
   }
 

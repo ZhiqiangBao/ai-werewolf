@@ -98,11 +98,11 @@ export const openaiAdapter: Adapter = {
 
 const PING: ToolSpec = { name: 'ping', title: '连通性测试', description: '仅用于接口测试；调用一次，参数填写 {"ok":true}。不产生游戏行动。', params: [{ kind: 'boolean', name: 'ok', label: '固定为 true' }] };
 
-export async function testConnection(config: AdapterConfig): Promise<{ ok: boolean; message: string; latencyMs: number }> {
+export async function testConnection(config: AdapterConfig, signal?: AbortSignal): Promise<{ ok: boolean; message: string; latencyMs: number }> {
   const { remoteAdapter } = await import('./adapters');
   const result = await remoteAdapter(config.apiProtocol).decide({ seat: 0,
     messages: [{ role: 'system', content: '这是一次接口连通性测试。' }, { role: 'user', content: '请调用 ping 工具，参数 ok 设为 true。' }],
-    tools: [PING], config: { ...config, timeoutSec: Math.min(config.timeoutSec, 30) },
+    tools: [PING], config: { ...config, timeoutSec: Math.min(config.timeoutSec, 30) }, signal,
   });
   return result.ok && result.call?.tool === 'ping' && result.call.args.ok === true
     ? { ok: true, message: '连接成功，模型返回了一次 ping 调用。', latencyMs: result.latencyMs }

@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 import type { ControlAction } from '@werewolf/protocol';
 import { acquireDataLease, ApiFailure, FileStore, RoomManager, SecretBox, SpeechConnections, SpeechService } from '@werewolf/session';
 import { DEFAULT_HOST, inviteNetwork } from './invite-network';
+import { attachEventStream } from './event-stream';
+import { shutdownResources } from './shutdown';
 
 const ROOT = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
 const WEB = join(ROOT, 'apps', 'web');
@@ -13,6 +15,7 @@ const DATA = resolve(process.env.WEREWOLF_DATA ?? join(ROOT, 'data'));
 const DEV = process.argv.includes('--dev');
 const PORT = Number(process.env.PORT ?? 5173);
 const HOST = process.env.HOST ?? DEFAULT_HOST;
+let stopping = false;
 
 const releaseLease = acquireDataLease(DATA);
 process.once('exit', () => { try { releaseLease(); } catch { /* 留下锁供人工核查。 */ } });
@@ -34,6 +37,7 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> 
     if (size > 1_000_000) throw new ApiFailure(413, 'TOO_LARGE', '请求体过大');
     chunks.push(chunk as Buffer);
   }
+  if (stopping) throw new ApiFailure(503, 'MANAGER_DISPOSED', '服务正在关闭，请稍后重新连接');
   if (!chunks.length) return {};
   try {
     const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
@@ -78,20 +82,10 @@ async function speechSettings(req: IncomingMessage, res: ServerResponse, method:
   throw new ApiFailure(404, 'NOT_FOUND', '接口不存在');
 }
 
+const streams = new Set<() => void>();
 function stream(req: IncomingMessage, res: ServerResponse, roomId: string, token: string): void {
   const unsubscribe = manager.subscribe(roomId, token, (n) => res.write(`event: update\ndata: ${n}\n\n`));
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream; charset=utf-8',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
-  res.write('retry: 2000\n\n');
-  const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
-  req.on('close', () => {
-    clearInterval(ping);
-    unsubscribe();
-  });
+  attachEventStream(req, res, unsubscribe, streams);
 }
 
 async function api(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
@@ -208,11 +202,12 @@ async function serveStatic(res: ServerResponse, pathname: string): Promise<void>
 }
 
 const server = createServer();
-let vite: { middlewares: (req: IncomingMessage, res: ServerResponse, next: () => void) => void } | null = null;
+let vite: { middlewares: (req: IncomingMessage, res: ServerResponse, next: () => void) => void; close: () => Promise<void> } | null = null;
 
 server.on('request', async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost');
   try {
+    if (stopping) throw new ApiFailure(503, 'MANAGER_DISPOSED', '服务正在关闭，请稍后重新连接');
     if (url.pathname.startsWith('/api/v1/')) return await api(req, res, url);
     if (vite) return vite.middlewares(req, res, () => send(res, 404, { code: 'NOT_FOUND', message: '页面不存在' }));
     return await serveStatic(res, url.pathname);
@@ -223,16 +218,34 @@ server.on('request', async (req, res) => {
   }
 });
 
+let shutdownPromise: Promise<void> | undefined;
+const shutdown = () => {
+  if (shutdownPromise) return;
+  stopping = true;
+  const requestedGrace = Number(process.env.WEREWOLF_SHUTDOWN_GRACE_MS ?? 5000);
+  const grace = Number.isFinite(requestedGrace) && requestedGrace > 0 ? requestedGrace : 5000;
+  shutdownPromise = (async () => {
+    const code = await shutdownResources({
+      stopAccepting: () => { const closed = new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); server.closeIdleConnections(); return closed; },
+      closeStreams: () => { let failed = false; for (const close of [...streams]) { try { close(); } catch { failed = true; } } if (failed) throw new Error('STREAM_RELEASE_FAILED'); },
+      dispose: () => manager.dispose(), whenDisposed: () => manager.whenDisposed(),
+      closeFrontend: () => vite?.close() ?? Promise.resolve(),
+      forceConnections: () => server.closeAllConnections(), release: releaseLease, graceMs: grace,
+    });
+    if (code === 2) console.error('服务退出超时，仍有本地连接或资源未完成收尾。');
+    else if (code === 1) console.error('服务退出时房间保存或资源释放失败。');
+    process.exit(code);
+  })();
+};
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+
 if (DEV) {
   const { createServer: createVite } = await import('vite');
-  vite = await createVite({
-    root: WEB,
-    appType: 'spa',
-    server: { middlewareMode: true, hmr: { server } },
-  });
+  vite = await createVite({ root: WEB, appType: 'spa', server: { middlewareMode: true, hmr: { server } } });
 }
 
-server.listen(PORT, HOST, () => {
+if (!stopping) server.listen(PORT, HOST, () => {
   manager.resumeAll();
   const shown = HOST === '0.0.0.0' ? 'localhost' : HOST;
   console.log(`AI 狼人杀已启动：http://${shown}:${PORT}/  （${DEV ? '开发模式' : '生产模式'}，数据目录 ${DATA}）`);
@@ -241,10 +254,3 @@ server.listen(PORT, HOST, () => {
     for (const entry of inviteNetwork(address).addresses) console.log(`局域网访问：${entry.origin}/  （${entry.label}）`);
   }
 });
-
-const shutdown = () => {
-  manager.dispose();
-  process.exit(0);
-};
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);

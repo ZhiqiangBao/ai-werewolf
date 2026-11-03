@@ -146,18 +146,14 @@ describe('room runtime observation', () => {
     const dispatched = pending.length;
     const initialCallIds = callEvents(events).filter((event) => event.phase === 'start').map((event) => event.id);
     if (operation === 'dispose') manager.dispose(); else manager.control(rec.id, rec.hostToken, operation);
-    const recordedAtFinish = events.length;
-    if (operation === 'dispose') { for (let i = 0; i < 30; i++) await Promise.resolve(); }
+    if (operation === 'dispose') await manager.whenDisposed();
     else await manager.whenIdle(rec.id);
-    if (operation !== 'dispose') expect(pending).toHaveLength(dispatched);
-    else {
-      expect(events).toHaveLength(recordedAtFinish);
+    expect(pending).toHaveLength(dispatched);
+    if (operation === 'dispose') {
       const starts = events.filter((event) => event.phase === 'start');
       for (const start of starts) expect(events.filter((event) => event.id === start.id && event.phase === 'end')).toHaveLength(1);
       for (const id of initialCallIds) expect(callEvents(events).find((event) => event.id === id && event.phase === 'end')?.outcome).toMatch(/^(cancelled|incomplete)$/);
-      // Stop the synthetic room after checking the original dispose boundary.
-      manager.control(rec.id, rec.hostToken, 'end');
-      await manager.whenIdle(rec.id);
+      expect(() => manager.control(rec.id, rec.hostToken, 'end')).toThrow('服务正在关闭');
     }
     const snapshot = structuredClone(manager.view(rec.id, rec.hostToken).projection!.events);
     const endsBefore = callEvents(events).filter((event) => event.phase === 'end');
@@ -221,10 +217,10 @@ describe('room runtime observation', () => {
       const adapter: Adapter = { decide: (req) => { requests.push({ seat: req.seat, purpose: req.toolChoice }); return new Promise(() => {}); } };
       const { manager } = managerFor([rec], adapter, enabled ? { emit: (event) => events.push(event) } : undefined);
       manager.control(rec.id, rec.hostToken, 'resume'); await settle(() => requests.length > 0);
-      manager.dispose(); const eventCount = events.length;
+      manager.dispose(); await manager.whenDisposed(); const eventCount = events.length;
       for (let i = 0; i < 30; i++) await Promise.resolve();
       expect(events).toHaveLength(eventCount);
-      manager.control(rec.id, rec.hostToken, 'end'); await manager.whenIdle(rec.id);
+      expect(() => manager.control(rec.id, rec.hostToken, 'end')).toThrow('服务正在关闭');
       return requests;
     };
     expect(await run(true)).toEqual(await run(false));

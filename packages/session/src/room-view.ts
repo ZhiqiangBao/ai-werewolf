@@ -7,6 +7,7 @@ import type { RoomReadRecord, RoomViewState, Subscriber, Viewer } from './room-t
 
 export class RoomViewService {
   private readonly states = new Map<string, RoomViewState>();
+  private readonly closed = new Set<string>();
 
   constructor(private readonly now: () => number, private readonly ports: {
     seatView(s: SeatRecord): SeatConfigView;
@@ -75,7 +76,7 @@ export class RoomViewService {
     // 新订阅的响应头尚未写出；仅向已经建立的其他连接通知在线变化。
     sub.sig = this.signature(rec, viewer);
     this.notify(rec);
-    return () => { state.subscribers.delete(sub); this.notify(rec); };
+    return () => { state.subscribers.delete(sub); if (!this.closed.has(rec.id)) this.notify(rec); };
   }
 
   exportRecord(rec: RoomReadRecord, viewer: Viewer, kind: 'public' | 'god'): unknown {
@@ -115,7 +116,7 @@ export class RoomViewService {
   }
 
   private participants(rec: RoomReadRecord): HumanParticipant[] {
-    const subscribers = this.getState(rec).subscribers;
+    const subscribers = this.states.get(rec.id)?.subscribers;
     return rec.seats.filter((s) => s.controller === 'human').map((s) => ({
       seat: s.seat, joined: rec.participants?.[s.seat]?.joined ?? false, ready: rec.participants?.[s.seat]?.ready ?? false,
       online: !!subscribers && [...subscribers].some((sub) => sub.viewer.role === 'seat' && sub.viewer.seat === s.seat),
@@ -164,6 +165,7 @@ export class RoomViewService {
   }
 
   notify(rec: RoomReadRecord): void {
+    if (this.closed.has(rec.id)) return;
     for (const sub of this.getState(rec).subscribers) {
       const sig = this.signature(rec, sub.viewer);
       if (sig === sub.sig) continue;
@@ -177,6 +179,7 @@ export class RoomViewService {
   }
 
   publishThoughts(rec: RoomReadRecord, immediate: boolean): void {
+    if (this.closed.has(rec.id)) return;
     const state = this.getState(rec);
     const send = () => {
       if (state.thoughtTimer) clearTimeout(state.thoughtTimer);
@@ -199,8 +202,9 @@ export class RoomViewService {
   }
 
   dispose(rec: RoomReadRecord): void {
+    this.closed.add(rec.id);
     const state = this.states.get(rec.id);
     if (state?.thoughtTimer) clearTimeout(state.thoughtTimer);
-    if (state) state.thoughtTimer = null;
+    if (state) { state.thoughtTimer = null; state.subscribers.clear(); }
   }
 }
