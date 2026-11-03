@@ -6,6 +6,23 @@ const arg = process.argv.slice(2).find((s) => s.startsWith('--project='));
 if (!arg) throw Error('Supply --project=ABSOLUTE_REPOSITORY_PATH');
 const root = await realpath(resolve(arg.slice(10))), pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
 if (pkg.name !== 'ai-werewolf') throw Error('This bundle targets the ai-werewolf repository schema');
+// Player video re-derives its source from the game projection; never install a
+// pipeline that would later discover that this authorization capability is missing.
+const required = [
+  ['packages/session/src/player-video.ts', /export\s+function\s+buildPlayerVideo\s*\(/],
+  ['packages/session/scripts/export-video.ts', /--player-seat=/],
+  ['packages/engine/src/index.ts', /\bprojectSeat\b/],
+  ['packages/protocol/src/index.ts', /\bbuildVideoScript\b/],
+  ['packages/session/src/secret.ts', /\bSecretBox\b/],
+];
+for (const [file, marker] of required) {
+  let source;
+  try { source = await readFile(join(root, file), 'utf8'); } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    throw Error(`Incompatible game repository: missing ${file}. Update the game with authorized player-video export support before bootstrap; no files were installed.`);
+  }
+  if (!marker.test(source)) throw Error(`Incompatible game repository: ${file} lacks required player-video export capability. Update the game before bootstrap; no files were installed.`);
+}
 const target = join(root, 'scripts', 'video'); await mkdir(target, { recursive: true });
 const checkedTarget = await realpath(target);
 if (!checkedTarget.startsWith(root + sep)) throw Error('Pipeline directory resolves outside the intended repository');

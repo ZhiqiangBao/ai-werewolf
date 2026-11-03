@@ -12,6 +12,7 @@ export function materialIssues(source: Script, narration: unknown, voices: Voice
   const issues: string[] = [];
   if (!object(narration)) return ['narration.json 必须是对象'];
   if (narration.roomId !== source.roomId) issues.push('解说稿 roomId 与本局不一致');
+  if (source.perspective === 'player' && (narration.playerSeat !== source.playerSeat || !object(narration.edits) || Object.keys(narration.edits).length)) issues.push('玩家视角只允许本座位记录原文，不允许自由解说或沿用其他视角的编辑稿');
   const review = narration.review;
   if (!object(review) || review.status !== 'reviewed' || !text(review.method) ||
     review.factsChecked !== true || review.playerQuotesUntouched !== true || review.futureResultsNotUsedInProcessCommentary !== true) {

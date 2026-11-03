@@ -3,8 +3,24 @@ import { readFile, writeFile, mkdir, open } from 'node:fs/promises';
 import { projectDir, ffmpeg, SAMPLE_RATE, FPS, type Script, type TimedClip } from './project';
 import { readPcm, wavHeader } from './audio';
 import { encodingSettings } from './encoding';
+import { assertAuthorizedProject, assertPlayerAudio, assertPlayerVideo } from './integrity';
+import { createHash } from 'node:crypto';
+import assert from 'node:assert/strict';
 const timeline = JSON.parse(await readFile(`${projectDir}/timeline.json`, 'utf8')) as { clips: TimedClip[] };
 const script = JSON.parse(await readFile(`${projectDir}/script.json`, 'utf8')) as Script;
+const { source } = await assertAuthorizedProject(timeline.clips);
+const masterSha256 = await assertPlayerAudio(timeline.clips);
+if (source.perspective === 'player') {
+  const digest = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
+  const viewHash = digest(JSON.stringify(source));
+  await assertPlayerVideo(source, `${projectDir}/output/latest-match.mp4`, masterSha256);
+  for (const clip of timeline.clips) {
+    const segment = `${projectDir}/segments/${clip.id}.mp4`;
+    const marker = JSON.parse(await readFile(`${segment}.json`, 'utf8'));
+    assert.equal(marker.viewHash, viewHash, 'Segment belongs to another view');
+    assert.equal(marker.videoSha256, digest(await readFile(segment)), 'Stale preview segment');
+  }
+}
 const first = (type: string) => timeline.clips.find((c) => c.type === type);
 const choices = [first('game.start'), first('wolf.chat'), first('seer.result'), first('speech'), first('vote.result'), first('badge.transfer'),
   timeline.clips.findLast((c) => c.type === 'dawn'), first('game.end')];
@@ -29,6 +45,6 @@ const frameChoices = [
 for (const { name, clip } of frameChoices) {
   execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', '-ss', String(clip.startFrame / FPS + Math.min(1, clip.audioDuration / 2)), '-i', 'output/latest-match.mp4', '-frames:v', '1', `output/review/${name}.jpg`], { cwd: projectDir, windowsHide: true, stdio: 'inherit' });
 }
-await writeFile(`${projectDir}/output/preview-selection.json`, JSON.stringify({ description: '非连续节选，用于检查夜间、玩家、上帝、票型与终局（如选段含终局）', duration: frames / FPS, clips: clips.map((c) => ({ id: c.id, sourceSeq: c.sourceSeq, type: c.type })),
+await writeFile(`${projectDir}/output/preview-selection.json`, JSON.stringify({ description: script.perspective === 'player' ? '玩家视角非连续节选，用于检查可见事件、发言、票型与终局' : '非连续节选，用于检查夜间、玩家、上帝、票型与终局（如选段含终局）', duration: frames / FPS, clips: clips.map((c) => ({ id: c.id, sourceSeq: c.sourceSeq, type: c.type })),
   reviewFrames: frameChoices.map(({ name, clip }) => ({ file: `review/${name}.jpg`, clip: clip.id })) }, null, 2));
 console.log(JSON.stringify({ preview: `${projectDir}/output/workflow-preview.mp4`, durationSeconds: frames / FPS, sampledFrames: frameChoices.length }));

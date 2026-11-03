@@ -1,17 +1,20 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFile, writeFile, stat } from 'node:fs/promises';
-import { buildClips, projectDir, ffprobe, FPS, SAMPLE_RATE, type Script, type TimedClip } from './project';
+import { buildClips, loadScript, projectDir, ffprobe, FPS, SAMPLE_RATE, type Script, type TimedClip } from './project';
 import { readPcm } from './audio';
 import { replay } from './replay';
-import { assertPlayerSources } from './integrity';
+import { assertPlayerSources, assertAuthorizedProject, assertPlayerAudio, assertPlayerVideo } from './integrity';
 import { captionContent } from './timeline';
 import { inspectAudio } from './audio-inspection';
 const source: Script = JSON.parse(await readFile(`${projectDir}/source.json`, 'utf8'));
 const script: Script = JSON.parse(await readFile(`${projectDir}/script.json`, 'utf8'));
 const timeline: { frames: number; duration: number; clips: TimedClip[] } = JSON.parse(await readFile(`${projectDir}/timeline.json`, 'utf8'));
 const selection = JSON.parse(await readFile(`${projectDir}/sample-selection.json`, 'utf8'));
+await assertAuthorizedProject(timeline.clips);
+const masterSha256 = await assertPlayerAudio(timeline.clips);
 assert(script.sample);
+if (source.perspective === 'player') assert.deepEqual(source, await loadScript(), 'Player sample source differs from authorized export');
 assertPlayerSources(source, script, timeline.clips);
 assert.deepEqual(script.events, source.events, 'Sample changed original game facts');
 const playerParts = buildClips(source).filter((c) => c.seat !== undefined);
@@ -38,6 +41,7 @@ for (const c of timeline.clips) {
 }
 assert.equal(frames, timeline.frames);
 const video = process.argv.find((a) => a.startsWith('--video='))?.slice(8) ?? `${projectDir}/output/revision-sample.mp4`;
+await assertPlayerVideo(source, video, masterSha256);
 const info = JSON.parse(execFileSync(ffprobe, ['-v', 'error', '-show_streams', '-show_chapters', '-show_format', '-of', 'json', video], { encoding: 'utf8', windowsHide: true }));
 const picture = info.streams.find((s: any) => s.codec_type === 'video'), audio = info.streams.find((s: any) => s.codec_type === 'audio');
 assert.equal(Number(picture.nb_frames), frames);

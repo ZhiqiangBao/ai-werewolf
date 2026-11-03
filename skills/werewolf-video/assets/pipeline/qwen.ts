@@ -9,6 +9,7 @@ export type { VoiceProfile, Word, AudioMeta } from './tts-types';
 // The user authorized Token Plan. Never silently switch to a pay-as-you-go key.
 const ENDPOINT = 'https://token-plan.maas.qianwenaiapi.com/api/v1/services/audio/tts/SpeechSynthesizer';
 export async function synthesizeQwen(text: string, profile: VoiceProfile, model: string, output: string, options?: { signal?: AbortSignal; endpoint?: string; apiKey?: string }): Promise<AudioMeta> {
+  options?.signal?.throwIfAborted();
   const explicit = options?.endpoint !== undefined || options?.apiKey !== undefined;
   const endpoint = options?.endpoint ?? ENDPOINT;
   if (explicit) {
@@ -23,9 +24,11 @@ export async function synthesizeQwen(text: string, profile: VoiceProfile, model:
   try {
     const meta = JSON.parse(await readFile(output + '.json', 'utf8')) as AudioMeta;
     const bytes = await readFile(output);
+    options?.signal?.throwIfAborted();
     if (meta.cacheKey === cacheKey && bytes.length === meta.bytes && bytes.subarray(0, 4).toString() === 'RIFF') return meta;
-  } catch { /* Missing/incomplete cache: regenerate this clip only. */ }
+  } catch { options?.signal?.throwIfAborted(); /* Missing/incomplete cache: regenerate this clip only. */ }
   const reused = await reuseAudio(cacheKey, output);
+  options?.signal?.throwIfAborted();
   if (reused) return reused;
   const apiKey = explicit ? options!.apiKey : process.env.WEREWOLF_TTS_API_KEY || projectQwenTokenPlanKey();
   if (explicit ? !apiKey : !apiKey?.startsWith('sk-sp-')) throw Error('Qwen Token Plan key is unavailable');
@@ -84,9 +87,14 @@ export async function synthesizeQwen(text: string, profile: VoiceProfile, model:
   audio ??= Buffer.concat(audioChunks);
   if (audio.length < 1000 || audio.subarray(0, 4).toString() !== 'RIFF') throw Error('Qwen TTS did not return a complete WAV');
   const meta: AudioMeta = { cacheKey, model, voice: profile.voice, text, sentences: [...sentences.values()], requestId, bytes: audio.length };
+  options?.signal?.throwIfAborted();
   await mkdir(dirname(output), { recursive: true });
+  options?.signal?.throwIfAborted();
   await writeFile(output + '.partial', audio);
+  options?.signal?.throwIfAborted();
   await rename(output + '.partial', output);
+  options?.signal?.throwIfAborted();
   await writeFile(output + '.json', JSON.stringify(meta, null, 2));
+  options?.signal?.throwIfAborted();
   return meta;
 }

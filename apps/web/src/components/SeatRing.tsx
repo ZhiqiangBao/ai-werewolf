@@ -7,6 +7,8 @@ import { publicActivity, publicElection, seatIdentity, seatPosition } from '../g
 import { phaseLabel, roleTone, seatStyle } from '../util';
 import { Icon, PhaseIcon, RoleIcon } from './Icons';
 import { Avatar } from './Avatar';
+import { SkillAnimation } from './SkillAnimation';
+import { useSkillEffects } from '../use-skill-effects';
 
 interface Props {
   projection: Projection;
@@ -14,15 +16,17 @@ interface Props {
   catalog: Catalog | null;
   roles?: GodSeatInfo[];
   deaths?: SeatDeathView[];
+  effectScope: string;
 }
 
 const art = '/art/moon-village/';
 
-export function SeatRing({ projection: p, room, catalog, roles, deaths = [] }: Props) {
+export function SeatRing({ projection: p, room, catalog, roles, deaths = [], effectScope }: Props) {
   const { t } = useI18n();
   const locale = p.locale ?? room.locale;
   const gt = (source: string, ...args: unknown[]) => gameText(locale, source, ...args);
   const [picked, setPicked] = useState<number | null>(null);
+  const { active: effect, complete: completeEffect } = useSkillEffects(effectScope, p);
   useLayoutEffect(() => { window.scrollTo(0, 0); }, [p.gameId]);
   const n = p.seats.length;
   const me = p.me?.seat;
@@ -69,6 +73,7 @@ export function SeatRing({ projection: p, room, catalog, roles, deaths = [] }: P
               aria-label={t('{0} {1}，{2}', gt('{0}号', s.seat), s.name, states.join('，'))} aria-pressed={picked === s.seat} onClick={() => setPicked(picked === s.seat ? null : s.seat)}>
               {activity && <span className={'seat-activity ' + activity}><span className="speaker-mic"><Icon name={activity === 'speech' ? 'mic' : 'spark'} size={14} /></span><span>{gt(activity === 'speech' ? room.paused ? '发言暂停' : '正在发言' : '行动中')}</span>{activity === 'speech' && <span className="speaking-bars" aria-hidden="true"><i /><i /><i /><i /></span>}</span>}
               <span className="seat-portrait"><Avatar seat={s.seat} size={90} /><span className="seat-number">{String(s.seat).padStart(2, '0')}</span>
+                {effect?.target === s.seat && <SkillAnimation key={effect.sourceSeq} kind={effect.kind} onComplete={() => completeEffect(effect.sourceSeq)} />}
                 {s.sheriff && <span className="sheriff-badge" title={gt('警长')}><Icon name="sheriff" size={26} /></span>}
                 {s.seat === me && <span className="self-badge">{t('我')}</span>}
                 {roleName && <span className={'seat-role role-corner ' + (identity.tone ?? roleTone(catalog, role))} title={identity.source === 'god' || identity.source === 'public' ? roleName : t('{0}（仅你可见）', identity.source === 'inspection' ? t('查验结果：{0}', roleName) : identity.source === 'teammate' ? t('狼队同伴：{0}', roleName) : roleName)}>{roleName}</span>}

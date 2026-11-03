@@ -9,6 +9,7 @@ import type { Cast, Script, TimedClip } from './project';
 import { palettes } from './palette';
 import { createRuleStrip, RULE_SCROLL_SPEED, RULE_VIEW } from './rule-strip';
 import { videoChapter, videoLocale, videoRole, videoText } from './video-locale';
+import { actionTargetLabel } from './video-effect';
 
 const require = createRequire(import.meta.url);
 const { createCanvas, loadImage, GlobalFonts, Path2D } = require(process.env.VIDEO_CANVAS_MODULE || '@napi-rs/canvas');
@@ -107,7 +108,7 @@ export async function createSceneRenderer(script: Script) {
     round(left - 4, top + 88, 35, 31, 11, '#122a37', '#d7ba80', 1.4);
     text(String(c.seat), left + 13, top + 103, 21, '#fff1c9', true, 'center');
     round(left + 40, top + 90, 81, 29, 10, '#132d37', tint, 1);
-    icon(roleIcon(c), left + 44, top + 94, 20, tint); text(videoRole(locale, c.role, c.roleName), left + 86, top + 105, 16, tint, true, 'center', 50);
+    icon(roleIcon(c), left + 44, top + 94, 20, tint); text(c.role === 'unknown' ? t('身份未知') : videoRole(locale, c.role, c.roleName), left + 86, top + 105, 16, tint, true, 'center', 50);
     round(left - 10, top + 125, 136, 33, 12, 'rgba(12,31,41,.93)', 'rgba(225,198,150,.38)');
     text(c.name, x, top + 141, 21, alive ? '#fff2d9' : '#a6adb3', true, 'center', 122);
     if (!alive) {
@@ -138,7 +139,8 @@ export async function createSceneRenderer(script: Script) {
     }
     const target = typeof clip.data.target === 'number' ? clip.data.target : clip.type === 'wolf.kill.result' ? clip.data.knife : undefined;
     const actionType = script.events.find((event) => event.sourceSeq === clip.sourceSeq)?.type ?? clip.type;
-    if (target === c.seat) { round(left + 10, top + 47, 95, 28, 12, '#102d3aee', '#f6d48f', 1.5); text(t(actionType.startsWith('guard.') ? '守护目标' : actionType.startsWith('seer.') ? '查验目标' : actionType === 'witch.save' ? '使用解药' : actionType === 'witch.poison' ? '使用毒药' : '狼刀目标'), x, top + 61, 16, '#ffe2a0', true, 'center', 88); }
+    const targetLabel = actionTargetLabel(actionType);
+    if (target === c.seat && targetLabel) { round(left + 10, top + 47, 95, 28, 12, '#102d3aee', '#f6d48f', 1.5); text(t(targetLabel), x, top + 61, 16, '#ffe2a0', true, 'center', 88); }
   }
   function central(clip: TimedClip, state: ReplayState) {
     const voting = clip.type === 'vote.result', ending = clip.phase === 'end', event = state.lastVote?.sourceSeq === clip.sourceSeq ? state.lastVote : undefined;
@@ -156,7 +158,7 @@ export async function createSceneRenderer(script: Script) {
       icon(ending ? 'badge' : clip.phase === 'night' ? 'moon' : 'sun', left + 25, top + 17, 27, ui.accent);
       text(ending ? t('终局 · {0}获胜', state.result?.winnerName ?? t('胜利阵营')) : videoChapter(locale, clip.day, clip.phase, clip.chapter), left + 64, top + 32, 23, ui.accent, true, 'left', 300);
       text(clip.seat ? t('{0}号 · {1}', clip.seat, script.cast.find((c) => c.seat === clip.seat)?.name) : t(clip.voiceKey === 'commentator' ? '上帝解说' : '法官播报'), CX, top + 77, 26, ui.text, true, 'center', 340);
-      text(t(ending ? '对局已结束' : clip.data.systemFallback ? '系统托管 · 非模型自主发言' : clip.type === 'hosting.choice' ? '行动转述 · 依据对局记录' : clip.type === 'wolf.chat' ? '狼队密谈 · 上帝观众可见' : clip.seat ? '正在发言' : clip.data.presentationKey === 'vote-open' ? '请投票 · 结果尚未公布' : '对局进行中'), CX, top + 112, 17, ui.muted, false, 'center', 360);
+      text(t(ending ? '对局已结束' : clip.data.systemFallback ? '系统托管 · 非模型自主发言' : clip.type === 'hosting.choice' ? '行动转述 · 依据对局记录' : clip.type === 'wolf.chat' ? (script.perspective === 'player' ? '狼队密谈' : '狼队密谈 · 上帝观众可见') : clip.seat ? '正在发言' : clip.data.presentationKey === 'vote-open' ? '请投票 · 结果尚未公布' : '对局进行中'), CX, top + 112, 17, ui.muted, false, 'center', 360);
     }
     round(594, voting ? layout.waveY : 588, 240, 40, 14, ui.panel, ui.borderSoft);
   }
@@ -169,20 +171,20 @@ export async function createSceneRenderer(script: Script) {
     round(28, 25, 1864, 80, 26, ui.panel, ui.borderSoft);
     icon('wolf', 50, 40, 51, ui.accent); text(t('月影议事厅'), 116, 63, 29, ui.text, true, 'left', 208); text(script.presetName, 333, 64, 21, ui.muted, false, 'left', 390);
     round(760, 42, 210, 44, 20, ui.chip, ui.borderSoft); icon(isNight ? 'moon' : 'sun', 778, 51, 25, ui.accent); text(videoChapter(locale, clip.day, clip.phase, clip.chapter), 869, 64, 22, ui.text, true, 'center', 145);
-    icon('eye', 1457, 51, 28, ui.accent); text(t(script.sample ? '上帝视角 · 非连续节选样品' : '上帝视角 · 完整对局'), 1500, 64, 22, ui.text, false, 'left', 370);
+    icon('eye', 1457, 51, 28, ui.accent); text(script.perspective === 'player' ? t('{0}号玩家视角', script.playerSeat) : t(script.sample ? '上帝视角 · 非连续节选样品' : '上帝视角 · 完整对局'), 1500, 64, 22, ui.text, false, 'left', 370);
     round(28, 126, 1375, 799, 30, ui.panelSoft, ui.borderSoft);
     const tw = 1042, th = tw * tableDay.height / tableDay.width; g.save(); g.shadowBlur = 32; g.shadowColor = '#07131a99'; g.shadowOffsetY = 20;
     g.drawImage(isNight ? tableNight : tableDay, CX - tw / 2, CY - th / 2 + 10, tw, th); g.restore();
     central(clip, state); script.cast.forEach((c, i) => seat(c, i, state, clip));
     round(1430, 126, 462, 799, 29, ui.panel, ui.borderSoft);
     icon('badge', 1459, 145, 28, ui.accent); text(t('本局技能卡'), 1502, 159, 27, ui.text, true, 'left', 350);
-    text(t('全部身份 · 自动循环滚动'), 1459, 190, 15, ui.muted);
+    text(script.perspective === 'player' ? t('本人身份 · 自动循环滚动') : t('全部身份 · 自动循环滚动'), 1459, 190, 15, ui.muted);
     const rules = isNight ? nightRules : dayRules;
     const offset = Math.floor((clip.startFrame / 30 * RULE_SCROLL_SPEED) % rules.cycleHeight);
     g.drawImage(rules.image, 0, offset, RULE_VIEW.width, RULE_VIEW.height, RULE_VIEW.x, RULE_VIEW.y, RULE_VIEW.width, RULE_VIEW.height);
-    text(locale === (script.locale ?? 'zh-CN') ? t('来自本局规则 · 连续滚动不随发言重置') : t('规则正文原语言：{0}', script.locale ?? 'zh-CN'), 1458, 842, 15, ui.muted, false, 'left', 405);
+    text(script.perspective === 'player' ? t('本人身份默认简介（zh-CN）') : locale === (script.locale ?? 'zh-CN') ? t('来自本局规则 · 连续滚动不随发言重置') : t('规则正文原语言：{0}', script.locale ?? 'zh-CN'), 1458, 842, 15, ui.muted, false, 'left', 405);
     const aliveWolves = script.cast.filter((c) => c.role === 'werewolf' && state.alive.has(c.seat)).length;
-    round(1456, 866, 408, 35, 12, ui.chip); text(t('存活 {0} 人     狼人 {1}     好人 {2}', state.alive.size, aliveWolves, state.alive.size - aliveWolves), 1660, 883, 17, ui.muted, false, 'center', 396);
+    round(1456, 866, 408, 35, 12, ui.chip); text(script.perspective === 'player' ? t('存活 {0} 人', state.alive.size) : t('存活 {0} 人     狼人 {1}     好人 {2}', state.alive.size, aliveWolves, state.alive.size - aliveWolves), 1660, 883, 17, ui.muted, false, 'center', 396);
     speakerPanel(clip, state);
     // Timestamped subtitles are burned in this empty strip by the encoder.
     text(t('对局 {0}  ·  {1}人物', script.roomId, t(themes[theme])), 30, 1071, 12, '#c7d7d6');

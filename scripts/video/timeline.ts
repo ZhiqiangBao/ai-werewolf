@@ -1,10 +1,13 @@
 import { readFile, writeFile, mkdir, open } from 'node:fs/promises';
 import assert from 'node:assert/strict';
-import { projectDir, FPS, SAMPLE_RATE, type Clip, type TimedClip } from './project';
+import { projectDir, FPS, SAMPLE_RATE, type Clip, type TimedClip, type VoiceCatalog } from './project';
 import type { AudioMeta } from './qwen';
 import { readPcm, wavHeader } from './audio';
 import { subtitleLayout } from './geometry';
 import { inspectAudio } from './audio-inspection';
+import { createHash } from 'node:crypto';
+import { assertAuthorizedProject } from './integrity';
+import { assertPlayerRawAudio } from './player-audio-provenance';
 
 export const captionContent = (text: string) => text.replace(/[\s\p{P}\p{S}]/gu, '');
 const symbolReadings: Record<string, string> = { '+': '加', '≥': '大于等于', '≤': '小于等于', '>': '大于', '<': '小于', '=': '等于' };
@@ -70,9 +73,15 @@ export function assDocument(cues: { text: string; start: number; end: number; ph
   const { caption } = subtitleLayout, right = 1920 - caption.x - caption.width;
   return `[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 0\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\nStyle: Night,Microsoft YaHei,36,&H00FFFFFF,&H000000FF,&H00351E10,&H90000000,-1,0,0,0,100,100,0,0,1,2,1,5,${caption.x},${right},0,1\nStyle: Day,Microsoft YaHei,36,&H00363E26,&H000000FF,&H00E7F5FB,&H00E7F5FB,-1,0,0,0,100,100,0,0,1,1,0,5,${caption.x},${right},0,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n` + cues.map((c) => `Dialogue: 0,${assTime(c.start)},${assTime(c.end)},${(c.phase ?? phase) === 'night' ? 'Night' : 'Day'},,0,0,0,,{\\an5\\pos(${caption.centerX},${caption.centerY})}${escapeAss(c.text)}`).join('\n') + '\n';
 }
+export function srtDocument(cues: { text: string; start: number; end: number }[]) {
+  const time = (t: number) => { const ms = Math.round(t * 1000); return `${String(Math.floor(ms / 3600000)).padStart(2, '0')}:${String(Math.floor(ms / 60000) % 60).padStart(2, '0')}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')},${String(ms % 1000).padStart(3, '0')}`; };
+  return cues.map((c, i) => `${i + 1}\n${time(c.start)} --> ${time(c.end)}\n${c.text}\n`).join('\n');
+}
 
 export async function buildTimeline() {
   const clips = JSON.parse(await readFile(`${projectDir}/clips.json`, 'utf8')) as Clip[];
+  const { source } = await assertAuthorizedProject(clips);
+  if (source.perspective === 'player') await assertPlayerRawAudio(source, JSON.parse(await readFile(`${projectDir}/voices.json`, 'utf8')) as VoiceCatalog, clips);
   await mkdir(`${projectDir}/subtitles`, { recursive: true });
   await mkdir(`${projectDir}/audio-normalized`, { recursive: true });
   const timed: TimedClip[] = []; let startFrame = 0;
@@ -94,7 +103,8 @@ export async function buildTimeline() {
     assert(Number.isInteger(frameSamples));
     const bytes = Buffer.alloc(frameSamples * 2), envelope: number[] = [];
     for (let j = 0; j < samples.length; j++) bytes.writeInt16LE(Math.round(samples[j] * gain), j * 2);
-    await writeFile(`${projectDir}/audio-normalized/${clip.id}.wav`, Buffer.concat([wavHeader(frameSamples, SAMPLE_RATE), bytes]));
+    const normalized = Buffer.concat([wavHeader(frameSamples, SAMPLE_RATE), bytes]);
+    await writeFile(`${projectDir}/audio-normalized/${clip.id}.wav`, normalized);
     for (let frame = 0; frame < frames; frame++) {
       let energy = 0;
       for (let j = frame * 800; j < Math.min(samples.length, (frame + 1) * 800); j++) energy += (samples[j] * gain / 32768) ** 2;
@@ -104,7 +114,8 @@ export async function buildTimeline() {
     assert.equal(captionContent(captions.map((c) => c.text).join('')), captionContent(clip.spokenText), `Caption text changed in ${clip.id}`);
     const providerLabels = audioMeta.sentences.flatMap((s) => s.words.map((w) => w.text)).join('');
     if (captionContent(providerLabels) !== captionContent(clip.spokenText)) captionAudit.push({ id: clip.id, submitted: clip.spokenText, providerLabels, correctedCaption: captions.map((c) => c.text).join('') });
-    const out = { ...clip, startFrame, frames, audioDuration, audioMeta, captions, envelope };
+    const out = { ...clip, startFrame, frames, audioDuration, audioMeta, captions, envelope,
+      normalizedAudioSha256: createHash('sha256').update(normalized).digest('hex') };
     timed.push(out); startFrame += frames; pcmPaths.push({ bytes, frames });
     quality.push({ id: clip.id, duration: audioDuration, rms, peak, gain, words: audioMeta.sentences.reduce((s, v) => s + v.words.length, 0) });
     await writeFile(`${projectDir}/subtitles/${clip.id}.ass`, assDocument(captions, clip.phase));
@@ -115,8 +126,7 @@ export async function buildTimeline() {
   await master.close();
   const absoluteCues = timed.flatMap((c) => c.captions.map((cue) => ({ ...cue, phase: c.phase, start: cue.start + c.startFrame / FPS, end: cue.end + c.startFrame / FPS })));
   await writeFile(`${projectDir}/subtitles/captions.ass`, assDocument(absoluteCues));
-  const srtTime = (t: number) => { const ms = Math.round(t * 1000); return `${String(Math.floor(ms / 3600000)).padStart(2, '0')}:${String(Math.floor(ms / 60000) % 60).padStart(2, '0')}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')},${String(ms % 1000).padStart(3, '0')}`; };
-  await writeFile(`${projectDir}/subtitles/captions.srt`, absoluteCues.map((c, i) => `${i + 1}\n${srtTime(c.start)} --> ${srtTime(c.end)}\n${c.text}\n`).join('\n'));
+  await writeFile(`${projectDir}/subtitles/captions.srt`, srtDocument(absoluteCues));
   await writeFile(`${projectDir}/audio-quality.json`, JSON.stringify(quality, null, 2));
   await writeFile(`${projectDir}/caption-audit.json`, JSON.stringify({ textSource: 'submitted-script', timeSource: 'original-provider-word-times', labelDifferences: captionAudit }, null, 2));
   await writeFile(`${projectDir}/timeline.json`, JSON.stringify({ format: 'werewolf-audio-timeline', version: 1, fps: FPS, sampleRate: SAMPLE_RATE, frames: startFrame, duration: startFrame / FPS, clips: timed }, null, 2));

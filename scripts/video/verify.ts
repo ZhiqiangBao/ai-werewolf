@@ -4,7 +4,7 @@ import { readFile, writeFile, stat } from 'node:fs/promises';
 import { projectDir, FPS, SAMPLE_RATE, ffprobe, type Script, type TimedClip } from './project';
 import { replay } from './replay';
 import { readPcm } from './audio';
-import { assertPlayerSources } from './integrity';
+import { assertPlayerSources, assertAuthorizedProject, assertPlayerAudio, assertPlayerVideo } from './integrity';
 import { captionContent } from './timeline';
 import { encodingSettings } from './encoding';
 import { inspectAudio } from './audio-inspection';
@@ -12,6 +12,8 @@ import { inspectAudio } from './audio-inspection';
 const source = JSON.parse(await readFile(`${projectDir}/source.json`, 'utf8')) as Script;
 const script = JSON.parse(await readFile(`${projectDir}/script.json`, 'utf8')) as Script;
 const timeline = JSON.parse(await readFile(`${projectDir}/timeline.json`, 'utf8')) as { frames: number; duration: number; clips: TimedClip[] };
+await assertAuthorizedProject(timeline.clips);
+const masterSha256 = await assertPlayerAudio(timeline.clips);
 assert.deepEqual(script.events, source.events, 'Editorial changed the game facts');
 assertPlayerSources(source, script, timeline.clips);
 const sourcePlayers = source.chapters.flatMap((c) => c.entries).filter((e) => e.seat !== undefined);
@@ -22,8 +24,13 @@ for (const e of sourcePlayers) {
   assert(chunks.every((c) => c.voiceKey === e.voiceKey && c.seat === e.seat));
 }
 const final = replay(source, Number.MAX_SAFE_INTEGER), review = source.events.findLast((e) => e.type === 'review');
-assert(review, 'Missing recorded end review');
-assert.deepEqual([...final.alive].sort((a, b) => a - b), review.data.roles.filter((r: any) => r.alive).map((r: any) => r.seat).sort((a: number, b: number) => a - b));
+if (source.perspective === 'god') {
+  assert(review, 'Missing recorded end review');
+  assert.deepEqual([...final.alive].sort((a, b) => a - b), review.data.roles.filter((r: any) => r.alive).map((r: any) => r.seat).sort((a: number, b: number) => a - b));
+} else {
+  assert(!review && !source.ruleCard && source.cast.every((c) => c.seat === source.playerSeat || c.role === 'unknown'), 'Player view contains privileged material');
+  assert(source.events.every((e) => e.audience === 'public' || e.audience.includes(source.playerSeat!)), 'Player view contains an unauthorized event');
+}
 assert.equal(final.result.winner, source.result.winner);
 let cursor = 0, captions = 0;
 const actualEncoders = new Set<string>(), settings = encodingSettings();
@@ -47,6 +54,7 @@ for (const c of timeline.clips) {
 }
 assert.equal(cursor, timeline.frames);
 const video = `${projectDir}/output/latest-match.mp4`;
+await assertPlayerVideo(source, video, masterSha256);
 const media = JSON.parse(execFileSync(ffprobe, ['-v', 'error', '-show_streams', '-show_format', '-show_chapters', '-of', 'json', video], { encoding: 'utf8', windowsHide: true }));
 const picture = media.streams.find((s: any) => s.codec_type === 'video'), audio = media.streams.find((s: any) => s.codec_type === 'audio');
 assert.equal(picture.width, 1920); assert.equal(picture.height, 1080); assert.equal(picture.r_frame_rate, '30/1');
@@ -56,7 +64,7 @@ assert(Math.abs(Number(audio.duration) - timeline.duration) < .05);
 assert.equal(media.chapters.length, source.chapters.length);
 const report = { roomId: source.roomId, video, bytes: (await stat(video)).size, durationSeconds: timeline.duration, frames: timeline.frames,
   resolution: '1920×1080', fps: FPS, chapters: media.chapters.length, clips: timeline.clips.length, captions,
-  originalPlayerEntriesPreserved: sourcePlayers.length, privateWolfChatIncluded: true, perspective: 'god', factsUnchanged: true,
+  originalPlayerEntriesPreserved: sourcePlayers.length, privateWolfChatIncluded: source.events.some((e) => e.type === 'wolf.chat'), perspective: source.perspective, playerSeat: source.playerSeat, factsUnchanged: true,
   finalAliveSeats: [...final.alive], winner: final.result.winnerName, audioVideoDifferenceSeconds: Math.abs(Number(picture.duration) - Number(audio.duration)),
   voices: [...new Set(timeline.clips.map((c) => c.audioMeta.voice))].length,
   audioWaveformAuditPassed: true,
