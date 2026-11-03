@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { expect, it, vi } from 'vitest';
+import { gameText } from '@werewolf/protocol';
 import { MemoryStore, RoomManager, SecretBox, SpeechConnections, SpeechService } from '../src';
 import { createHttpServer } from '../../../apps/server/src/http-server';
 
@@ -42,16 +43,16 @@ it('一个 HTTP 等待者断开时另一等待者仍可取得共享合成结果'
   } finally { await http.close(); await rm(dir, { recursive: true, force: true }); vi.restoreAllMocks(); }
 });
 
-it('试听断连取消上游；关闭在不合作的对局合成未结束时报告宽限超时', async () => {
+it.each(['zh-CN', 'en', 'ja'])('%s 试听断连取消上游；关闭在不合作的对局合成未结束时报告宽限超时', async (locale) => {
   const dir = await mkdtemp(join(tmpdir(), 'werewolf-audio-http-'));
   const secrets = SecretBox.ephemeral();
   const manager = new RoomManager({ store: new MemoryStore(), secrets, tickMs: 0 });
   const room = manager.createRoom();
   vi.spyOn(manager, 'speechText').mockReturnValue('对局合成');
   vi.spyOn(manager, 'speechLocale').mockReturnValue('zh-CN');
-  const jobs = new Map<string, { signal: AbortSignal; release: () => void }>();
-  const provider = { id: 'fixture', label: 'fixture', cacheIdentity: {}, synthesize: (text: string, signal: AbortSignal) => new Promise<{ bytes: Buffer; mimeType: string }>((resolve) => {
-    jobs.set(text, { signal, release: () => resolve({ bytes: Buffer.from('fixture'), mimeType: 'audio/mpeg' }) });
+  const jobs = new Map<string, { signal: AbortSignal; locale?: string; release: () => void }>();
+  const provider = { id: 'fixture', label: 'fixture', cacheIdentity: {}, synthesize: (text: string, signal: AbortSignal, context?: { locale: string }) => new Promise<{ bytes: Buffer; mimeType: string }>((resolve) => {
+    jobs.set(text, { signal, locale: context?.locale, release: () => resolve({ bytes: Buffer.from('fixture'), mimeType: 'audio/mpeg' }) });
   }) };
   const speech = new SpeechService(dir, [provider]);
   const connections = new SpeechConnections(join(dir, 'connections.json'), secrets, dir);
@@ -62,9 +63,10 @@ it('试听断连取消上游；关闭在不合作的对局合成未结束时报�
     const address = http.server.address(); if (!address || typeof address === 'string') throw Error('port unavailable');
     const base = `http://127.0.0.1:${address.port}/api/v1`;
     const controller = new AbortController();
-    const preview = fetch(`${base}/speech-settings/fixture/test`, { method: 'POST', signal: controller.signal }).catch(() => undefined);
-    const previewText = '这是一段语音接入测试。一二三。';
+    const preview = fetch(`${base}/speech-settings/fixture/test`, { method: 'POST', headers: { 'Accept-Language': locale }, signal: controller.signal }).catch(() => undefined);
+    const previewText = gameText(locale, '这是一段语音接入测试。一二三。');
     await vi.waitFor(() => expect(jobs.has(previewText)).toBe(true));
+    expect(jobs.get(previewText)!.locale).toBe(locale);
     controller.abort(); await preview;
     await vi.waitFor(() => expect(jobs.get(previewText)!.signal.aborted).toBe(true));
     jobs.get(previewText)!.release();

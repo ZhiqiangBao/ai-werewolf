@@ -354,3 +354,19 @@ details.panel > summary { cursor: pointer; color: var(--text); }.rulecard { font
 .death-symbol { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 27px; font-size: 10px; font-weight: 600; white-space: nowrap; }
 .death-mark { gap: 5px; }
 .dead-badge { padding: 5px 6px; }
+
+/* 三语标签长度不同，票型与控制区允许自然换行。 */
+.vote-row { grid-template-columns: minmax(4.8em, max-content) minmax(0, 1fr); }
+.vote-row .target, .scene-caption h2 { overflow-wrap: anywhere; }
+.scene-caption > div { min-width: 0; }
+.scene-view { flex-shrink: 0; }
+.god-table th, .god-table td { overflow-wrap: anywhere; }
+.topbar, .scene-caption { flex-wrap: wrap; }
+.seat-picker button, .choice-list button, .seg button { white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .scene-caption { gap: 8px; }
+  .scene-caption h2 { font-size: 20px; letter-spacing: .03em; }
+  .god-table { font-size: 11px; }
+  .god-table th, .god-table td { padding: 7px 3px; }
+  .vote-row { grid-template-columns: minmax(4.2em, max-content) minmax(0, 1fr); }
+}

@@ -21,6 +21,8 @@ import type {
   SpeechConnectionView,
   SpeechSettingsView,
 } from '@werewolf/protocol';
+import { apiErrorText } from '@werewolf/protocol';
+import { getUiLocale, uiText, uiLanguageHeader } from './i18n';
 
 export class ApiError extends Error {
   constructor(
@@ -33,17 +35,17 @@ export class ApiError extends Error {
 }
 
 async function request<T>(method: string, path: string, token?: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { 'Accept-Language': uiLanguageHeader() };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   let res: Response;
   try {
     res = await fetch(`/api/v1${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   } catch {
-    throw new ApiError('NETWORK', '连不上服务器，请确认服务已启动', 0);
+    throw new ApiError('NETWORK', uiText(getUiLocale(), apiErrorText('zh-CN', 'NETWORK')), 0);
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(data.code ?? 'HTTP', data.message ?? `请求失败（${res.status}）`, res.status);
+  if (!res.ok) throw new ApiError(data.code ?? 'HTTP', data.message ?? uiText(getUiLocale(), apiErrorText('zh-CN', data.code ?? 'HTTP')), res.status);
   return data as T;
 }
 

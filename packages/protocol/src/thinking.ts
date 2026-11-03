@@ -1,5 +1,6 @@
 /** 档位只调整思考参数，不改变正文长度、系统消息或工具定义。 */
 import { isDashscopeEndpoint, type ApiProtocol } from './api';
+import { gameText } from './locale';
 export const THINKING_MODES = ['default', 'off', 'low', 'medium', 'high'] as const;
 export type ThinkingMode = (typeof THINKING_MODES)[number];
 type Level = Exclude<ThinkingMode, 'default' | 'off'>;
@@ -44,6 +45,9 @@ export interface ThinkingOption {
   label: string;
   supported: boolean;
   hint: string;
+  /** 明确的提示模板；适用于不支持档位时的结构化错误。 */
+  hintKey: string;
+  hintValues?: (string | number)[];
 }
 
 const labels: Record<ThinkingMode, string> = { default: '跟随模型', off: '关闭', low: '轻度', medium: '标准', high: '深度' };
@@ -78,32 +82,39 @@ export function defaultThinkingMode(baseUrl: string, model: string, protocol: Ap
   return p.budget || p.effort?.low ? 'low' : 'default';
 }
 
-export function thinkingOptions(baseUrl: string, model: string, protocol: ApiProtocol = 'chat_completions'): ThinkingOption[] {
+export function thinkingOptions(baseUrl: string, model: string, protocol: ApiProtocol = 'chat_completions', locale: string | undefined = 'zh-CN'): ThinkingOption[] {
+  const option = (value: ThinkingMode, supported: boolean, hintKey: string, ...hintValues: (string | number)[]): ThinkingOption => ({
+    value, label: gameText(locale, labels[value]), supported, hint: gameText(locale, hintKey, ...hintValues), hintKey,
+    ...(hintValues.length ? { hintValues } : {}),
+  });
   if (protocol !== 'chat_completions') {
     const native = nativeProfile(baseUrl, model, protocol);
-    return THINKING_MODES.map((value) => ({ value, label: labels[value],
-      supported: value === 'default' || (value === 'off' ? native.off : native.kind === 'budget' || (native.kind === 'effort' && (!native.effort || !!native.effort[value]))),
-      hint: value === 'default' ? '使用所选协议的模型默认设置。' : value === 'off' ? (native.off ? '通过原生协议关闭思考。' : '尚未确认该协议和型号支持关闭；可以使用受支持的强度。') : native.kind === 'budget' ? `思考预算 ${budget[value]} token。` : native.kind === 'effort' ? `通过原生协议设置 ${value} 力度。` : '尚未确认该协议和型号的强度参数，请使用跟随模型。',
-    }));
+    return THINKING_MODES.map((value) => {
+      const supported = value === 'default' || (value === 'off' ? native.off : native.kind === 'budget' || (native.kind === 'effort' && (!native.effort || !!native.effort[value])));
+      if (value === 'default') return option(value, supported, '使用所选协议的模型默认设置。');
+      if (value === 'off') return option(value, supported, native.off ? '通过原生协议关闭思考。' : '尚未确认该协议和型号支持关闭；可以使用受支持的强度。');
+      if (native.kind === 'budget') return option(value, supported, '思考预算 {0} token。', budget[value]);
+      if (native.kind === 'effort' && !supported) return option(value, supported, '这个接口没有独立的轻度档，请选择标准或深度。');
+      if (native.kind === 'effort') return option(value, supported, '通过原生协议设置 {0} 力度。', value);
+      return option(value, supported, '尚未确认该协议和型号的强度参数，请使用跟随模型。');
+    });
   }
   const p = profile(baseUrl, model);
   return THINKING_MODES.map((value) => {
-    if (value === 'default') return { value, label: labels[value], supported: true, hint: '使用模型默认的思考强度。' };
-    if (value === 'off') return { value, label: labels[value], supported: !p.forced,
-      hint: p.forced ? '这个模型始终思考，不能关闭；可以选择它支持的强度。' : '关闭思考，减少等待；需要接口支持。' };
+    if (value === 'default') return option(value, true, '使用模型默认的思考强度。');
+    if (value === 'off') return option(value, !p.forced, p.forced ? '这个模型始终思考，不能关闭；可以选择它支持的强度。' : '关闭思考，减少等待；需要接口支持。');
     const supported = !!p.budget || !!p.effort?.[value];
-    const hint = p.budget ? `${labels[value]}：思考预算 ${budget[value]} token，不限制正文长度。` :
-      p.effort?.[value] ? `${labels[value]}：使用模型的 ${p.effort[value]} 推理力度。` :
-      p.effort ? '这个接口没有独立的轻度档，请选择标准或深度。' : '尚未确认这个模型支持强度调节，请使用跟随模型。';
-    return { value, label: labels[value], supported, hint };
+    if (p.budget) return option(value, supported, '{0}：思考预算 {1} token，不限制正文长度。', gameText(locale, labels[value]), budget[value]);
+    if (p.effort?.[value]) return option(value, supported, '{0}：使用模型的 {1} 推理力度。', gameText(locale, labels[value]), p.effort[value]);
+    return option(value, supported, p.effort ? '这个接口没有独立的轻度档，请选择标准或深度。' : '尚未确认这个模型支持强度调节，请使用跟随模型。');
   });
 }
 
 /** 统一档位转换为对应接口的参数；不同时传 reasoning_effort 与 thinking_budget。 */
-export function thinkingParameters(baseUrl: string, model: string, mode: ThinkingMode = 'default', protocol: ApiProtocol = 'chat_completions'): Record<string, unknown> {
+export function thinkingParameters(baseUrl: string, model: string, mode: ThinkingMode = 'default', protocol: ApiProtocol = 'chat_completions', locale?: string): Record<string, unknown> {
   if (mode === 'default') return {};
-  const option = thinkingOptions(baseUrl, model, protocol).find((o) => o.value === mode);
-  if (!option?.supported) throw new Error(`不支持该思考档位：${option?.hint ?? String(mode)}`);
+  const option = thinkingOptions(baseUrl, model, protocol, locale).find((o) => o.value === mode);
+  if (!option?.supported) throw new Error(gameText(locale, '不支持该思考档位：{0}', option?.hint ?? String(mode)));
   const native = nativeProfile(baseUrl, model, protocol);
   if (protocol === 'responses') return { reasoning: { effort: mode === 'off' ? 'none' : native.effort?.[mode] ?? mode } };
   if (protocol === 'anthropic_messages') {

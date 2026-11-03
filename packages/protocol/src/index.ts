@@ -525,6 +525,9 @@ export interface AuditEntry {
 
 export { DEFAULT_GAME_LOCALE, gameLanguage, gameLanguages, gameText, isGameLocale, localizeTool, registerGameLanguage } from './locale';
 export type { GameLocale, GameLanguage, GameLanguagePack } from './locale';
+export { checkGameLanguage, checkedMessages, gameMessageKeys } from './locale';
+export { apiErrorText, preferredLanguage, LocalizedError } from './errors';
+export type { LocalizedMessage } from './errors';
 
 export { ACTION_KINDS, DEFAULT_GAME_TIMING, actionKind, defaultGameTiming, parseGameTiming } from './timing';
 export type { ActionKind, ActionTiming, GameTiming } from './timing';

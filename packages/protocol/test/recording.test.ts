@@ -6,6 +6,22 @@ import { DEAL12, TestGame } from '../../engine/test/harness';
 const ev = (seq: number, type: string, text: string, payload: Record<string, unknown> = {}, audience: GameEvent['audience'] = 'public'): GameEvent => ({ seq, type, text, payload, audience, day: 1, phase: 'night' });
 
 describe('面向观众的记录与剪辑稿', () => {
+  it.each(['guard.skip', 'seer.skip', 'witch.idle'])('%s 的旧记录缺少可靠本人受众时保留原文', (type) => {
+    for (const audience of [[], [0], [1, 2], 'public'] as GameEvent['audience'][]) {
+      const source = ev(1, type, '不可重建的旧记录', {}, audience);
+      for (const locale of ['en', 'ja']) expect(gameRecordEvents([source], locale)[0].text).toBe(source.text);
+    }
+  });
+  it('缺少结构化结果的旧记录保持原文，不臆测无刀或好人结果', () => {
+    const source = [ev(1, 'witch.knife', '旧刀口记录', {}, [6]), ev(2, 'seer.result', '旧查验记录', { target: 3 }, [5]), ev(3, 'guard.protect', '旧守护记录', {}, [8]), ev(4, 'witch.poison', '旧毒药记录', { target: '3' }, [6]), ev(5, 'wolf.kill.split', '旧合刀记录', { picks: ['unknown'] }, [1, 2])];
+    for (const locale of ['en', 'ja']) expect(gameRecordEvents(source, locale).map((e) => e.text)).toEqual(source.map((e) => e.text));
+  });
+  it('英文合刀重建使用本局标点，不改投票元组', () => {
+    const source = ev(1, 'wolf.kill.split', '旧合刀', { picks: [[1, 3], [2, 4]] }, [1, 2]);
+    const before = structuredClone(source);
+    expect(gameRecordEvents([source], 'en')[0].text).toBe('Wolf-attack choices tied (Player 1 → Player 3, Player 2 → Player 4).');
+    expect(source).toEqual(before);
+  });
   it('思考写12时仍展示实际警徽事件的5，不能跨到后续决策或从思考推断结果', () => {
     const thought = { seat: 8, decisionId: 'badge', thinking: '决定交给12号', reply: '', live: false, at: 0 };
     const question = ev(1, 'judge', '处理警徽', { step: 'badge.duty', decisionId: 'badge' }, [8]);

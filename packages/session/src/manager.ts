@@ -1,4 +1,4 @@
-import { apiProtocol } from '@werewolf/protocol';
+import { apiProtocol, LocalizedError } from '@werewolf/protocol';
 import type { AuditEntry, Catalog, ControlAction, CreateRoomResult, ModelPresetView, ParticipantInput, RoomBrief, RoomSetupInput, RoomSetupView, Seat, SeatTestResult, ViewResponse } from '@werewolf/protocol';
 import { ModelLibrary } from './model-library';
 import { ApiFailure } from './room-failure';
@@ -92,7 +92,7 @@ export class RoomManager {
   whenDisposed(): Promise<DisposeReport> { return this.disposedPromise; }
 
   private assertActive(): void {
-    if (this.lifecycle !== 'active') throw new ApiFailure(503, 'MANAGER_DISPOSED', '服务正在关闭，请稍后重新连接');
+    if (this.lifecycle !== 'active') throw new ApiFailure(503, 'MANAGER_DISPOSED', '服务正在关闭，请稍后重新连接', { key: '服务正在关闭，请稍后重新连接' });
   }
 
   catalog(): Catalog {
@@ -111,14 +111,14 @@ export class RoomManager {
     try {
       return this.models.add(String(body.name ?? ''), String(body.baseUrl ?? ''), String(body.apiKey ?? ''), apiProtocol(body.apiProtocol));
     } catch (e) {
-      throw new ApiFailure(400, 'BAD_REQUEST', (e as Error).message);
+      throw new ApiFailure(400, 'BAD_REQUEST', (e as Error).message, e instanceof LocalizedError ? e.localization : undefined);
     }
   }
 
   deleteModel(id: string): void {
     this.assertActive();
     void id;
-    throw new ApiFailure(409, 'MODEL_MAINTENANCE_REQUIRED', '请停止服务后使用本机模型维护命令。');
+    throw new ApiFailure(409, 'MODEL_MAINTENANCE_REQUIRED', '请停止服务后使用本机模型维护命令。', { key: '请停止服务后使用本机模型维护命令。' });
   }
 
   createRoom(input: Pick<RoomSetupInput, 'avatarStyle' | 'locale'> = {}): CreateRoomResult {
@@ -141,28 +141,28 @@ export class RoomManager {
     return created;
   }
 
-  getSetup(roomId: string, tok: string): RoomSetupView {
-    return this.views.setupView(this.lobby.host(this.rooms.get(roomId), tok));
+  getSetup(roomId: string, tok: string, uiLocale?: string): RoomSetupView {
+    return this.views.setupView(this.lobby.host(this.rooms.get(roomId), tok), uiLocale);
   }
 
-  updateSetup(roomId: string, tok: string, input: RoomSetupInput): RoomSetupView {
+  updateSetup(roomId: string, tok: string, input: RoomSetupInput, uiLocale?: string): RoomSetupView {
     const rec = this.lobby.host(this.rooms.get(roomId), tok);
     this.assertActive();
     this.lobby.updateSetup(rec, input);
     this.runtime.changed(rec);
-    return this.views.setupView(rec);
+    return this.views.setupView(rec, uiLocale);
   }
 
-  async testSeat(roomId: string, tok: string, seat: Seat): Promise<SeatTestResult> {
+  async testSeat(roomId: string, tok: string, seat: Seat, uiLocale?: string): Promise<SeatTestResult> {
     const rec = this.lobby.host(this.rooms.get(roomId), tok);
     this.assertActive();
-    return this.runtime.testSeat(rec, (signal) => this.lobby.testSeat(rec, seat, signal));
+    return this.runtime.testSeat(rec, (signal) => this.lobby.testSeat(rec, seat, signal, uiLocale));
   }
 
-  start(roomId: string, tok: string): RoomSetupView {
+  start(roomId: string, tok: string, uiLocale?: string): RoomSetupView {
     const rec = this.lobby.host(this.rooms.get(roomId), tok);
     this.assertActive();
-    this.lobby.validateStart(rec);
+    this.lobby.validateStart(rec, uiLocale);
     this.runtime.start(rec);
     return this.views.setupView(rec);
   }

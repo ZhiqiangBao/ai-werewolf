@@ -1,9 +1,11 @@
+import { useI18n } from '../i18n';
 import { useCallback, useEffect, useState } from 'react';
 import { API_PROTOCOLS, API_PROTOCOL_LABELS, type ApiProtocol, type ModelPresetView } from '@werewolf/protocol';
 import { api } from '../api';
 import { ModelList } from './ModelList';
 
 export function ModelLibrary() {
+  const { t } = useI18n();
   const [name, setName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -23,7 +25,7 @@ export function ModelLibrary() {
       setName('');
       setBaseUrl('');
       setApiKey('');
-      setNotice(`已添加模型「${added.label}」。`);
+      setNotice(t('已添加模型「{0}」。', added.label));
       onChange();
     } catch (e) {
       setError((e as Error).message);
@@ -34,42 +36,42 @@ export function ModelLibrary() {
   const remove = (id: string) => {
     setError(null);
     const model = models.find((item) => item.id === id);
-    setNotice(`「${model?.label ?? id}」的停用、归档、恢复和别名归并需先停止服务，再按 README 的本机维护说明操作。维护会先检查房间引用，归档保留密钥和历史对局。`);
+    setNotice(t('「{0}」的停用、归档、恢复和别名归并需先停止服务，再按 README 的本机维护说明操作。维护会先检查房间引用，归档保留密钥和历史对局。', model?.label ?? id));
   };
   return (
     <div className="panel">
-      <h3>模型库</h3>
+      <h3>{t('模型库')}</h3>
       <p className="small muted" style={{ margin: '0 0 10px' }}>
-        在这里添加一次，各房间的座位都可选用。导入的旧模型与新增模型保存在同一个项目模型库。
+        {t('在这里添加一次，各房间的座位都可选用。导入的旧模型与新增模型保存在同一个项目模型库。')}
       </p>
       <div className="model-add">
         <label className="field">
-          接口协议
+          {t('接口协议')}
           <select value={protocol} onChange={(e) => setProtocol(e.target.value as ApiProtocol)}>
             {API_PROTOCOLS.map((p) => <option key={p} value={p}>{API_PROTOCOL_LABELS[p]}</option>)}
           </select>
         </label>
         <label className="field">
-          名称
-          <input type="text" value={name} maxLength={120} placeholder="例如 deepseek-v4-flash" onChange={(e) => setName(e.target.value)} />
+          {t('名称')}
+          <input type="text" value={name} maxLength={120} placeholder={t('例如 deepseek-v4-flash')} onChange={(e) => setName(e.target.value)} />
         </label>
         <label className="field">
-          接口地址
+          {t('接口地址')}
           <input type="text" value={baseUrl} placeholder="https://api.example.com/v1" onChange={(e) => setBaseUrl(e.target.value)} />
         </label>
         <label className="field">
-          密钥
+          {t('密钥')}
           <input type="password" name="model-api-key" autoComplete="new-password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
         </label>
         <button className="btn sm primary" disabled={busy || !name.trim() || !baseUrl.trim() || !apiKey.trim()} onClick={() => void add()}>
-          {busy ? '添加中…' : '添加'}
+          {busy ? t('添加中…') : t('添加')}
         </button>
       </div>
       {error && <div className="error-box small" style={{ marginTop: 8 }}>{error}</div>}
       {notice && <div className="small muted model-notice" role="status">{notice}</div>}
       <ModelList models={models} onRemove={remove} />
       <div className="tiny dim" style={{ marginTop: 8 }}>
-        模型与密钥由当前项目管理，不再实时读取 Qwen Code 的全局配置。清理模型前请停止服务并按 README 执行本机维护。
+        {t('模型与密钥由当前项目管理，不再实时读取 Qwen Code 的全局配置。清理模型前请停止服务并按 README 执行本机维护。')}
       </div>
     </div>
   );

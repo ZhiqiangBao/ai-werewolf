@@ -1,23 +1,25 @@
+import { useI18n } from '../i18n';
 import { useEffect, useRef, useState } from 'react';
 import { avatarDefaultName, type HumanParticipant, type RoomBrief } from '@werewolf/protocol';
 import { api } from '../api';
 import { RuleCard } from './Cards';
-import { seatName } from '../util';
 
 export function HumanStatus({ participants, seats }: { participants: HumanParticipant[]; seats: { seat: number; name: string }[] }) {
+  const { t } = useI18n();
   if (!participants.length) return null;
   return <div className="panel">
-    <h3>真人玩家 <span className="tiny muted">{participants.filter((p) => p.ready).length} / {participants.length} 已准备</span></h3>
+    <h3>{t('真人玩家')} <span className="tiny muted">{t('{0} / {1} 已准备', participants.filter((p) => p.ready).length, participants.length)}</span></h3>
     {participants.map((p) => <div className="row small" key={p.seat} style={{ marginBottom: 6 }}>
-      <b>{seatName(p.seat)} · {seats.find((s) => s.seat === p.seat)?.name}</b>
+      <b>{t('{0}号', p.seat)} · {seats.find((s) => s.seat === p.seat)?.name}</b>
       <span className="spacer" />
-      <span className={p.online ? 'tag ok' : 'tag'}>{p.online ? '已连接' : p.joined ? '暂时离线' : '尚未进入'}</span>
-      <span className={p.ready ? 'tag ok' : 'tag'}>{p.ready ? '已准备' : '未准备'}</span>
+      <span className={p.online ? 'tag ok' : 'tag'}>{p.online ? t('已连接') : p.joined ? t('暂时离线') : t('尚未进入')}</span>
+      <span className={p.ready ? 'tag ok' : 'tag'}>{p.ready ? t('已准备') : t('未准备')}</span>
     </div>)}
   </div>;
 }
 
 export function HumanLobby({ room, token, refresh }: { room: RoomBrief; token: string; refresh: () => Promise<void> }) {
+  const { t } = useI18n();
   const mine = room.seats.find((s) => s.seat === room.seat)!;
   const participant = room.participants?.find((p) => p.seat === room.seat);
   const serverName = mine.name?.trim() ? mine.name : avatarDefaultName(room.avatarStyle ?? 'storybook', mine.seat);
@@ -43,18 +45,18 @@ export function HumanLobby({ room, token, refresh }: { room: RoomBrief; token: s
   };
   return <div className="wrap" style={{ maxWidth: 860 }}>
     <div className="panel">
-      <h2>你是 {seatName(mine.seat)}</h2>
-      <p className="muted">确认昵称、阅读规则后准备。开局时随机发放身份，本页会自动进入对局。</p>
-      <label className="field">我的昵称
+      <h2>{t('你是 {0}', t('{0}号', mine.seat))}</h2>
+      <p className="muted">{t('确认昵称、阅读规则后准备。开局时随机发放身份，本页会自动进入对局。')}</p>
+      <label className="field">{t('我的昵称')}
         <input value={name} maxLength={12} disabled={participant?.ready || busy} onChange={(e) => setName(e.target.value)} autoComplete="nickname" />
       </label>
       <button className="btn primary" disabled={busy || !name.trim()} onClick={() => void prepare()}>
-        {busy ? '保存中…' : participant?.ready ? '取消准备' : '确认昵称并准备'}
+        {busy ? t('保存中…') : participant?.ready ? t('取消准备') : t('确认昵称并准备')}
       </button>
-      {participant?.ready && <p className="small" role="status">已准备，等待房主开局。规则改变后需要重新确认。</p>}
+      {participant?.ready && <p className="small" role="status">{t('已准备，等待房主开局。规则改变后需要重新确认。')}</p>}
       {error && <div className="error-box" role="alert">{error}</div>}
     </div>
     <HumanStatus participants={room.participants ?? []} seats={room.seats} />
-    {room.ruleCard && <RuleCard text={room.ruleCard} />}
+    {room.ruleCard && <RuleCard text={room.ruleCard} locale={room.locale} />}
   </div>;
 }

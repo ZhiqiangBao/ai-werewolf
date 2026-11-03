@@ -3,10 +3,12 @@ import { stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { extname, join, normalize } from 'node:path';
 import type { ControlAction } from '@werewolf/protocol';
+import { gameText, LocalizedError } from '@werewolf/protocol';
 import { ApiFailure, type RoomManager, type SpeechConnections, type SpeechService } from '@werewolf/session';
 import { inviteNetwork } from './invite-network';
 import { attachEventStream } from './event-stream';
 import { shutdownResources } from './shutdown';
+import { errorBody, requestLanguage } from './localization';
 
 export interface Frontend {
   middlewares(req: IncomingMessage, res: ServerResponse, next: () => void): void;
@@ -29,10 +31,10 @@ export function createHttpServer({ manager, speech, speechConnections, webRoot }
     const chunks: Buffer[] = [];
     for await (const chunk of req) {
       size += (chunk as Buffer).length;
-      if (size > 1_000_000) throw new ApiFailure(413, 'TOO_LARGE', '请求体过大');
+      if (size > 1_000_000) throw new ApiFailure(413, 'TOO_LARGE', '请求体过大', { key: '请求体过大' });
       chunks.push(chunk as Buffer);
     }
-    if (stopping) throw new ApiFailure(503, 'MANAGER_DISPOSED', '服务正在关闭，请稍后重新连接');
+    if (stopping) throw new ApiFailure(503, 'MANAGER_DISPOSED', '服务正在关闭，请稍后重新连接', { key: '服务正在关闭，请稍后重新连接' });
     if (!chunks.length) return {};
     try {
       const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
@@ -40,7 +42,7 @@ export function createHttpServer({ manager, speech, speechConnections, webRoot }
     } catch {
       // 落到下面统一报错
     }
-    throw new ApiFailure(400, 'BAD_REQUEST', '请求体必须是 JSON 对象');
+    throw new ApiFailure(400, 'BAD_REQUEST', '请求体必须是 JSON 对象', { key: '请求体必须是 JSON 对象' });
   }
 
   /** 凭证从 Authorization 头读取；EventSource 和下载链接无法带头，才从 ?token= 读取。 */
@@ -62,7 +64,7 @@ export function createHttpServer({ manager, speech, speechConnections, webRoot }
       res.writeHead(200, { 'Content-Type': audio.mimeType, 'Content-Length': audio.bytes.length, 'Cache-Control': 'private, no-store' });
       res.end(audio.bytes);
     } catch {
-      if (!controller.signal.aborted) send(res, 503, { code: 'SPEECH_UNAVAILABLE', message });
+      if (!controller.signal.aborted) send(res, 503, errorBody(requestLanguage(req), 'SPEECH_UNAVAILABLE', { key: message }));
     } finally {
       req.removeListener('aborted', disconnected);
       res.removeListener('close', disconnected);
@@ -74,8 +76,9 @@ export function createHttpServer({ manager, speech, speechConnections, webRoot }
     if (method === 'GET' && !id) return send(res, 200, { connections: roomId ? speechConnections.views(roomId) : speechConnections.sharedViews(), builtins: speech.catalog().providers, ...(speechConnections.error ? { error: speechConnections.error } : {}) });
     if (method === 'POST' && id && action === 'test') {
       const providers = roomId ? speechConnections.providers(roomId) : speechConnections.sharedProviders();
-      if (!providers.some((provider) => provider.id === id)) throw new ApiFailure(404, 'NOT_FOUND', '没有这个 TTS 来源');
-      return renderSpeech(req, res, (signal) => speech.render('这是一段语音接入测试。一二三。', id, providers, 'zh-CN', { signal }), '试听失败，请核对地址、密钥、模型、音色及所选协议；未切换其他来源。');
+      if (!providers.some((provider) => provider.id === id)) throw new ApiFailure(404, 'NOT_FOUND', '没有这个 TTS 来源', { key: '没有这个 TTS 来源' });
+      const locale = requestLanguage(req);
+      return renderSpeech(req, res, (signal) => speech.render(gameText(locale, '这是一段语音接入测试。一二三。'), id, providers, locale, { signal }), '试听失败，请核对地址、密钥、模型、音色及所选协议；未切换其他来源。');
     }
     try {
       if (method === 'POST' && roomId && id && action === 'share') return send(res, 200, speechConnections.share(roomId, id));
@@ -87,9 +90,9 @@ export function createHttpServer({ manager, speech, speechConnections, webRoot }
       }
     } catch (error) {
       if (error instanceof ApiFailure) throw error;
-      throw new ApiFailure(400, 'BAD_REQUEST', error instanceof Error && !('code' in error) ? error.message : '无法保存 TTS 配置，请检查服务端存储。');
+      throw new ApiFailure(400, 'BAD_REQUEST', error instanceof Error && !('code' in error) ? error.message : '无法保存 TTS 配置，请检查服务端存储。', error instanceof LocalizedError ? error.localization : { key: '无法保存 TTS 配置，请检查服务端存储。' });
     }
-    throw new ApiFailure(404, 'NOT_FOUND', '接口不存在');
+    throw new ApiFailure(404, 'NOT_FOUND', '接口不存在', { key: '接口不存在' });
   }
 
   const streams = new Set<() => void>();
@@ -111,27 +114,27 @@ export function createHttpServer({ manager, speech, speechConnections, webRoot }
       return send(res, 200, { ok: true });
     }
     if (parts[0] === 'speech-settings') return speechSettings(req, res, method, parts[1], parts[2]);
-    if (parts[0] !== 'rooms') throw new ApiFailure(404, 'NOT_FOUND', '接口不存在');
+    if (parts[0] !== 'rooms') throw new ApiFailure(404, 'NOT_FOUND', '接口不存在', { key: '接口不存在' });
     if (parts.length === 1 && method === 'POST') return send(res, 201, manager.createRoom(await readBody(req)));
 
     const [, roomId, action, sub, subAction] = parts;
-    if (!roomId) throw new ApiFailure(404, 'NOT_FOUND', '接口不存在');
+    if (!roomId) throw new ApiFailure(404, 'NOT_FOUND', '接口不存在', { key: '接口不存在' });
     switch (`${method} ${action ?? ''}`) {
       case 'GET invite-network': {
         manager.getSetup(roomId, token); // 沿用房主鉴权，不能向座位或匿名访问者枚举网卡。
         const address = server.address();
-        if (!address || typeof address === 'string') throw new ApiFailure(503, 'NOT_LISTENING', '服务尚未监听网络端口');
+        if (!address || typeof address === 'string') throw new ApiFailure(503, 'NOT_LISTENING', '服务尚未监听网络端口', { key: '服务尚未监听网络端口' });
         return send(res, 200, inviteNetwork(address));
       }
       case 'GET setup':
-        return send(res, 200, manager.getSetup(roomId, token));
+        return send(res, 200, manager.getSetup(roomId, token, requestLanguage(req)));
       case 'PUT setup':
-        return send(res, 200, manager.updateSetup(roomId, token, await readBody(req)));
+        return send(res, 200, manager.updateSetup(roomId, token, await readBody(req), requestLanguage(req)));
       case 'POST seats':
         if (subAction !== 'test') break;
-        return send(res, 200, await manager.testSeat(roomId, token, Number(sub)));
+        return send(res, 200, await manager.testSeat(roomId, token, Number(sub), requestLanguage(req)));
       case 'POST start':
-        return send(res, 200, manager.start(roomId, token));
+        return send(res, 200, manager.start(roomId, token, requestLanguage(req)));
       case 'POST clone':
         return send(res, 201, manager.cloneRoom(roomId, token));
       case 'POST control': {
@@ -158,7 +161,7 @@ export function createHttpServer({ manager, speech, speechConnections, webRoot }
         const text = manager.speechText(roomId, token, body.eventSeq);
         const providers = [...speechConnections.sharedProviders(), ...speechConnections.providers(roomId)];
         if (body.providerId !== undefined && (typeof body.providerId !== 'string' || !speech.catalog(providers).providers.some((p) => p.id === body.providerId))) {
-          throw new ApiFailure(400, 'BAD_REQUEST', '请选择已配置的朗读来源');
+          throw new ApiFailure(400, 'BAD_REQUEST', '请选择已配置的朗读来源', { key: '请选择已配置的朗读来源' });
         }
         return renderSpeech(req, res, (signal) => speech.render(text, body.providerId as string | undefined, providers, manager.speechLocale(roomId, token), { signal }), '所选来源朗读失败，请检查服务配置或稍后重试；未切换到其他来源。');
       }
@@ -177,7 +180,7 @@ export function createHttpServer({ manager, speech, speechConnections, webRoot }
         return;
       }
     }
-    throw new ApiFailure(404, 'NOT_FOUND', '接口不存在');
+    throw new ApiFailure(404, 'NOT_FOUND', '接口不存在', { key: '接口不存在' });
   }
 
   const MIME: Record<string, string> = {
@@ -192,14 +195,14 @@ export function createHttpServer({ manager, speech, speechConnections, webRoot }
     '.woff2': 'font/woff2',
   };
 
-  async function serveStatic(res: ServerResponse, pathname: string): Promise<void> {
+  async function serveStatic(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void> {
     const dist = join(webRoot, 'dist');
     let file = normalize(join(dist, decodeURIComponent(pathname)));
-    if (!file.startsWith(dist)) return send(res, 403, { code: 'FORBIDDEN', message: '路径不合法' });
+    if (!file.startsWith(dist)) return send(res, 403, errorBody(requestLanguage(req), 'FORBIDDEN', { key: '路径不合法' }));
     const info = await stat(file).catch(() => null);
     if (!info?.isFile()) file = join(dist, 'index.html');
     const exists = await stat(file).catch(() => null);
-    if (!exists) return send(res, 503, { code: 'NOT_BUILT', message: '网页还没有构建，请先运行 pnpm build，或用 pnpm dev 启动开发模式' });
+    if (!exists) return send(res, 503, errorBody(requestLanguage(req), 'NOT_BUILT', { key: '网页还没有构建，请先运行 pnpm build，或用 pnpm dev 启动开发模式' }));
     res.writeHead(200, { 'Content-Type': MIME[extname(file)] ?? 'application/octet-stream' });
     createReadStream(file).pipe(res);
   }
@@ -210,15 +213,23 @@ export function createHttpServer({ manager, speech, speechConnections, webRoot }
   server.on('request', async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     try {
-      if (stopping) throw new ApiFailure(503, 'MANAGER_DISPOSED', '服务正在关闭，请稍后重新连接');
+      if (stopping) throw new ApiFailure(503, 'MANAGER_DISPOSED', '服务正在关闭，请稍后重新连接', { key: '服务正在关闭，请稍后重新连接' });
       if (url.pathname.startsWith('/api/v1/')) return await api(req, res, url);
-      if (vite) return vite.middlewares(req, res, () => send(res, 404, { code: 'NOT_FOUND', message: '页面不存在' }));
-      return await serveStatic(res, url.pathname);
+      if (vite) return vite.middlewares(req, res, () => send(res, 404, errorBody(requestLanguage(req), 'NOT_FOUND', { key: '页面不存在' })));
+      return await serveStatic(req, res, url.pathname);
     } catch (e) {
-      if (e instanceof ApiFailure) return send(res, e.status, { code: e.code, message: e.message });
+      if (e instanceof ApiFailure) {
+        let locale = requestLanguage(req);
+        // 行动错误属于本局；仍沿用同一凭证鉴权，不向无权访问者透露房间数据。
+        const action = /^\/api\/v1\/rooms\/([^/]+)\/act$/.exec(url.pathname);
+        if (action) {
+          try { locale = manager.speechLocale(action[1], tokenOf(req, url)); } catch { /* 未通过鉴权时使用个人界面语言。 */ }
+        }
+        return send(res, e.status, errorBody(locale, e.code, e.localization));
+      }
       if (res.destroyed || res.writableEnded) return;
       console.error('请求处理失败：', (e as Error).message);
-      if (!res.headersSent) send(res, 500, { code: 'INTERNAL', message: '服务器内部错误' });
+      if (!res.headersSent) send(res, 500, errorBody(requestLanguage(req), 'INTERNAL'));
     }
   });
 

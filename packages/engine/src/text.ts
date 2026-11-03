@@ -5,9 +5,9 @@ import type { Direction } from './types';
 export const seatLabel = (s: Seat, locale: string | undefined = 'zh-CN'): string => gameText(locale, "{0}号", s);
 
 export const seatList = (seats: Seat[], locale: string | undefined = 'zh-CN'): string =>
-  [...seats].sort((a, b) => a - b).map((value) => seatLabel(value, locale)).join('、');
+  [...seats].sort((a, b) => a - b).map((value) => seatLabel(value, locale)).join(gameText(locale, '、'));
 
-export const orderList = (seats: Seat[], locale: string | undefined = 'zh-CN'): string => seats.map((value) => seatLabel(value, locale)).join('、');
+export const orderList = (seats: Seat[], locale: string | undefined = 'zh-CN'): string => seats.map((value) => seatLabel(value, locale)).join(gameText(locale, '、'));
 
 export const directionLabel = (d: Direction, locale: string | undefined = 'zh-CN'): string =>
   d === 'clockwise' ? gameText(locale, "顺时针（号码增大）") : gameText(locale, "逆时针（号码减小）");

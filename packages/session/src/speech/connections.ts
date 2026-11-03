@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { SPEECH_CONNECTION_TEMPLATES, type SpeechConnectionDraft, type SpeechConnectionView } from '@werewolf/protocol';
+import { LocalizedError, SPEECH_CONNECTION_TEMPLATES, type SpeechConnectionDraft, type SpeechConnectionView } from '@werewolf/protocol';
 import type { SecretBox } from '../secret';
 import { mimoRequest, MIMO_MODEL } from './mimo';
 import { speechProvider, type SpeechProviderConfig } from './providers';
@@ -12,7 +12,7 @@ const GLOBAL = '@global';
 const MIME_TYPES = new Set(['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/webm', 'audio/mp4', 'audio/flac']);
 function optional(value: unknown, limit = 500): string | undefined {
   if (value === undefined) return;
-  if (typeof value !== 'string' || value.length > limit) throw Error('TTS 配置字段格式不正确');
+  if (typeof value !== 'string' || value.length > limit) throw new LocalizedError('TTS 配置字段格式不正确');
   return value.trim() || undefined;
 }
 export function connectionConfig(draft: Omit<SpeechConnectionView, 'hasKey'>): SpeechProviderConfig {
@@ -24,7 +24,7 @@ export function connectionConfig(draft: Omit<SpeechConnectionView, 'hasKey'>): S
   if (draft.kind === 'minimax') return { ...common, type: 'http-json-audio', audioPath: 'data.audio', encoding: 'hex', mimeType: 'audio/mpeg', statusPath: 'base_resp.status_code', statusValue: 0, completionPath: 'data.status', completionValue: 2,
     body: { model: draft.model || 'speech-2.8-hd', text: '{{text}}', stream: false, output_format: 'hex', voice_setting: { voice_id: draft.voice || 'male-qn-qingse' }, audio_setting: { format: 'mp3', sample_rate: 24000, channel: 1 } } };
   let body: unknown;
-  try { body = JSON.parse(draft.bodyJson ?? ''); } catch { throw Error('请求模板必须是有效 JSON'); }
+  try { body = JSON.parse(draft.bodyJson ?? ''); } catch { throw new LocalizedError('请求模板必须是有效 JSON'); }
   if (draft.kind === 'http-audio') return { ...common, type: 'http-audio', body, ...(draft.mimeType ? { mimeType: draft.mimeType } : {}) };
   return { ...common, type: 'http-json-audio', body, audioPath: draft.audioPath || 'audio', encoding: draft.encoding || 'base64', mimeType: draft.mimeType || 'audio/wav' };
 }
@@ -59,44 +59,48 @@ export class SpeechConnections {
   share(roomId: string, id: string): SpeechConnectionView {
     if (this.error) throw Error(this.error);
     const entry = this.rooms[roomId]?.find((item) => item.id === id);
-    if (!entry) throw Error('没有这个旧房间 TTS 来源');
-    if ((this.rooms[GLOBAL]?.length ?? 0) >= 20 || this.rooms[GLOBAL]?.some((item) => item.id === id)) throw Error('首页 TTS 库已满或已有此来源');
+    if (!entry) throw new LocalizedError('没有这个旧房间 TTS 来源');
+    if ((this.rooms[GLOBAL]?.length ?? 0) >= 20 || this.rooms[GLOBAL]?.some((item) => item.id === id)) throw new LocalizedError('首页 TTS 库已满或已有此来源');
     this.persist({ ...this.rooms, [GLOBAL]: [...(this.rooms[GLOBAL] ?? []), entry], [roomId]: this.rooms[roomId].filter((item) => item.id !== id) });
     return this.sharedViews().find((item) => item.id === id)!;
   }
   save(roomId: string, raw: Record<string, unknown>, id?: string): SpeechConnectionView {
     if (this.error) throw Error(this.error);
     const previous = id ? this.rooms[roomId]?.find((item) => item.id === id) : undefined;
-    if (id && !previous) throw Error('没有这个 TTS 来源');
-    if (!id && (this.rooms[roomId]?.length ?? 0) >= 20) throw Error('当前 TTS 库最多配置 20 个来源');
+    if (id && !previous) throw new LocalizedError('没有这个 TTS 来源');
+    if (!id && (this.rooms[roomId]?.length ?? 0) >= 20) throw new LocalizedError('当前 TTS 库最多配置 20 个来源');
     const name = optional(raw.name, 120), address = optional(raw.url, 2000);
-    if (!name || !address || !SPEECH_CONNECTION_TEMPLATES.some((item) => item.kind === raw.kind)) throw Error('请填写名称、接口地址并选择接入类型');
+    if (!name || !address || !SPEECH_CONNECTION_TEMPLATES.some((item) => item.kind === raw.kind)) throw new LocalizedError('请填写名称、接口地址并选择接入类型');
     let url: URL;
-    try { url = new URL(address); } catch { throw Error('请输入完整的 HTTP 或 HTTPS 接口地址'); }
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash || url.search) throw Error('接口地址不能包含密码、查询凭证或片段，请把 Key 填在密钥栏');
+    try { url = new URL(address); } catch { throw new LocalizedError('请输入完整的 HTTP 或 HTTPS 接口地址'); }
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash || url.search) throw new LocalizedError('接口地址不能包含密码、查询凭证或片段，请把 Key 填在密钥栏');
     const header = optional(raw.apiKeyHeader, 100);
-    if (header && (!/^[a-zA-Z0-9-]+$/.test(header) || /^(host|content-length|content-type|cookie|proxy-authorization|connection)$/i.test(header))) throw Error('密钥请求头名称无效');
-    if (raw.apiKeyPrefix !== undefined && (typeof raw.apiKeyPrefix !== 'string' || raw.apiKeyPrefix.length > 100 || /[\r\n]/.test(raw.apiKeyPrefix))) throw Error('密钥前缀无效');
-    if (raw.encoding !== undefined && !['base64', 'hex'].includes(String(raw.encoding))) throw Error('音频编码无效');
+    if (header && (!/^[a-zA-Z0-9-]+$/.test(header) || /^(host|content-length|content-type|cookie|proxy-authorization|connection)$/i.test(header))) throw new LocalizedError('密钥请求头名称无效');
+    if (raw.apiKeyPrefix !== undefined && (typeof raw.apiKeyPrefix !== 'string' || raw.apiKeyPrefix.length > 100 || /[\r\n]/.test(raw.apiKeyPrefix))) throw new LocalizedError('密钥前缀无效');
+    if (raw.encoding !== undefined && !['base64', 'hex'].includes(String(raw.encoding))) throw new LocalizedError('音频编码无效');
     const mimeType = optional(raw.mimeType, 100);
-    if (mimeType && !MIME_TYPES.has(mimeType)) throw Error('音频 MIME 类型无效');
+    if (mimeType && !MIME_TYPES.has(mimeType)) throw new LocalizedError('音频 MIME 类型无效');
     const apiKey = optional(raw.apiKey, 8000);
-    if (apiKey && /[\r\n]/.test(apiKey)) throw Error('API Key 不能包含换行');
-    if (!apiKey && !previous) throw Error('请填写 API Key');
+    if (apiKey && /[\r\n]/.test(apiKey)) throw new LocalizedError('API Key 不能包含换行');
+    if (!apiKey && !previous) throw new LocalizedError('请填写 API Key');
     const saved: SavedConnection = { id: previous?.id ?? `tts_${randomBytes(12).toString('hex')}`, name, url: url.href, kind: raw.kind as SpeechConnectionDraft['kind'],
       model: optional(raw.model), voice: optional(raw.voice), bodyJson: optional(raw.bodyJson, 64000), audioPath: optional(raw.audioPath),
       apiKeyHeader: header, apiKeyPrefix: raw.apiKeyPrefix as string | undefined, encoding: raw.encoding as SpeechConnectionDraft['encoding'], mimeType,
       apiKeyEnc: apiKey ? this.secrets.encrypt(apiKey) : previous!.apiKeyEnc };
     const { apiKeyEnc: _secret, ...draft } = saved;
     // Validate without making a request. No arbitrary JS/module paths from the UI.
-    speechProvider(connectionConfig(draft), this.directory, dirname(this.file), { apiKey: 'validation-only' });
+    try { speechProvider(connectionConfig(draft), this.directory, dirname(this.file), { apiKey: 'validation-only' }); }
+    catch (error) {
+      if (error instanceof LocalizedError) throw error;
+      throw new LocalizedError('TTS 请求配置无效，请检查模板、音频路径和接入类型');
+    }
     this.persist({ ...this.rooms, [roomId]: [...(this.rooms[roomId] ?? []).filter((item) => item.id !== saved.id), saved] });
     return this.views(roomId).find((item) => item.id === saved.id)!;
   }
   remove(roomId: string, id: string): void {
     if (this.error) throw Error(this.error);
     const items = this.rooms[roomId] ?? [];
-    if (!items.some((item) => item.id === id)) throw Error('没有这个 TTS 来源');
+    if (!items.some((item) => item.id === id)) throw new LocalizedError('没有这个 TTS 来源');
     this.persist({ ...this.rooms, [roomId]: items.filter((item) => item.id !== id) });
   }
   private key(encrypted: string) { try { return this.secrets.decrypt(encrypted); } catch { return ''; } }

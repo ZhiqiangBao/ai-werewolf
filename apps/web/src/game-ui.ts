@@ -1,4 +1,4 @@
-import type { GameEvent, GodSeatInfo, Projection, SeatInfo } from '@werewolf/protocol';
+import { gameText, type GameEvent, type GodSeatInfo, type Projection, type SeatInfo } from '@werewolf/protocol';
 
 export interface VisibleIdentity {
   role?: string;
@@ -8,7 +8,7 @@ export interface VisibleIdentity {
 }
 
 /** Only authority-scoped knowledge can reveal another seat; never read its actual hidden role. */
-export function seatIdentity(p: Pick<Projection, 'viewer' | 'me' | 'events'>, seat: SeatInfo, roles?: GodSeatInfo[]): VisibleIdentity {
+export function seatIdentity(p: Pick<Projection, 'viewer' | 'me' | 'events'> & { locale?: string }, seat: SeatInfo, roles?: GodSeatInfo[], locale = p.locale): VisibleIdentity {
   if (p.viewer.kind === 'god') {
     const identity = roles?.find((r) => r.seat === seat.seat);
     return identity ? { role: identity.role, name: identity.roleName, source: 'god' } : {};
@@ -25,14 +25,14 @@ export function seatIdentity(p: Pick<Projection, 'viewer' | 'me' | 'events'>, se
   if (p.viewer.kind !== 'seat' || p.me?.seat !== p.viewer.seat) return {};
   const known = p.me.knownIdentities?.findLast((k) => k.seat === seat.seat);
   if (known?.kind === 'role') return { role: known.role, name: known.roleName, source: known.source };
-  if (known?.kind === 'alignment') return { name: known.alignment === 'wolf' ? '狼人' : '好人', tone: known.alignment === 'wolf' ? 'wolf' : 'villager', source: known.source };
+  if (known?.kind === 'alignment') return { name: gameText(locale, known.alignment === 'wolf' ? '狼人' : '好人'), tone: known.alignment === 'wolf' ? 'wolf' : 'villager', source: known.source };
   // Compatibility with a running older server: use only its already-private knowledge.
-  if (p.me.teammates?.includes(seat.seat)) return { name: '狼人', tone: 'wolf', source: 'teammate' };
+  if (p.me.teammates?.includes(seat.seat)) return { name: gameText(locale, '狼人'), tone: 'wolf', source: 'teammate' };
   const mine = p.me.seat;
   if (p.me.role === 'seer') {
     const check = p.events.findLast((e) => e.type === 'seer.result' && Array.isArray(e.audience) && e.audience.includes(mine) && e.payload.target === seat.seat);
     if (check?.payload.result === 'good' || check?.payload.result === 'wolf') {
-      return { name: check.payload.result === 'wolf' ? '狼人' : '好人', tone: check.payload.result === 'wolf' ? 'wolf' : 'villager', source: 'inspection' };
+      return { name: gameText(locale, check.payload.result === 'wolf' ? '狼人' : '好人'), tone: check.payload.result === 'wolf' ? 'wolf' : 'villager', source: 'inspection' };
     }
   }
   return {};
@@ -82,7 +82,9 @@ export function publicElection(events: GameEvent[]): PublicElection {
 }
 
 /** An active public actor may be handling the badge or choosing the speaking order. */
-export function publicActivity(p: Pick<Projection, 'status' | 'phase' | 'stage'>, seat: SeatInfo): 'speech' | 'action' | null {
+export function publicActivity(p: Pick<Projection, 'status' | 'phase' | 'stage'> & { locale?: string }, seat: SeatInfo): 'speech' | 'action' | null {
   if (!seat.active || p.status === 'ended' || p.phase === 'night') return null;
-  return /(?:发言|遗言)中$/.test(p.stage) ? 'speech' : 'action';
+  const speechStages = ['发言', '竞选发言', 'PK发言', '竞选PK发言', '遗言'].map((label) =>
+    gameText(p.locale, '{0}{1}中', gameText(p.locale, '{0}号', seat.seat), gameText(p.locale, label)));
+  return speechStages.includes(p.stage) || /(?:发言|遗言)中$/.test(p.stage) ? 'speech' : 'action';
 }

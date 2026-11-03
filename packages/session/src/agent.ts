@@ -322,6 +322,38 @@ export function ensureCue(thread: SeatThread, cue: ActionCue | null): void {
 /** 行动成功后记在自己的上下文里。发言用原话，方便和广播去重。 */
 export function ownLine(tool: string, args: Record<string, unknown>, locale: string | undefined = 'zh-CN'): string {
   if (typeof args.content === 'string' && args.content) return args.content;
+  // These are receipts for the submitted action, not claims about its outcome.
+  // Keep tool names and arguments unchanged in the assistant's native call.
+  const noTarget: Record<string, string> = {
+    witch_save: '已提交使用解药。', witch_skip: '已提交本夜不用药。',
+    guard_skip: '已提交本夜空守。', wolf_empty_kill: '已提交空刀。',
+    vote_abstain: '已提交放逐弃票。', sheriff_abstain: '已提交警长投票弃票。',
+    hunter_hold_fire: '已提交放弃开枪。', badge_tear: '已提交撕毁警徽。',
+  };
+  if (Object.hasOwn(noTarget, tool)) return gameText(locale, noTarget[tool]);
+  if (tool === 'witch_act') {
+    const target = args.poisonTarget;
+    if (typeof target === 'number') return gameText(locale, args.save === true ? '已提交使用解药并对 {0} 使用毒药。' : '已提交对 {0} 使用毒药。', gameText(locale, '{0}号', target));
+    return gameText(locale, args.save === true ? '已提交使用解药。' : '已提交本夜不用药。');
+  }
+  if (args.target === null) {
+    const legacySkip: Record<string, string> = {
+      guard_protect: '已提交本夜空守。', wolf_kill: '已提交空刀。', vote: '已提交放逐弃票。',
+      sheriff_vote: '已提交警长投票弃票。', hunter_shoot: '已提交放弃开枪。', badge_dispose: '已提交撕毁警徽。',
+    };
+    if (Object.hasOwn(legacySkip, tool)) return gameText(locale, legacySkip[tool]);
+  }
+  const targetReceipts: Record<string, string> = {
+    seer_inspect: '已提交查验 {0}。', guard_protect: '已提交守护 {0}。',
+    witch_poison: '已提交对 {0} 使用毒药。', witch_save_and_poison: '已提交使用解药并对 {0} 使用毒药。',
+    wolf_kill: '已提交刀 {0}。', vote: '已提交投票给 {0}。',
+    sheriff_vote: '已提交警长投票给 {0}。', hunter_shoot: '已提交对 {0} 开枪。',
+    badge_transfer: '已提交将警徽移交给 {0}。', badge_dispose: '已提交将警徽移交给 {0}。',
+  };
+  const target = args.targetSeat ?? args.candidateSeat ?? args.recipientSeat ?? args.target;
+  if (Object.hasOwn(targetReceipts, tool) && typeof target === 'number') {
+    return gameText(locale, targetReceipts[tool], gameText(locale, '{0}号', target));
+  }
   if ('target' in args) return args.target == null ? gameText(locale, "{0}：放弃", tool) : gameText(locale, "{0}：{1}号", tool, args.target);
   for (const field of ['targetSeat', 'recipientSeat', 'candidateSeat']) if (field in args) return gameText(locale, "{0}：{1}号", tool, args[field]);
   if ('explode' in args) return args.explode ? gameText(locale, "自爆") : gameText(locale, "不自爆");

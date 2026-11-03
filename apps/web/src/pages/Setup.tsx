@@ -1,4 +1,5 @@
-import { gameLanguages } from '@werewolf/protocol';
+import { gameLanguages, gameText, isGameLocale } from '@werewolf/protocol';
+import { useI18n } from '../i18n';
 import { TimingSettings } from '../components/TimingSettings';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { thinkingOptions, defaultThinkingMode, API_PROTOCOLS, API_PROTOCOL_LABELS, type ApiProtocol } from '@werewolf/protocol';
@@ -55,6 +56,7 @@ function applyLocal(s: RoomSetupView, input: RoomSetupInput): RoomSetupView {
 
 /** 开局配置：版型、可改规则、模型名单和座位。改动自动保存。 */
 export function Setup({ roomId, token, onStarted }: { roomId: string; token: string; onStarted: () => void }) {
+  const { t, locale: uiLocale } = useI18n();
   const catalog = useCatalog();
   const [setup, setSetup] = useState<RoomSetupView | null>(null);
   const [models, setModels] = useState<ModelPresetView[]>([]);
@@ -81,8 +83,14 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
   }, []);
 
   useEffect(() => {
-    api.getSetup(roomId, token).then(setSetup, (e: Error) => setError(e.message));
-  }, [roomId, token]);
+    if (saving) return;
+    let active = true;
+    const mark = edits.current;
+    api.getSetup(roomId, token).then((value) => {
+      if (active && mark === edits.current && !Object.keys(queued.current).length) setSetup(value);
+    }, (e: Error) => { if (active) setError(e.message); });
+    return () => { active = false; };
+  }, [roomId, token, uiLocale, saving]);
 
   useEffect(() => {
     loadModels();
@@ -155,7 +163,7 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
   };
 
   if (!setup || !catalog) {
-    return <div className="center-screen muted">{error ?? '正在加载房间配置…'}</div>;
+    return <div className="center-screen muted">{error ?? t('正在加载房间配置…')}</div>;
   }
 
   const preset = catalog.presets.find((p) => p.id === setup.presetId);
@@ -164,14 +172,14 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
   return (
     <div className="wrap">
       <header className="page-heading">
-        <div><span className="eyebrow">PREPARE YOUR COUNCIL</span><h1>准备你的圆桌</h1><p>选一个故事，让不同的声音入席。</p></div>
-        <div className="row"><AvatarStylePicker value={setup.avatarStyle ?? currentAvatarStyle()} onChange={(avatarStyle) => patch({ avatarStyle }, 0)} /><span className="tag gold">{saving ? '正在保存…' : '配置已自动保存'}</span></div>
+        <div><span className="eyebrow">{t('筹备你的圆桌')}</span><h1>{t('准备你的圆桌')}</h1><p>{t('选一个故事，让不同的声音入席。')}</p></div>
+        <div className="row"><AvatarStylePicker value={setup.avatarStyle ?? currentAvatarStyle()} onChange={(avatarStyle) => patch({ avatarStyle }, 0)} /><span className="tag gold">{saving ? t('正在保存…') : t('配置已自动保存')}</span></div>
       </header>
-      <div className="setup-steps"><span><b>01</b>选择版型</span><span><b>02</b>安排座位</span><span><b>03</b>开启故事</span></div>
+      <div className="setup-steps"><span><b>01</b>{t('选择版型')}</span><span><b>02</b>{t('安排座位')}</span><span><b>03</b>{t('开启故事')}</span></div>
       <div className="setup-grid">
         <div className="setup-main">
-          <PresetPicker catalog={catalog} value={setup.presetId} onChange={(id) => void changePreset(id)} />
-          <div className="panel row"><label htmlFor="game-language">对局语言</label><select id="game-language" value={setup.locale ?? 'zh-CN'} onChange={(e) => patch({ locale: e.target.value }, 0)}>{(catalog.languages ?? gameLanguages()).map((language) => <option key={language.id} value={language.id}>{language.label}</option>)}</select><span className="small muted">规则卡、法官通知与模型发言使用此语言，开局后固定。</span></div>
+          <PresetPicker locale={setup.locale} catalog={catalog} value={setup.presetId} onChange={(id) => void changePreset(id)} />
+          <div className="panel row"><label htmlFor="game-language">{t('对局语言')}</label><select id="game-language" value={setup.locale ?? 'zh-CN'} onChange={(e) => patch({ locale: e.target.value }, 0)}>{(catalog.languages ?? gameLanguages()).filter((language) => isGameLocale(language.id)).map((language) => <option key={language.id} value={language.id}>{language.label}</option>)}</select><span className="small muted">{t('规则卡、法官通知与模型发言使用此语言，开局后固定。')}</span></div>
           <SeatsPanel
             setup={setup}
             catalog={catalog}
@@ -183,21 +191,21 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
             flush={flush}
           />
           <details className="panel setup-advanced">
-            <summary>规则设置<small>按需要调整</small></summary>
-            <OptionsPanel catalog={catalog} roles={preset?.roles ?? []} values={setup.ruleValues} onChange={(k, v) => patch({ ruleValues: { [k]: v } }, 200)} />
-            <p className="small muted">模型库与语音服务在<a href="#/settings">首页统一管理</a>，本页只为座位选择模型。</p>
+            <summary>{t('规则设置')}<small>{t('按需要调整')}</small></summary>
+            <OptionsPanel locale={setup.locale} catalog={catalog} roles={preset?.roles ?? []} values={setup.ruleValues} onChange={(k, v) => patch({ ruleValues: { [k]: v } }, 200)} />
+            <p className="small muted">{t('模型库与语音服务在')}<a href="#/settings">{t('首页统一管理')}</a>{t('，本页只为座位选择模型。')}</p>
           </details>
         </div>
 
         <div className="setup-sidebar">
           <div className="panel">
             <h3>
-              开局
+              {t('开局')}
               <span className="spacer" />
-              <span className="tiny dim">{saving ? '保存中…' : '已自动保存'}</span>
+              <span className="tiny dim">{saving ? t('保存中…') : t('已自动保存')}</span>
             </h3>
             <div className="small muted" style={{ marginBottom: 10 }}>
-              {preset ? `${preset.name} · ${preset.playerCount} 人` : setup.presetId} · 身份在开局时随机发放
+              {preset ? `${gameText(setup.locale, preset.name)} · ${t('{0} 人', preset.playerCount)}` : setup.presetId} · {t('身份在开局时随机发放')}
             </div>
             {errors.length > 0 && (
               <div className="error-box small" style={{ marginBottom: 10 }}>
@@ -212,23 +220,24 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
               </div>
             )}
             <button className="btn primary lg" style={{ width: '100%' }} disabled={!!errors.length || starting} onClick={start}>
-              {starting ? '正在开局…' : '开始游戏'}
+              {starting ? t('正在开局…') : t('开始游戏')}
             </button>
           </div>
           <LinksPanel roomId={roomId} setup={setup} />
           <HumanStatus participants={setup.participants} seats={setup.seats} />
-          <RuleCard text={setup.ruleCardPreview} />
+          <RuleCard text={setup.ruleCardPreview} locale={setup.locale} />
         </div>
       </div>
     </div>
   );
 }
 
-function PresetPicker({ catalog, value, onChange }: { catalog: Catalog; value: string; onChange: (id: string) => void }) {
-  const roleName = (id: string) => catalog.roles.find((r) => r.id === id)?.name ?? id;
+function PresetPicker({ catalog, value, onChange, locale }: { catalog: Catalog; value: string; onChange: (id: string) => void; locale?: string }) {
+  const { t } = useI18n();
+  const roleName = (id: string) => catalog.roles.find((r) => r.id === id)?.name ? gameText(locale, catalog.roles.find((r) => r.id === id)!.name) : id;
   return (
     <div className="panel">
-      <h3>版型</h3>
+      <h3>{t('版型')}</h3>
       <div className="preset-cards">
         {catalog.presets.map((p) => {
           const counts = new Map<string, number>();
@@ -236,13 +245,13 @@ function PresetPicker({ catalog, value, onChange }: { catalog: Catalog; value: s
           return (
             <button key={p.id} className={`preset-card ${p.id === value ? 'on' : ''}`} onClick={() => p.id !== value && onChange(p.id)}>
               <div className="row" style={{ gap: 6 }}>
-                <b>{p.name}</b>
-                {p.tag && <span className="tag gold">{p.tag}</span>}
+                <b>{gameText(locale, p.name)}</b>
+                {p.tag && <span className="tag gold">{gameText(locale, p.tag)}</span>}
                 <span className="spacer" />
-                <span className="small muted">{p.playerCount} 人</span>
+                <span className="small muted">{t('{0} 人', p.playerCount)}</span>
               </div>
               <div className="small muted" style={{ marginTop: 4 }}>
-                {p.description}
+                {gameText(locale, p.description)}
               </div>
               <div className="roles">
                 {[...counts].map(([id, n]) => (
@@ -260,15 +269,15 @@ function PresetPicker({ catalog, value, onChange }: { catalog: Catalog; value: s
   );
 }
 
-function OptionInput({ o, value, onChange }: { o: RuleOptionInfo; value: RuleValue; onChange: (v: RuleValue) => void }) {
+function OptionInput({ o, value, onChange, locale }: { o: RuleOptionInfo; value: RuleValue; onChange: (v: RuleValue) => void; locale?: string }) {
   if (o.type === 'boolean') {
     return (
       <div className="seg">
         <button className={value === true ? 'on' : ''} onClick={() => onChange(true)}>
-          是
+          {gameText(locale, '是')}
         </button>
         <button className={value === false ? 'on' : ''} onClick={() => onChange(false)}>
-          否
+          {gameText(locale, '否')}
         </button>
       </div>
     );
@@ -278,7 +287,7 @@ function OptionInput({ o, value, onChange }: { o: RuleOptionInfo; value: RuleVal
       <select value={String(value)} onChange={(e) => onChange(o.choices!.find((c) => String(c.value) === e.target.value)!.value)}>
         {o.choices!.map((c) => (
           <option key={String(c.value)} value={String(c.value)}>
-            {c.label}
+            {gameText(locale, c.label)}
           </option>
         ))}
       </select>
@@ -288,39 +297,42 @@ function OptionInput({ o, value, onChange }: { o: RuleOptionInfo; value: RuleVal
 }
 
 function OptionsPanel({
+  locale,
   catalog,
   roles,
   values,
   onChange,
 }: {
   catalog: Catalog;
+  locale?: string;
   roles: string[];
   values: Record<string, RuleValue>;
   onChange: (key: string, v: RuleValue) => void;
 }) {
+  const { t } = useI18n();
   const shown = catalog.options.filter((o) => o.editable && (!o.owner || roles.includes(o.owner)) && values[o.key] !== undefined);
   const groups = [...new Set(shown.map((o) => o.group))];
   return (
     <div className="panel">
       <h3>
-        规则选项
+        {t('规则选项')}
         <span className="tiny dim" style={{ fontWeight: 400 }}>
-          只列出本版型可以调整的项，其余规则见右侧规则卡
+          {t('只列出本版型可以调整的项，其余规则见右侧规则卡')}
         </span>
       </h3>
       {groups.map((g) => (
         <div key={g} style={{ marginBottom: 14 }}>
           <div className="small" style={{ color: 'var(--accent)', marginBottom: 8 }}>
-            {g}
+            {gameText(locale, g)}
           </div>
           <div className="options-grid">
             {shown
               .filter((o) => o.group === g)
               .map((o) => (
                 <div key={o.key} className="option">
-                  <span className="label">{o.label}</span>
-                  <OptionInput o={o} value={values[o.key]} onChange={(v) => onChange(o.key, v)} />
-                  {o.hint && <span className="hint">{o.hint}</span>}
+                  <span className="label">{gameText(locale, o.label)}</span>
+                  <OptionInput locale={locale} o={o} value={values[o.key]} onChange={(v) => onChange(o.key, v)} />
+                  {o.hint && <span className="hint">{gameText(locale, o.hint)}</span>}
                 </div>
               ))}
           </div>
@@ -368,6 +380,7 @@ interface SeatsPanelProps {
 }
 
 function SeatsPanel({ setup, catalog, models, roomId, token, patchSeat, patch, flush }: SeatsPanelProps) {
+  const { t } = useI18n();
   const [open, setOpen] = useState<number | null>(null);
   const choice = choiceFor(models);
   const ai = setup.seats.filter((s) => s.controller === 'ai');
@@ -379,17 +392,17 @@ function SeatsPanel({ setup, catalog, models, roomId, token, patchSeat, patch, f
   return (
     <div className="panel">
       <h3>
-        座位
+        {t('座位')}
         <span className="tiny dim" style={{ fontWeight: 400 }}>
-          {ai.length} 个 AI，{setup.seats.length - ai.length} 个真人
+          {t('{0} 个 AI，{1} 个真人', ai.length, setup.seats.length - ai.length)}
         </span>
         <span className="spacer" />
         <select className="seat-model" style={{ maxWidth: 280 }} value="" onChange={(e) => applyAll(e.target.value)}>
-          <option value="">全部 AI 座位改成…</option>
-          <option value="mock">模拟玩家</option>
+          <option value="">{t('全部 AI 座位改成…')}</option>
+          <option value="mock">{t('模拟玩家')}</option>
           {models.map((m) => (
             <option key={m.id} value={m.id} disabled={!!m.lifecycle && m.lifecycle !== 'active'}>
-              {m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}{m.lifecycle && m.lifecycle !== 'active' ? ' · 不可选' : ''}
+              {m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}{m.lifecycle && m.lifecycle !== 'active' ? t(' · 不可选') : ''}
             </option>
           ))}
         </select>
@@ -400,6 +413,7 @@ function SeatsPanel({ setup, catalog, models, roomId, token, patchSeat, patch, f
           <SeatRow
             key={s.seat}
             s={s}
+            locale={setup.locale}
             seatToken={setup.tokens.seats.find((t) => t.seat === s.seat)!.token}
             catalog={catalog}
             models={models}
@@ -423,14 +437,15 @@ function selectedId(s: SeatConfigView, models: ModelPresetView[]): string {
 }
 
 function ModelOptions({ models }: { models: ModelPresetView[] }) {
+  const { t } = useI18n();
   return (
     <>
-      <option value="mock">模拟玩家</option>
+      <option value="mock">{t('模拟玩家')}</option>
       {models.length > 0 && (
-        <optgroup label="项目模型库">
+        <optgroup label={t('项目模型库')}>
           {models.map((m) => (
             <option key={m.id} value={m.id} disabled={!!m.lifecycle && m.lifecycle !== 'active'}>
-              {m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}{m.lifecycle && m.lifecycle !== 'active' ? ' · 不可选' : ''}
+              {m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}{m.lifecycle && m.lifecycle !== 'active' ? t(' · 不可选') : ''}
             </option>
           ))}
         </optgroup>
@@ -439,7 +454,13 @@ function ModelOptions({ models }: { models: ModelPresetView[] }) {
   );
 }
 
+/** 消费协议声明的模板和值，不解析中文说明正文。 */
+function thinkingText(option: ReturnType<typeof thinkingOptions>[number], t: (source: string, ...values: unknown[]) => string): string {
+  return t(option.hintKey, ...(option.hintValues ?? []).map((value) => typeof value === 'string' ? t(value) : value));
+}
+
 function SeatRow({
+  locale,
   s,
   seatToken,
   catalog,
@@ -451,6 +472,7 @@ function SeatRow({
   token,
   flush,
 }: {
+  locale?: string;
   s: SeatConfigView;
   seatToken: string;
   catalog: Catalog;
@@ -462,6 +484,7 @@ function SeatRow({
   token: string;
   flush: () => Promise<void>;
 }) {
+  const { t } = useI18n();
   const [test, setTest] = useState<{ ok: boolean; message: string } | null>(null);
   const [testing, setTesting] = useState(false);
   const real = s.adapter === 'openai_compatible';
@@ -485,7 +508,7 @@ function SeatRow({
     if (next) patchSeat(s.seat, keepThinking(s, next), 0);
   };
   const thinking = thinkingOptions(s.baseUrl, s.model, s.apiProtocol);
-  const thinkingHint = thinking.find((o) => o.value === (s.thinkingMode ?? 'default'))?.hint;
+  const thinkingHint = thinking.find((o) => o.value === (s.thinkingMode ?? 'default'));
   return (
     <div className="seat-row">
       <div className="seat-no" style={seatStyle(s.seat)}>
@@ -495,9 +518,9 @@ function SeatRow({
         type="text"
         value={s.name === seatName(s.seat) ? '' : s.name}
         maxLength={12}
-        placeholder="留空恢复人物默认昵称"
-        aria-label={`${s.seat}号的昵称`}
-        title="自定义昵称，可在开局前修改；留空恢复当前人物默认昵称"
+        placeholder={t('留空恢复人物默认昵称')}
+        aria-label={t('{0}号的昵称', s.seat)}
+        title={t('自定义昵称，可在开局前修改；留空恢复当前人物默认昵称')}
         onChange={(e) => patchSeat(s.seat, { name: e.target.value })}
       />
       <div className="seg">
@@ -505,28 +528,28 @@ function SeatRow({
           AI
         </button>
         <button className={s.controller === 'human' ? 'on' : ''} onClick={() => patchSeat(s.seat, { controller: 'human' }, 0)}>
-          真人
+          {t('真人')}
         </button>
       </div>
       {s.controller === 'ai' ? (
         <select className="seat-model" value={value} onChange={(e) => pick(e.target.value)}>
-          {value === 'custom' && <option value="custom">{s.model || '未选择'}</option>}
-          {s.modelId && !models.some((m) => m.id === s.modelId) && <option value={s.modelId} disabled>{s.model || s.modelId} · 模型不存在</option>}
+          {value === 'custom' && <option value="custom">{s.model || t('未选择')}</option>}
+          {s.modelId && !models.some((m) => m.id === s.modelId) && <option value={s.modelId} disabled>{s.model || s.modelId} · {t('模型不存在')}</option>}
           <ModelOptions models={models} />
         </select>
       ) : (
-        <a className="btn sm" href={link('seat', roomId, seatToken)} target="_blank" rel="noreferrer">进入真人座位</a>
+        <a className="btn sm" href={link('seat', roomId, seatToken)} target="_blank" rel="noreferrer">{t('进入真人座位')}</a>
       )}
       {s.controller === 'ai' ? (
         <button className="btn sm" disabled={testing} onClick={() => void runTest()}>
-          {testing ? '测通中…' : '测通'}
+          {testing ? t('测通中…') : t('测通')}
         </button>
       ) : (
         <span />
       )}
       {s.controller === 'ai' ? (
         <button className="btn sm" onClick={onToggle}>
-          {open ? '收起' : '设置'}
+          {open ? t('收起') : t('设置')}
         </button>
       ) : (
         <span />
@@ -541,25 +564,25 @@ function SeatRow({
           {real && (
             <>
               <label className="field">
-                接口协议
+                {t('接口协议')}
                 <select value={s.apiProtocol ?? 'chat_completions'} onChange={(e) => patchSeat(s.seat, keepThinking(s, { apiProtocol: e.target.value as ApiProtocol, modelId: null }), 0)}>
                   {API_PROTOCOLS.map((p) => <option key={p} value={p}>{API_PROTOCOL_LABELS[p]}</option>)}
                 </select>
               </label>
               <label className="field">
-                接口地址
+                {t('接口地址')}
                 <input type="text" value={s.baseUrl} onChange={(e) => patchSeat(s.seat, { baseUrl: e.target.value, modelId: null })} />
               </label>
               <label className="field">
-                模型名
+                {t('模型名')}
                 <input type="text" value={s.model} onChange={(e) => patchSeat(s.seat, keepThinking(s, { model: e.target.value, modelId: null }))} />
               </label>
-              {s.apiProtocol && s.apiProtocol !== 'chat_completions' && <label className="field" title="按供应商定义计数，部分接口把思考也计入上限。">
-                输出 token 上限
+              {s.apiProtocol && s.apiProtocol !== 'chat_completions' && <label className="field" title={t('按供应商定义计数，部分接口把思考也计入上限。')}>
+                {t('输出 token 上限')}
                 <input type="number" min={1024} max={128000} step={1024} value={s.maxOutputTokens ?? 32768} onChange={(e) => patchSeat(s.seat, { maxOutputTokens: Number(e.target.value) })} />
               </label>}
               <label className="field">
-                温度
+                {t('温度')}
                 <input
                   type="number"
                   min={0}
@@ -567,52 +590,52 @@ function SeatRow({
                   step={0.1}
                   value={s.temperature}
                   disabled={providerTemperature}
-                  title={providerTemperature ? '当前协议配置使用供应商默认温度。' : undefined}
+                  title={providerTemperature ? t('当前协议配置使用供应商默认温度。') : undefined}
                   onChange={(e) => patchSeat(s.seat, { temperature: Number(e.target.value) })}
                 />
               </label>
               <label className="field">
-                输出方式
+                {t('输出方式')}
                 <select value={s.toolMode} onChange={(e) => patchSeat(s.seat, { toolMode: e.target.value as SeatConfigView['toolMode'] }, 0)}>
-                  <option value="tools">工具调用（推荐）</option>
-                  <option value="json">JSON 文本（模型不支持工具时）</option>
+                  <option value="tools">{t('工具调用（推荐）')}</option>
+                  <option value="json">{t('JSON 文本（模型不支持工具时）')}</option>
                 </select>
               </label>
               <label className="field">
-                技能与旁听超时（秒）
+                {t('技能与旁听超时（秒）')}
                 <input type="number" min={90} max={300} value={s.timeoutSec} onChange={(e) => patchSeat(s.seat, { timeoutSec: Number(e.target.value) })} />
               </label>
               <div className="field thinking-field">
-                <span id={`thinking-label-${s.seat}`}>思考强度</span>
+                <span id={`thinking-label-${s.seat}`}>{t('思考强度')}</span>
                 <div className="seg thinking-levels" role="group" aria-labelledby={`thinking-label-${s.seat}`}>
                   {thinking.map((o) => (
                     <button key={o.value} type="button" className={(s.thinkingMode ?? 'default') === o.value ? 'on' : ''}
-                      aria-pressed={(s.thinkingMode ?? 'default') === o.value} disabled={!o.supported} title={o.hint}
+                      aria-pressed={(s.thinkingMode ?? 'default') === o.value} disabled={!o.supported} title={thinkingText(o, t)}
                       onClick={() => patchSeat(s.seat, { thinkingMode: o.value }, 0)}>
-                      {o.label}
+                      {t(o.label)}
                     </button>
                   ))}
                 </div>
-                <span className="tiny dim">{thinkingHint}</span>
+                <span className="tiny dim">{thinkingHint ? thinkingText(thinkingHint, t) : null}</span>
               </div>
-              <span className="tiny dim" style={{ gridColumn: '1 / -1' }}>发言限时 180 秒，投票限时 90 秒。思考越深入通常等待越久，仍须在行动时限内完成。</span>
+              <span className="tiny dim" style={{ gridColumn: '1 / -1' }}>{t('发言限时 180 秒，投票限时 90 秒。思考越深入通常等待越久，仍须在行动时限内完成。')}</span>
             </>
           )}
           <label className="field">
-            扮演风格
+            {t('扮演风格')}
             <select value={s.style} onChange={(e) => patchSeat(s.seat, { style: e.target.value }, 0)}>
               {catalog.styles.map((st) => (
-                <option key={st.id} value={st.id} title={st.text}>
-                  {st.name}
+                <option key={st.id} value={st.id} title={gameText(locale, st.text)}>
+                  {gameText(locale, st.name)}
                 </option>
               ))}
             </select>
           </label>
           <label className="field" style={{ gridColumn: '1 / -1' }}>
-            人设补充（可选，只影响说话风格）
+            {t('人设补充（可选，只影响说话风格）')}
             <input type="text" value={s.persona} maxLength={300} onChange={(e) => patchSeat(s.seat, { persona: e.target.value })} />
           </label>
-          {!real && <span className="tiny dim" style={{ gridColumn: '1 / -1' }}>模拟玩家不联网。选了名单里的模型之后，用这一行的「测通」检查。</span>}
+          {!real && <span className="tiny dim" style={{ gridColumn: '1 / -1' }}>{t('模拟玩家不联网。选了名单里的模型之后，用这一行的「测通」检查。')}</span>}
         </div>
       )}
     </div>
@@ -620,6 +643,7 @@ function SeatRow({
 }
 
 function LinksPanel({ roomId, setup }: { roomId: string; setup: RoomSetupView }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState<string | null>(null);
   const [qr, setQr] = useState<string | null>(null);
   const [network, setNetwork] = useState<InviteNetworkView | null>(null);
@@ -644,7 +668,7 @@ function LinksPanel({ roomId, setup }: { roomId: string; setup: RoomSetupView })
     if (addressChoice === 'manual') shareBase = inviteBase(customAddress);
     else if (addressChoice === 'auto') shareBase = automatic;
     else if (network?.addresses.some((a) => a.origin === addressChoice)) shareBase = inviteBase(`${addressChoice}${location.pathname}`);
-    else addressError = '该地址已不在当前网卡列表中，请重新选择分享地址。';
+    else addressError = t('该地址已不在当前网卡列表中，请重新选择分享地址。');
   } catch (e) { addressError = (e as Error).message; }
   const copy = async (key: string, url: string) => {
     if (await copyText(url)) {
@@ -654,54 +678,54 @@ function LinksPanel({ roomId, setup }: { roomId: string; setup: RoomSetupView })
   };
   const humans = setup.seats.filter((s) => s.controller === 'human');
   const rows = [
-    { key: 'host', label: '房主', url: link('host', roomId, setup.tokens.host) },
-    { key: 'watch', label: '观战', url: shareBase ? sharedInvite(shareBase, 'watch', roomId, setup.tokens.spectator) : null },
-    ...setup.tokens.seats.map((t) => ({
-      key: `seat${t.seat}`,
-      label: `${seatName(t.seat)}${humans.some((h) => h.seat === t.seat) ? '（真人）' : ''}`,
-      url: shareBase ? sharedInvite(shareBase, 'seat', roomId, t.token) : null,
+    { key: 'host', label: t('房主'), url: link('host', roomId, setup.tokens.host) },
+    { key: 'watch', label: t('观战'), url: shareBase ? sharedInvite(shareBase, 'watch', roomId, setup.tokens.spectator) : null },
+    ...setup.tokens.seats.map((seatToken) => ({
+      key: `seat${seatToken.seat}`,
+      label: `${t('{0}号', seatToken.seat)}${humans.some((h) => h.seat === seatToken.seat) ? t('（真人）') : ''}`,
+      url: shareBase ? sharedInvite(shareBase, 'seat', roomId, seatToken.token) : null,
     })),
   ];
   const selected = rows.find((r) => r.key === qr && r.key !== 'host');
   return (
     <details className="panel" open={humans.length > 0}>
-      <summary style={{ cursor: 'pointer', fontWeight: 600 }}>邀请链接</summary>
+      <summary style={{ cursor: 'pointer', fontWeight: 600 }}>{t('邀请链接')}</summary>
       <div className="small muted" style={{ margin: '8px 0' }}>
-        链接里带有凭证，等同于身份，只发给对应的人。房主链接能看到全部身份。
+        {t('链接里带有凭证，等同于身份，只发给对应的人。房主链接能看到全部身份。')}
       </div>
       <div className="note-box" style={{ marginBottom: 12 }}>
         <label className="field">
-          分享地址
-          <select aria-label="分享地址" value={addressChoice} onChange={(e) => setAddressChoice(e.target.value)}>
-            <option value="auto">自动选择{automatic ? `（${new URL(automatic).host}）` : ''}</option>
+          {t('分享地址')}
+          <select aria-label={t('分享地址')} value={addressChoice} onChange={(e) => setAddressChoice(e.target.value)}>
+            <option value="auto">{t('自动选择')}{automatic ? `（${new URL(automatic).host}）` : ''}</option>
             {(network?.addresses ?? []).map((a) => <option key={a.origin} value={a.origin}>{a.label}</option>)}
-            <option value="manual">手动填写网址</option>
+            <option value="manual">{t('手动填写网址')}</option>
           </select>
         </label>
         {addressChoice === 'manual' && <label className="field" style={{ marginTop: 8 }}>
-          其他设备可访问的网址
-          <input type="url" aria-label="其他设备可访问的网址" placeholder="http://192.168.1.23:5173/" value={customAddress} onChange={(e) => setCustomAddress(e.target.value)} />
+          {t('其他设备可访问的网址')}
+          <input type="url" aria-label={t('其他设备可访问的网址')} placeholder="http://192.168.1.23:5173/" value={customAddress} onChange={(e) => setCustomAddress(e.target.value)} />
         </label>}
-        <div className="small muted" style={{ marginTop: 8 }}>其他设备与服务器连接同一 Wi-Fi 或局域网，扫描对应席位或观战二维码即可进入。多网卡时可切换地址，也可填写反向代理的网址。</div>
-        {shareBase && <div className="small" style={{ marginTop: 8 }}>邀请使用：<code>{shareBase}</code></div>}
+        <div className="small muted" style={{ marginTop: 8 }}>{t('其他设备与服务器连接同一 Wi-Fi 或局域网，扫描对应席位或观战二维码即可进入。多网卡时可切换地址，也可填写反向代理的网址。')}</div>
+        {shareBase && <div className="small" style={{ marginTop: 8 }}>{t('邀请使用：')}<code>{shareBase}</code></div>}
         {addressError && <div className="small error-box" role="alert">{addressError}</div>}
         {!shareBase && !addressError && <div className="small error-box" role="alert">
-          {loadingNetwork ? '正在查找局域网分享地址…' : network?.loopbackOnly
-            ? '服务当前仅在本机监听。请使用默认启动方式重启，或将 HOST 设置为 0.0.0.0 后重启，才能通过局域网加入。经反向代理访问时可手动填写其网址。'
-            : networkError ? `无法读取局域网地址：${networkError}。请刷新地址；服务版本较旧时需先重启更新。也可手动填写其他设备可访问的网址。`
-              : '没有找到可分享的网络地址。请检查网络连接并刷新地址，或手动填写其他设备可访问的网址。'}
+          {loadingNetwork ? t('正在查找局域网分享地址…') : network?.loopbackOnly
+            ? t('服务当前仅在本机监听。请使用默认启动方式重启，或将 HOST 设置为 0.0.0.0 后重启，才能通过局域网加入。经反向代理访问时可手动填写其网址。')
+            : networkError ? t('无法读取局域网地址：{0}。请刷新地址；服务版本较旧时需先重启更新。也可手动填写其他设备可访问的网址。', networkError)
+              : t('没有找到可分享的网络地址。请检查网络连接并刷新地址，或手动填写其他设备可访问的网址。')}
         </div>}
-        <button className="btn sm" style={{ marginTop: 8 }} disabled={loadingNetwork} onClick={() => setNetworkRevision((v) => v + 1)}>刷新地址</button>
+        <button className="btn sm" style={{ marginTop: 8 }} disabled={loadingNetwork} onClick={() => setNetworkRevision((v) => v + 1)}>{t('刷新地址')}</button>
       </div>
       <div className="links">
         {rows.map((r) => (
           <div key={r.key} className="link-row">
             <span style={{ width: 82, flexShrink: 0 }}>{r.label}</span>
-            <code>{r.url ?? '尚无可分享地址'}</code>
+            <code>{r.url ?? t('尚无可分享地址')}</code>
             <button className="btn sm" disabled={!r.url} onClick={() => { if (r.url) void copy(r.key, r.url); }}>
-              {copied === r.key ? '已复制' : '复制'}
+              {copied === r.key ? t('已复制') : t('复制')}
             </button>
-            {r.key !== 'host' && <button className="btn sm" disabled={!r.url} aria-label={`显示${r.label}邀请二维码`} onClick={() => setQr((value) => value === r.key ? null : r.key)}>二维码</button>}
+            {r.key !== 'host' && <button className="btn sm" disabled={!r.url} aria-label={t('显示{0}邀请二维码', r.label)} onClick={() => setQr((value) => value === r.key ? null : r.key)}>{t('二维码')}</button>}
           </div>
         ))}
       </div>

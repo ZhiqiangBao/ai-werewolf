@@ -26,22 +26,24 @@ export function gameRecordEvents(events: GameEvent[], locale: string | undefined
   return events.flatMap((e) => {
     if (eventPurpose(e) !== 'gameplay' || e.payload.announced === true || ['wolf.team', 'night.resolution'].includes(e.type)) return [];
     const p = e.payload;
-    const actor = Array.isArray(e.audience) && e.audience.length === 1 ? gameText(locale, "（{0}号）", e.audience[0]) : '';
+    const isSeat = (value: unknown): value is Seat => typeof value === 'number' && Number.isInteger(value) && value > 0;
+    const actorSeat = Array.isArray(e.audience) && e.audience.length === 1 && isSeat(e.audience[0]) ? e.audience[0] : undefined;
+    const actor = actorSeat === undefined ? '' : gameText(locale, "（{0}号）", actorSeat);
     let text = e.text;
     // 旧存档曾把行动问话合并到事实正文里，展示时还原为简短、客观的事实。
     if (e.type === 'sheriff.start') text = gameText(locale, "警长竞选开始。");
-    if (e.type === 'witch.knife') text = typeof p.knife === 'number' ? gameText(locale, "女巫{0}获知刀口：{1}号。", actor, p.knife) : gameText(locale, "女巫获知今夜没有刀口。");
-    if (e.type === 'wolf.kill.split') {
-      const picks = Array.isArray(p.picks) ? p.picks as [Seat, Seat | null][] : [];
-      text = gameText(locale, "狼队刀口并列{0}。", picks.length ? `（${picks.map(([s, t]) => gameText(locale, "{0}号→{1}", s, t === null ? gameText(locale, "空刀") : gameText(locale, "{0}号", t))).join('、')}）` : '');
+    if (e.type === 'witch.knife' && actorSeat !== undefined && (isSeat(p.knife) || p.knife === null)) text = isSeat(p.knife) ? gameText(locale, "女巫{0}获知刀口：{1}号。", actor, p.knife) : gameText(locale, "女巫获知今夜没有刀口。");
+    if (e.type === 'wolf.kill.split' && Array.isArray(p.picks) && p.picks.length > 0 && p.picks.every((pick) => Array.isArray(pick) && pick.length === 2 && isSeat(pick[0]) && (pick[1] === null || isSeat(pick[1])))) {
+      const picks = p.picks as [Seat, Seat | null][];
+      text = gameText(locale, "狼队刀口并列{0}。", gameText(locale, '（{0}）', picks.map(([s, t]) => gameText(locale, "{0}号→{1}", s, t === null ? gameText(locale, "空刀") : gameText(locale, "{0}号", t))).join(gameText(locale, '、'))));
     }
-    if (e.type === 'guard.protect') text = gameText(locale, "守卫{0}守护{1}号。", actor, p.target);
-    if (e.type === 'guard.skip') text = gameText(locale, "守卫{0}选择空守。", actor);
-    if (e.type === 'seer.result') text = gameText(locale, "预言家{0}查验{1}号：{2}。", actor, p.target, p.result === 'wolf' ? gameText(locale, "狼人") : gameText(locale, "好人"));
-    if (e.type === 'seer.skip') text = gameText(locale, "预言家{0}本夜没有查验。", actor);
-    if (e.type === 'witch.save') text = gameText(locale, "女巫{0}对{1}号使用解药。", actor, p.target);
-    if (e.type === 'witch.poison') text = gameText(locale, "女巫{0}对{1}号使用毒药。", actor, p.target);
-    if (e.type === 'witch.idle') text = gameText(locale, "女巫{0}本夜没有用药。", actor);
+    if (e.type === 'guard.protect' && actorSeat !== undefined && isSeat(p.target)) text = gameText(locale, "守卫{0}守护{1}号。", actor, p.target);
+    if (e.type === 'guard.skip' && actorSeat !== undefined) text = gameText(locale, "守卫{0}选择空守。", actor);
+    if (e.type === 'seer.result' && actorSeat !== undefined && isSeat(p.target) && (p.result === 'wolf' || p.result === 'good')) text = gameText(locale, "预言家{0}查验{1}号：{2}。", actor, p.target, p.result === 'wolf' ? gameText(locale, "狼人") : gameText(locale, "好人"));
+    if (e.type === 'seer.skip' && actorSeat !== undefined) text = gameText(locale, "预言家{0}本夜没有查验。", actor);
+    if (e.type === 'witch.save' && actorSeat !== undefined && isSeat(p.target)) text = gameText(locale, "女巫{0}对{1}号使用解药。", actor, p.target);
+    if (e.type === 'witch.poison' && actorSeat !== undefined && isSeat(p.target)) text = gameText(locale, "女巫{0}对{1}号使用毒药。", actor, p.target);
+    if (e.type === 'witch.idle' && actorSeat !== undefined) text = gameText(locale, "女巫{0}本夜没有用药。", actor);
     return [{ ...e, text }];
   });
 }

@@ -4,6 +4,7 @@ export class ApiFailure extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    readonly localization?: { key: string; values?: readonly unknown[] },
   ) {
     super(message);
   }

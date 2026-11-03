@@ -11,7 +11,7 @@ export class RoomViewService {
 
   constructor(private readonly now: () => number, private readonly ports: {
     seatView(s: SeatRecord): SeatConfigView;
-    setupErrors(rec: RoomReadRecord): string[];
+    setupErrors(rec: RoomReadRecord, locale?: string): string[];
     scheduleSave(rec: RoomReadRecord): void;
   }) {}
 
@@ -24,7 +24,7 @@ export class RoomViewService {
     return state;
   }
 
-  setupView(rec: RoomReadRecord): RoomSetupView {
+  setupView(rec: RoomReadRecord, uiLocale?: string): RoomSetupView {
     const rules = rec.rules ?? buildRules(rec.presetId, rec.ruleValues, { locale: rec.locale });
     return {
       roomId: rec.id,
@@ -44,7 +44,7 @@ export class RoomViewService {
         seats: rec.seatTokens.map((t, i) => ({ seat: i + 1, token: t })),
       },
       ruleCardPreview: buildRuleCard(rules),
-      validationErrors: rec.status === 'setup' ? this.ports.setupErrors(rec) : [],
+      validationErrors: rec.status === 'setup' ? this.ports.setupErrors(rec, uiLocale) : [],
       participants: this.participants(rec),
     };
   }
@@ -60,11 +60,11 @@ export class RoomViewService {
   }
 
   speechText(rec: RoomReadRecord, viewer: Viewer, seq: unknown): string {
-    if (!Number.isInteger(seq) || Number(seq) < 1) throw new ApiFailure(400, 'BAD_REQUEST', '请选择一条已提交发言');
-    if (!rec.state) throw new ApiFailure(409, 'NOT_STARTED', '对局还没有开始');
+    if (!Number.isInteger(seq) || Number(seq) < 1) throw new ApiFailure(400, 'BAD_REQUEST', '请选择一条已提交发言', { key: '请选择一条已提交发言' });
+    if (!rec.state) throw new ApiFailure(409, 'NOT_STARTED', '对局还没有开始', { key: '对局还没有开始' });
     const event = this.project(rec, viewer).events.find((e) => e.seq === seq);
     if (!event || event.type !== 'speech' || typeof event.payload.content !== 'string') {
-      throw new ApiFailure(404, 'NOT_FOUND', '这条记录不是当前视角可朗读的已提交发言');
+      throw new ApiFailure(404, 'NOT_FOUND', '这条记录不是当前视角可朗读的已提交发言', { key: '这条记录不是当前视角可朗读的已提交发言' });
     }
     return gameText(rec.state.rules.locale, '{0}号发言。{1}', event.payload.seat, event.payload.content);
   }
@@ -80,9 +80,9 @@ export class RoomViewService {
   }
 
   exportRecord(rec: RoomReadRecord, viewer: Viewer, kind: 'public' | 'god'): unknown {
-    if (!rec.state) throw new ApiFailure(409, 'NOT_STARTED', '对局还没有开始');
+    if (!rec.state) throw new ApiFailure(409, 'NOT_STARTED', '对局还没有开始', { key: '对局还没有开始' });
     if (kind === 'god') {
-      if (viewer.role !== 'host') throw new ApiFailure(403, 'FORBIDDEN', '只有房主可以导出上帝记录');
+      if (viewer.role !== 'host') throw new ApiFailure(403, 'FORBIDDEN', '只有房主可以导出上帝记录', { key: '只有房主可以导出上帝记录' });
       return {
         roomId: rec.id,
         locale: rec.rules?.locale ?? rec.locale ?? DEFAULT_GAME_LOCALE,
@@ -95,7 +95,7 @@ export class RoomViewService {
         actions: rec.actions,
       };
     }
-    if (rec.status !== 'ended' && viewer.role !== 'host') throw new ApiFailure(409, 'NOT_ENDED', '终局后才能导出公开记录');
+    if (rec.status !== 'ended' && viewer.role !== 'host') throw new ApiFailure(409, 'NOT_ENDED', '终局后才能导出公开记录', { key: '终局后才能导出公开记录' });
     return projectSpectator(rec.state, rec.events);
   }
 
@@ -108,7 +108,7 @@ export class RoomViewService {
       paused: rec.paused,
       viewer: viewer.role,
       ...(viewer.role === 'seat' ? { seat: viewer.seat } : {}),
-      presetName: rec.rules?.presetName ?? getPreset(rec.presetId).name,
+      presetName: rec.rules?.presetName ?? gameText(rec.locale, getPreset(rec.presetId).name),
       seats: rec.seats.map((s) => ({ seat: s.seat, name: s.name, controller: s.controller })),
       participants: this.participants(rec),
       ...(rec.status === 'setup' ? { ruleCard: buildRuleCard(buildRules(rec.presetId, rec.ruleValues, { locale: rec.locale })) } : {}),

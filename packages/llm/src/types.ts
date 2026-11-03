@@ -25,6 +25,8 @@ export interface DecideRequest {
   seat: Seat;
   /** 与该座位网页所用完全相同的投影。连通性测试没有投影。 */
   projection?: Projection;
+  /** 无对局投影的连接测试可指定界面语言；有投影时始终以房间语言为准。 */
+  locale?: string;
   messages: TranscriptMessage[];
   /** 房间与座位独立的缓存路由键；不共享远程会话。 */
   cacheKey?: string;

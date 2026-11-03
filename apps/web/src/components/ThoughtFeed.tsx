@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { recordedBadgeOutcome, type GameEvent, type SeatInfo, type Thought } from '@werewolf/protocol';
+import { gameText } from '@werewolf/protocol';
+import { useI18n } from '../i18n';
 import { seatName, seatStyle } from '../util';
 
 function StreamingText({ text, live }: { text: string; live: boolean }) {
@@ -20,24 +22,25 @@ function StreamingText({ text, live }: { text: string; live: boolean }) {
 }
 
 function ThoughtBody({ thought, events }: { thought: Thought; events: GameEvent[] }) {
+  const { t } = useI18n();
   const outcome = recordedBadgeOutcome(thought, events);
   return (
     <>
       {(thought.thinking || (thought.live && !thought.reply)) && (
         <div className="thought-mind">
-          <div className="thought-kicker">思考</div>
+          <div className="thought-kicker">{t('思考')}</div>
           {thought.thinking ? <StreamingText text={thought.thinking} live={thought.live && !thought.reply} /> : <span className="thought-caret" />}
         </div>
       )}
       {thought.reply && (
         <div className="thought-body">
-          <div className="thought-kicker">正文</div>
+          <div className="thought-kicker">{t('正文')}</div>
           <StreamingText text={thought.reply} live={thought.live} />
         </div>
       )}
       {outcome && (
         <div className="thought-body">
-          <div className="thought-kicker">本轮实际结果{outcome.automatic ? ' · 系统托管' : ''}</div>
+          <div className="thought-kicker">{t('本轮实际结果')}{outcome.automatic ? ` · ${t('系统托管')}` : ''}</div>
           {outcome.text}
         </div>
       )}
@@ -48,13 +51,15 @@ function ThoughtBody({ thought, events }: { thought: Thought; events: GameEvent[
 const SHOW_KEY = 'werewolf-show-thoughts';
 
 /** 思考用虚线浅底，正文用实线正文块。发言气泡仍在对局记录里，样式不混用。默认收起。 */
-export function ThoughtFeed({ thoughts, seats, events = [] }: { thoughts?: Thought[]; seats: SeatInfo[]; events?: GameEvent[] }) {
+export function ThoughtFeed({ thoughts, seats, events = [], locale }: { thoughts?: Thought[]; seats: SeatInfo[]; events?: GameEvent[]; locale?: string }) {
+  const { t: useLabel } = useI18n();
   const list = (thoughts ?? []).filter((t) => t.live || t.thinking || t.reply);
   const [open, setOpen] = useState(() => localStorage.getItem(SHOW_KEY) === '1');
   if (!list.length) return null;
   const nameOf = (seat: number) => {
     const s = seats.find((x) => x.seat === seat);
-    return s && s.name !== seatName(seat) ? `${seatName(seat)} ${s.name}` : seatName(seat);
+    const label = gameText(locale, '{0}号', seat);
+    return s && s.name !== seatName(seat) && s.name !== label ? `${label} ${s.name}` : label;
   };
   const done = list.filter((t) => !t.live);
   const live = list.filter((t) => t.live);
@@ -66,22 +71,22 @@ export function ThoughtFeed({ thoughts, seats, events = [] }: { thoughts?: Thoug
   return (
     <div className="panel thought-panel">
       <h3>
-        模型输出
+        {useLabel('模型输出')}
         <span className="spacer" />
         <label className="row small muted" style={{ gap: 6, fontWeight: 400 }}>
           <input type="checkbox" checked={open} onChange={(e) => toggle(e.target.checked)} />
-          显示
+          {useLabel('显示')}
         </label>
       </h3>
-      {!open && live.length > 0 && <div className="muted small">{live.map((t) => nameOf(t.seat)).join('、')}正在写</div>}
+      {!open && live.length > 0 && <div className="muted small">{useLabel('{0}正在写', live.map((item) => nameOf(item.seat)).join('、'))}</div>}
       {open && done.length > 0 && (
         <div className="thought-history">
           {done.map((t) => (
             <details key={`${t.decisionId}:${t.seat}`}>
               <summary style={seatStyle(t.seat)}>
                 {nameOf(t.seat)}
-                {t.thinking ? ' · 思考' : ''}
-                {t.reply ? ' · 正文' : ''}
+                {t.thinking ? ` · ${useLabel('思考')}` : ''}
+                {t.reply ? ` · ${useLabel('正文')}` : ''}
               </summary>
               <ThoughtBody thought={t} events={events} />
             </details>
@@ -90,7 +95,7 @@ export function ThoughtFeed({ thoughts, seats, events = [] }: { thoughts?: Thoug
       )}
       {open && live.map((t) => (
         <article key={`${t.decisionId}:${t.seat}`} className="thought-live" style={seatStyle(t.seat)}>
-          <div className="thought-who">{nameOf(t.seat)} · 正在写</div>
+          <div className="thought-who">{nameOf(t.seat)} · {useLabel('正在写')}</div>
           <ThoughtBody thought={t} events={events} />
         </article>
       ))}

@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { GameEvent, SeatInfo } from '@werewolf/protocol';
 import { gameRecordEvents } from '@werewolf/protocol';
+import { gameText } from '@werewolf/protocol';
+import { useI18n } from '../i18n';
 import { audienceText, phaseLabel, seatName, seatStyle } from '../util';
 import { PhaseIcon } from './Icons';
 import { VoteChart } from './VoteChart';
@@ -15,10 +17,11 @@ interface Props {
   mySeat?: number;
   onRead?: (event: GameEvent) => void;
   controls?: ReactNode;
+  locale: string | undefined;
 }
 
 const SPEECH_KIND: Record<string, string> = {
-  discussion: '发言',
+  discussion: '普通发言',
   campaign: '竞选发言',
   pk: 'PK 发言',
   sheriff_pk: '竞选 PK 发言',
@@ -27,23 +30,25 @@ const SPEECH_KIND: Record<string, string> = {
 
 const DEATH_TYPES = new Set(['exile', 'explode', 'hunter.shot', 'idiot.flip']);
 
-export function EventLog({ events, seats, mode, mySeat, onRead, controls }: Props) {
+export function EventLog({ events, seats, mode, mySeat, onRead, controls, locale }: Props) {
+  const { t } = useI18n();
   const box = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [away, setAway] = useState(false);
   const [onlyPublic, setOnlyPublic] = useState(false);
-  const shown = gameRecordEvents(events).filter((e) => !onlyPublic || e.audience === 'public');
+  const shown = gameRecordEvents(events, locale).filter((e) => !onlyPublic || e.audience === 'public');
 
   const nameOf = (seat: number) => {
     const s = seats.find((x) => x.seat === seat);
-    return s && s.name !== seatName(seat) ? `${seatName(seat)} ${s.name}` : seatName(seat);
+    const label = gameText(locale, '{0}号', seat);
+    return s && s.name !== seatName(seat) && s.name !== label ? `${label} ${s.name}` : label;
   };
 
   const scopeLabel = (e: GameEvent): string | null => {
     if (e.audience === 'public') return null;
-    if (mode === 'god') return audienceText(e.audience);
-    if (e.audience.length === 1 && e.audience[0] === mySeat) return '仅你可见';
-    return `${e.audience.map(seatName).join('、')}可见`;
+    if (mode === 'god') return audienceText(e.audience, locale);
+    if (e.audience.length === 1 && e.audience[0] === mySeat) return gameText(locale, '仅你可见');
+    return gameText(locale, '{0}可见', e.audience.map((s) => gameText(locale, '{0}号', s)).join(gameText(locale, '、')));
   };
 
   useLayoutEffect(() => {
@@ -67,33 +72,33 @@ export function EventLog({ events, seats, mode, mySeat, onRead, controls }: Prop
   return (
     <div className="panel event-log">
       <h3>
-        对局记录
+        {t('对局记录')}
         <span className="spacer" />
         {mode !== 'spectator' && (
           <label className="row small muted" style={{ gap: 6, fontWeight: 400 }}>
             <input type="checkbox" checked={onlyPublic} onChange={(e) => setOnlyPublic(e.target.checked)} />
-            只看公开信息
+            {t('只看公开信息')}
           </label>
         )}
       </h3>
       {controls}
       <div className="log-wrap">
-        <div className="log" ref={box} role="region" aria-label="发言与对局记录" tabIndex={0}>
-          {!shown.length && <div className="muted small">还没有记录。</div>}
+        <div className="log" ref={box} role="region" aria-label={t('发言与对局记录')} tabIndex={0}>
+          {!shown.length && <div className="muted small">{t('还没有记录。')}</div>}
           {shown.map((e) => {
             const key = `${e.day}:${e.phase}`;
             const divider =
               key !== lastKey && e.phase !== 'setup' ? (
                 <div className={`log-divider ${e.phase}`}>
                   {e.phase !== 'end' && <PhaseIcon phase={e.phase} size={14} />}
-                  {phaseLabel(e.day, e.phase)}
+                  {phaseLabel(e.day, e.phase, locale)}
                 </div>
               ) : null;
             lastKey = key;
             return (
               <Fragment key={e.seq}>
                 {divider}
-                {e.type !== 'phase' && <EventItem e={e} nameOf={nameOf} scope={scopeLabel(e)} onRead={onRead} />}
+                {e.type !== 'phase' && <EventItem e={e} nameOf={nameOf} scope={scopeLabel(e)} onRead={onRead} locale={locale} />}
               </Fragment>
             );
           })}
@@ -106,7 +111,7 @@ export function EventLog({ events, seats, mode, mySeat, onRead, controls }: Prop
               if (el) el.scrollTop = el.scrollHeight;
             }}
           >
-            回到最新
+            {t('回到最新')}
           </button>
         )}
       </div>
@@ -114,14 +119,15 @@ export function EventLog({ events, seats, mode, mySeat, onRead, controls }: Prop
   );
 }
 
-function EventItem({ e, nameOf, scope, onRead }: { e: GameEvent; nameOf: (s: number) => string; scope: string | null; onRead?: (event: GameEvent) => void }) {
+function EventItem({ e, nameOf, scope, onRead, locale }: { e: GameEvent; nameOf: (s: number) => string; scope: string | null; onRead?: (event: GameEvent) => void; locale?: string }) {
+  const { t } = useI18n();
   const p = e.payload;
   const meta = scope ? <span className="meta">{scope}</span> : null;
 
   if (e.type === 'speech' || e.type === 'wolf.chat') {
     const seat = p.seat as number;
     const wolf = e.type === 'wolf.chat';
-    const kind = wolf ? '狼队密谈' : (SPEECH_KIND[p.kind as string] ?? '发言');
+    const kind = gameText(locale, wolf ? '狼队密谈' : (SPEECH_KIND[p.kind as string] ?? '普通发言'));
     return (
       <div className={`speech ${wolf ? 'wolfchat' : (p.kind as string)}`} style={seatStyle(seat)}>
         <span className="log-avatar"><Avatar seat={seat} size={34} /><b>{seat}</b></span>
@@ -129,7 +135,7 @@ function EventItem({ e, nameOf, scope, onRead }: { e: GameEvent; nameOf: (s: num
           <div className="who">
             {nameOf(seat)} · {kind}
             {meta}
-            {!wolf && onRead && <button className="btn sm ghost speech-read" aria-label={`朗读${seat}号${kind}`} onClick={() => onRead(e)}>朗读</button>}
+            {!wolf && onRead && <button className="btn sm ghost speech-read" aria-label={t('朗读 {0} 的{1}', seat, kind)} onClick={() => onRead(e)}>{t('朗读')}</button>}
           </div>
           <div className="bubble">{p.content as string}</div>
         </div>
@@ -137,7 +143,7 @@ function EventItem({ e, nameOf, scope, onRead }: { e: GameEvent; nameOf: (s: num
     );
   }
 
-  if (e.type === 'vote.result') return <VoteChart event={e} />;
+  if (e.type === 'vote.result') return <VoteChart event={e} locale={locale} />;
 
   if (e.type === 'review') {
     return (

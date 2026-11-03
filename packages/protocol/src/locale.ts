@@ -1,4 +1,9 @@
 import { translations } from './locales/messages';
+import { gameAdditions } from './locales/game-additions';
+import { presentationMessages } from './locales/presentation';
+import { catalogMessages } from './locales/catalog';
+import { serviceMessages } from './locales/service';
+import { thinkingMessages } from './locales/thinking';
 import type { ToolSpec } from './index';
 
 /** BCP 47 标签；扩展语言和方言不需要修改协议联合类型。 */
@@ -21,16 +26,44 @@ export interface GameLanguagePack extends GameLanguage {
 
 const packs = new Map<string, GameLanguagePack>();
 
+/** 拒绝重复模板，避免 Object.fromEntries 静默覆盖。 */
+export function checkedMessages(rows: readonly (readonly [string, string, string])[]): typeof rows {
+  const keys = new Set<string>();
+  for (const row of rows) {
+    if (!row[0] || keys.has(row[0])) throw Error(`Duplicate translation template: ${row[0]}`);
+    keys.add(row[0]);
+    const slots = (s: string) => [...s.matchAll(/\{(\d+)\}/g)].map((m) => m[1]).sort().join(',');
+    if (!row[1]?.trim() || !row[2]?.trim() || slots(row[0]) !== slots(row[1]) || slots(row[0]) !== slots(row[2])) throw Error(`Invalid translation template: ${row[0]}`);
+  }
+  return rows;
+}
+
+const allTranslations = checkedMessages([...translations, ...gameAdditions, ...presentationMessages, ...catalogMessages, ...serviceMessages, ...thinkingMessages]);
+export const gameMessageKeys = (): string[] => [...allTranslations.map(([key]) => key), ...deathShortLabels.map(([cause]) => `death.short.${cause}`)];
+
+/** 检查有效回退链；inherited 是有意复用，missing 则没有可用译文。 */
+export function checkGameLanguage(locale: GameLocale, keys: readonly string[] = gameMessageKeys()): { missing: string[]; inherited: string[] } {
+  const own = gameLanguage(locale);
+  const missing: string[] = [], inherited: string[] = [];
+  for (const key of keys) {
+    let pack = own;
+    while (!Object.hasOwn(pack.messages, key) && pack.fallback) pack = gameLanguage(pack.fallback);
+    if (!Object.hasOwn(pack.messages, key)) missing.push(key);
+    else if (pack !== own) inherited.push(key);
+  }
+  return { missing, inherited };
+}
+
 /** 在应用启动时注册；消息是程序模板，绝不翻译玩家原话或改变工具参数。 */
 export function registerGameLanguage(pack: GameLanguagePack): void {
   if (typeof pack.id !== 'string' || Intl.getCanonicalLocales(pack.id)[0] !== pack.id || packs.has(pack.id)) throw Error('Invalid or duplicate game language');
   if (!pack.label || !pack.languageName || !pack.speechLang || !pack.ttsLanguageHints.length) throw Error('Incomplete game language');
   if (pack.fallback && !packs.has(pack.fallback)) throw Error('Register the fallback language first');
   const base = pack.fallback ? packs.get(pack.fallback) : undefined;
-  const reference = base?.messages ?? Object.fromEntries(translations.map(([source]) => [source, source]));
+  const reference = base?.messages ?? Object.fromEntries(allTranslations.map(([source]) => [source, source]));
   const slots = (s: string) => [...s.matchAll(/\{(\d+)\}/g)].map((m) => m[1]).sort().join(',');
   for (const [key, value] of Object.entries(pack.messages)) {
-    if (typeof value !== 'string' || slots(Object.hasOwn(reference, key) ? reference[key] : key) !== slots(value)) throw Error(`Translation placeholders differ: ${key}`);
+    if (typeof value !== 'string' || !value.trim() || slots(Object.hasOwn(reference, key) ? reference[key] : key) !== slots(value)) throw Error(`Translation placeholders differ: ${key}`);
   }
   packs.set(pack.id, Object.freeze({ ...pack, ttsLanguageHints: Object.freeze([...pack.ttsLanguageHints]), messages: Object.freeze(Object.assign(Object.create(null), pack.messages)) }));
 }
@@ -63,7 +96,8 @@ export function localizeTool(tool: ToolSpec, locale?: GameLocale): ToolSpec {
     switch (p.kind) {
       case 'seat': return { ...p, label: text(p.label), ...(p.nullLabel ? { nullLabel: text(p.nullLabel) } : {}) };
       case 'boolean': return { ...p, label: text(p.label), ...(p.trueLabel ? { trueLabel: text(p.trueLabel) } : {}), ...(p.falseLabel ? { falseLabel: text(p.falseLabel) } : {}) };
-      case 'choice': return { ...p, label: text(p.label), options: p.options.map((o) => ({ ...o, label: text(o.label) })) };
+      case 'choice': return { ...p, label: text(p.label), options: p.options.map((o) => ({ ...o, label: text(o.label), ...(o.hint ? { hint: text(o.hint) } : {}) })) };
+      case 'text': return { ...p, label: text(p.label), ...(p.placeholder ? { placeholder: text(p.placeholder) } : {}) };
       default: return { ...p, label: text(p.label) };
     }
   }) };
@@ -77,6 +111,6 @@ const deathShortLabels = [
   ['night', '夜晚', 'Night', '夜間'], ['other', '其他', 'Other', 'その他'],
 ] as const;
 const shortMessages = (index: 1 | 2 | 3) => Object.fromEntries(deathShortLabels.map((row) => [`death.short.${row[0]}`, row[index]]));
-registerGameLanguage({ id: 'zh-CN', label: '简体中文', languageName: '简体中文', speechLang: 'zh-CN', ttsLanguageHints: ['zh'], messages: shortMessages(1) });
-registerGameLanguage({ id: 'en', label: 'English', languageName: 'English', speechLang: 'en-US', ttsLanguageHints: ['en'], fallback: 'zh-CN', messages: { ...Object.fromEntries(translations.map(([source, en]) => [source, en])), ...shortMessages(2) } });
-registerGameLanguage({ id: 'ja', label: '日本語', languageName: '日本語', speechLang: 'ja-JP', ttsLanguageHints: ['ja'], fallback: 'zh-CN', messages: { ...Object.fromEntries(translations.map(([source, , ja]) => [source, ja])), ...shortMessages(3) } });
+registerGameLanguage({ id: 'zh-CN', label: '简体中文', languageName: '简体中文', speechLang: 'zh-CN', ttsLanguageHints: ['zh'], messages: { ...Object.fromEntries(allTranslations.map(([source]) => [source, source])), ...shortMessages(1) } });
+registerGameLanguage({ id: 'en', label: 'English', languageName: 'English', speechLang: 'en-US', ttsLanguageHints: ['en'], fallback: 'zh-CN', messages: { ...Object.fromEntries(allTranslations.map(([source, en]) => [source, en])), ...shortMessages(2) } });
+registerGameLanguage({ id: 'ja', label: '日本語', languageName: '日本語', speechLang: 'ja-JP', ttsLanguageHints: ['ja'], fallback: 'zh-CN', messages: { ...Object.fromEntries(allTranslations.map(([source, , ja]) => [source, ja])), ...shortMessages(3) } });

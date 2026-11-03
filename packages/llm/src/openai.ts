@@ -17,18 +17,18 @@ export const openaiAdapter: Adapter = {
   decide(req) {
     return runRequest(req, async (signal, started, onDelta, observation) => {
       const { config, tools } = req;
-      if (!config.baseUrl.trim() || !config.model.trim()) return failure(started, gameText(req.projection?.locale, '座位没有配置接口地址或模型名'));
-      const url = chatUrl(config.baseUrl, req.projection?.locale);
+      if (!config.baseUrl.trim() || !config.model.trim()) return failure(started, gameText(req.projection?.locale ?? req.locale, '座位没有配置接口地址或模型名'));
+      const url = chatUrl(config.baseUrl, req.projection?.locale ?? req.locale);
       const memo = `${url}|${config.model}`;
       const listen = req.toolChoice === 'auto';
       const json = config.toolMode === 'json' && !listen;
       const body = () => ({
         model: config.model, temperature: config.temperature,
-        ...thinkingParameters(config.baseUrl, config.model, config.thinkingMode, 'chat_completions'),
+        ...thinkingParameters(config.baseUrl, config.model, config.thinkingMode, 'chat_completions', req.projection?.locale ?? req.locale),
         ...(config.maxOutputTokens ? { max_completion_tokens: config.maxOutputTokens } : {}),
-        messages: chatMessages(json ? [...req.messages, { role: 'system', content: jsonInstruction(tools, req.projection?.locale) }] : req.messages),
+        messages: chatMessages(json ? [...req.messages, { role: 'system', content: jsonInstruction(tools, req.projection?.locale ?? req.locale) }] : req.messages),
         ...(json ? (!noJsonFormat.has(memo) ? { response_format: { type: 'json_object' } } : {}) : {
-          tools: tools.map((t) => ({ type: 'function', function: { name: t.name, description: `${t.title}：${t.description}`, parameters: toolToJsonSchema(t, req.projection?.locale) } })),
+          tools: tools.map((t) => ({ type: 'function', function: { name: t.name, description: `${t.title}：${t.description}`, parameters: toolToJsonSchema(t, req.projection?.locale ?? req.locale) } })),
           tool_choice: listen || noRequired.has(memo) ? 'auto' : 'required',
         }),
       });
@@ -59,8 +59,8 @@ export const openaiAdapter: Adapter = {
         };
         try {
           const encoded = observeSync(observation?.observer, request, 'request_encode', () => ({ ...body(), ...(useStream ? { stream: true } : {}) }));
-          req.onRequest?.({ apiProtocol: 'chat_completions', tools: structuredClone('tools' in encoded ? encoded.tools ?? [] : []), ...('tool_choice' in encoded ? { toolChoice: encoded.tool_choice } : {}), ...(json ? { toolInstruction: jsonInstruction(tools, req.projection?.locale) } : {}) });
-          const result = await post(url, encoded, headers, signal, event, req.projection?.locale, observation && request ? { observer: observation.observer, request, protocol: 'chat_completions' } : undefined);
+          req.onRequest?.({ apiProtocol: 'chat_completions', tools: structuredClone('tools' in encoded ? encoded.tools ?? [] : []), ...('tool_choice' in encoded ? { toolChoice: encoded.tool_choice } : {}), ...(json ? { toolInstruction: jsonInstruction(tools, req.projection?.locale ?? req.locale) } : {}) });
+          const result = await post(url, encoded, headers, signal, event, req.projection?.locale ?? req.locale, observation && request ? { observer: observation.observer, request, protocol: 'chat_completions' } : undefined);
           request?.finish('success');
           return result ?? { usage, choices: [{ message: { content: acc.content || null, reasoning_content: acc.reasoning_content,
             tool_calls: [...acc.calls.entries()].sort(([a], [b]) => a - b).map(([, c], i) => ({ id: c.id || `call_${i}`, type: 'function', function: { name: c.name, arguments: c.arguments } })),
@@ -84,10 +84,10 @@ export const openaiAdapter: Adapter = {
       }
       return observeSync(observation?.observer, observation?.adapter, 'parse', () => {
       const msg = data?.choices?.[0]?.message;
-      if (!msg || typeof msg !== 'object') return failure(started, gameText(req.projection?.locale, '返回里没有 choices[0].message'), { raw: data });
+      if (!msg || typeof msg !== 'object') return failure(started, gameText(req.projection?.locale ?? req.locale, '返回里没有 choices[0].message'), { raw: data });
       const calls = (Array.isArray(msg.tool_calls) ? msg.tool_calls : []).map((c: any, i: number) => ({ id: c.id || `call_${i}`, name: String(c.function?.name ?? ''), arguments: String(c.function?.arguments ?? '{}') }));
       const assistant = { role: 'assistant' as const, content: listen || json ? msg.content || null : null, ...(calls.length ? { calls } : {}) };
-      return { ...(json ? parseJson(started, assistant, tools, data, req.projection?.locale) : parseAssistant(started, assistant, tools, data, listen, req.projection?.locale)),
+      return { ...(json ? parseJson(started, assistant, tools, data, req.projection?.locale ?? req.locale) : parseAssistant(started, assistant, tools, data, listen, req.projection?.locale ?? req.locale)),
         thinking: msg.reasoning_content || msg.reasoning || msg.thinking || undefined, reply: msg.content || undefined,
         usage: tokenUsage(data.usage, 'chat_completions'),
       };
@@ -96,15 +96,15 @@ export const openaiAdapter: Adapter = {
   },
 };
 
-const PING: ToolSpec = { name: 'ping', title: '连通性测试', description: '仅用于接口测试；调用一次，参数填写 {"ok":true}。不产生游戏行动。', params: [{ kind: 'boolean', name: 'ok', label: '固定为 true' }] };
+const pingTool = (locale?: string): ToolSpec => ({ name: 'ping', title: gameText(locale, '连通性测试'), description: gameText(locale, '仅用于接口测试；调用一次，参数填写 {"ok":true}。不产生游戏行动。'), params: [{ kind: 'boolean', name: 'ok', label: gameText(locale, '固定为 true') }] });
 
-export async function testConnection(config: AdapterConfig, signal?: AbortSignal): Promise<{ ok: boolean; message: string; latencyMs: number }> {
+export async function testConnection(config: AdapterConfig, signal?: AbortSignal, locale?: string): Promise<{ ok: boolean; message: string; latencyMs: number }> {
   const { remoteAdapter } = await import('./adapters');
-  const result = await remoteAdapter(config.apiProtocol).decide({ seat: 0,
-    messages: [{ role: 'system', content: '这是一次接口连通性测试。' }, { role: 'user', content: '请调用 ping 工具，参数 ok 设为 true。' }],
-    tools: [PING], config: { ...config, timeoutSec: Math.min(config.timeoutSec, 30) }, signal,
+  const result = await remoteAdapter(config.apiProtocol).decide({ seat: 0, locale,
+    messages: [{ role: 'system', content: gameText(locale, '这是一次接口连通性测试。') }, { role: 'user', content: gameText(locale, '请调用 ping 工具，参数 ok 设为 true。') }],
+    tools: [pingTool(locale)], config: { ...config, timeoutSec: Math.min(config.timeoutSec, 30) }, signal,
   });
   return result.ok && result.call?.tool === 'ping' && result.call.args.ok === true
-    ? { ok: true, message: '连接成功，模型返回了一次 ping 调用。', latencyMs: result.latencyMs }
-    : { ok: false, message: result.error ?? '模型未按要求返回 ping({"ok":true})', latencyMs: result.latencyMs };
+    ? { ok: true, message: gameText(locale, '连接成功，模型返回了一次 ping 调用。'), latencyMs: result.latencyMs }
+    : { ok: false, message: result.error ?? gameText(locale, '模型未按要求返回 ping({"ok":true})'), latencyMs: result.latencyMs };
 }

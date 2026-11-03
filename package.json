@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "i18n:check": "tsx scripts/check-locales.ts",
     "observability:baseline": "tsx packages/session/scripts/observability-synthetic.ts",
     "observability:report": "tsx packages/session/scripts/observability-report.ts",
     "observability:accept": "tsx packages/session/scripts/observability-accept.ts",
