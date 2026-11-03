@@ -1,3 +1,4 @@
+import { roleData } from '../role-data';
 import { gameText } from '@werewolf/protocol';
 import type { RuleSet, ToolSpec } from '@werewolf/protocol';
 import type { ParamSpec, Seat } from '@werewolf/protocol';
@@ -6,12 +7,7 @@ import { seatLabel } from '../text';
 import { err, seatParam } from '../tools';
 import type { RoleModule } from '../types';
 
-interface Potions {
-  antidote: boolean;
-  poison: boolean;
-}
-
-const potions = (ctx: Ctx, seat: Seat) => ctx.player(seat).data as Potions;
+const potions = (ctx: Ctx, seat: Seat) => roleData(ctx.player(seat), 'witch');
 
 function selfSaveAllowed(ctx: Ctx): boolean {
   const rule = ctx.opt<string>('witch.selfSave');
@@ -49,6 +45,7 @@ function promptFor(ctx: Ctx, seat: Seat): string {
 }
 
 export const witch: RoleModule = {
+  copiedAbility: 'poison',
   id: 'witch',
   tools: ({ seats, rules }) => [witchTool(seats, rules.values, rules.locale)],
   name: '女巫',
@@ -87,7 +84,7 @@ export const witch: RoleModule = {
   },
 
   setup(ctx, seats) {
-    for (const s of seats) Object.assign(ctx.player(s).data, { antidote: true, poison: true });
+    for (const s of seats) Object.assign(roleData(ctx.player(s), 'witch'), { antidote: true, poison: true });
   },
 
   appendix(ctx, seat) {

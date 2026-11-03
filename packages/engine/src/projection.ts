@@ -5,6 +5,8 @@ import { getRole, interruptsIn } from './registry';
 import { buildRuleCard } from './rulecard';
 import { categoryName, factionName } from './text';
 import type { GameState } from './types';
+import { migrateGameState, UnsupportedRoleDataVersion } from './role-data';
+import { getAbility } from './abilities';
 
 const visibleTo = (seat: Seat) => (e: GameEvent) =>
   e.audience === 'public' || (Array.isArray(e.audience) && e.audience.includes(seat));
@@ -47,6 +49,11 @@ function base(state: GameState, events: GameEvent[], viewer: Viewer): Projection
 
 /** 身份附录：座位号、身份、该身份的私密记录、当前合法工具。只读取该座位有权知道的信息。 */
 export function buildAppendix(state: GameState, seat: Seat): string {
+  try { state = migrateGameState(state); }
+  catch (error) {
+    if (!(error instanceof UnsupportedRoleDataVersion)) throw error;
+    return gameText(state.rules.locale, '此存档包含当前引擎不支持的私有数据版本；保留原记录，仅可查看历史。');
+  }
   const ctx = new Ctx(state);
   const p = ctx.player(seat);
   const mod = ctx.roleOf(seat);
@@ -55,18 +62,29 @@ export function buildAppendix(state: GameState, seat: Seat): string {
     gameText(state.rules.locale, "技能：{0}", gameText(state.rules.locale, mod.summary)),
     ...(mod.appendix?.(ctx, seat) ?? []),
   ];
+  for (const instance of p.abilities ?? []) {
+    for (const line of getAbility(instance.definition).appendix?.(ctx, seat, instance) ?? []) if (!lines.includes(line)) lines.push(line);
+  }
   if (state.sheriff === seat) lines.push(gameText(state.rules.locale, "你是警长：放逐投票记 1.5 票，白天由你选择发言方向并最后发言。"));
   if (!p.alive) lines.push(gameText(state.rules.locale, "你已出局。除了法官单独询问的出局职责（遗言、开枪、警徽），你只接收公开信息。"));
   return lines.join('\n');
 }
 
 export function projectSeat(state: GameState, events: GameEvent[], seat: Seat): Projection {
+  let dataReadable = true;
+  try { state = migrateGameState(state); }
+  catch (error) {
+    if (!(error instanceof UnsupportedRoleDataVersion)) throw error;
+    dataReadable = false;
+  }
   const ctx = new Ctx(state);
   const p = ctx.player(seat);
   const mod = ctx.roleOf(seat);
   const proj = base(state, renumber(events.filter(visibleTo(seat))), { kind: 'seat', seat });
   const teammates =
     mod.wolfTeam && ctx.opt<boolean>('wolf.knowTeammates') ? ctx.wolfTeam(false).filter((x) => x !== seat) : undefined;
+  const knowledge = dataReadable ? mod.knowledge?.(ctx, seat) ?? [] : [];
+  const abilityKnowledge = dataReadable ? (p.abilities ?? []).flatMap((a) => getAbility(a.definition).knowledge?.(ctx, seat, a) ?? []) : [];
   proj.me = {
     seat,
     name: p.name,
@@ -78,12 +96,13 @@ export function projectSeat(state: GameState, events: GameEvent[], seat: Seat): 
     ...(teammates ? { teammates } : {}),
     knownIdentities: [
       ...(teammates ?? []).map((teammate) => ({ seat: teammate, kind: 'alignment' as const, alignment: 'wolf' as const, source: 'teammate' as const })),
-      ...(mod.knowledge?.(ctx, seat) ?? []),
+      ...knowledge,
+      ...abilityKnowledge.filter((fact) => !knowledge.some((known) => JSON.stringify(known) === JSON.stringify(fact))),
     ],
     appendix: buildAppendix(state, seat),
   };
   const d = state.pending;
-  if (d && d.actors.includes(seat)) {
+  if (dataReadable && d && d.actors.includes(seat)) {
     proj.task = {
       decisionId: d.id,
       title: d.title,
@@ -94,7 +113,7 @@ export function projectSeat(state: GameState, events: GameEvent[], seat: Seat): 
       ...(d.acks[seat] ? { submittedText: d.acks[seat] } : {}),
     };
   }
-  if (!state.result) {
+  if (dataReadable && !state.result) {
     const taskTools = new Set(proj.task && !proj.task.submitted ? proj.task.tools.map((t) => t.name) : []);
     proj.interrupts = interruptsIn(state.rules)
       .filter((i) => !taskTools.has(i.tool) && i.available(ctx, seat))

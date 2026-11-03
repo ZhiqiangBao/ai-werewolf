@@ -17,6 +17,7 @@ function killTargets(ctx: Ctx): Seat[] {
 }
 
 export const werewolf: RoleModule = {
+  copiedAbility: 'wolf',
   id: 'werewolf',
   tools: ({ seats, rules }) => wolfTools(seats, rules.values, rules.locale),
   name: '狼人',

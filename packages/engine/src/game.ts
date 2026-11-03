@@ -7,6 +7,7 @@ import { hashSeed } from './rng';
 import { validateRules } from './rules';
 import { err, normalizeCall, validateArgs } from './tools';
 import type { GameState, RuleError } from './types';
+import { migrateGameState } from './role-data';
 
 export interface CreateGameOptions {
   id: string;
@@ -130,6 +131,7 @@ export function createGame(o: CreateGameOptions): EngineResult {
     playerCount: rules.playerCount,
   });
   for (const mod of ctx.modulesInGame()) mod.setup?.(ctx, ctx.seatsOf(mod.id, false));
+  state.players = migrateGameState(state).players;
   ctx.pushFront({ type: 'night.start' });
   runAgenda(ctx);
   return { state, events: ctx.events };
@@ -207,7 +209,7 @@ function apply(ctx: Ctx, input: SubmitInput): RuleError | null {
 
 /** 提交一次行动。总是在状态的深拷贝上执行；被拒绝时只追加一条仅行动者可见的拒绝说明。 */
 export function submit(prev: GameState, input: SubmitInput): EngineResult {
-  const ctx = new Ctx(structuredClone(prev));
+  const ctx = new Ctx(migrateGameState(structuredClone(prev)));
   const error = apply(ctx, input);
   if (error) {
     if (Number.isInteger(input.seat) && input.seat >= 1 && input.seat <= ctx.state.players.length) {

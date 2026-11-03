@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { actionKind, actionMenu, DEFAULT_GAME_LOCALE, gameText } from '@werewolf/protocol';
 import type { AdapterKind, AuditEntry, ControlAction, ModelRequestInfo, Projection, Seat, SeatTestResult, ToolCall, ToolSpec } from '@werewolf/protocol';
-import { abandonGame, buildRules, createGame, projectSeat, seatTools, submit, waitingSeats, type EngineResult, type SubmitInput } from '@werewolf/engine';
+import { abandonGame, buildRules, createGame, migrateGameState, UnsupportedRoleDataVersion, projectSeat, seatTools, seatTasksComplete, submit, waitingSeats, type EngineResult, type SubmitInput } from '@werewolf/engine';
 import { buildMessages, feedbackMessages, getAdapter, redact, styleText, type Adapter, type AdapterConfig, type DecideRequest, type DecideResult, type TranscriptMessage } from '@werewolf/llm';
 import { NOT_TOOL_TURN, migrateThread, ensureCue, ownLine, readyToAct, syncThread, type ActionCue, type TurnHint, type SeatThread } from './agent';
 import { ApiFailure } from './room-failure';
@@ -109,6 +109,13 @@ export class RoomRuntimeService {
   }
 
   register(rec: RoomRuntimeRecord, restored: boolean): void {
+    if (rec.state) {
+      try { rec.state = migrateGameState(rec.state); }
+      catch (error) {
+        if (!(error instanceof UnsupportedRoleDataVersion)) throw error;
+        rec.paused = true;
+      }
+    }
     this.observability?.room(rec);
     if (restored) {
       if (rec.heardSeq === undefined) rec.heardSeq = rec.events.reduce((m, e) => Math.max(m, e.seq), 0);
@@ -201,6 +208,13 @@ export class RoomRuntimeService {
   control(rec: RoomRuntimeRecord, action: ControlAction): void {
     const live = this.state(rec);
     if (rec.status !== 'running') throw new ApiFailure(409, 'NOT_RUNNING', '对局不在进行中');
+    if (action === 'resume' || action === 'step') {
+      try { if (rec.state) rec.state = migrateGameState(rec.state); }
+      catch (error) {
+        if (!(error instanceof UnsupportedRoleDataVersion)) throw error;
+        throw new ApiFailure(409, 'UNSUPPORTED_ROLE_DATA', error.message);
+      }
+    }
     if (action === 'pause') {
       if (!rec.paused && rec.timing && rec.actionAvailableAt) {
         live.gatePausedAt = this.now();
@@ -338,6 +352,12 @@ export class RoomRuntimeService {
     const current = live.rec.state?.pending?.id;
     if (live.rec.status !== 'running') this.actionIds.delete(live.rec.id);
     for (const [key, ctrl] of live.inflight) {
+      const hearSeat = /:hear:(\d+):/.exec(key)?.[1];
+      if (hearSeat && live.rec.state && seatTasksComplete(live.rec.state, Number(hearSeat))) {
+        this.cancel(ctrl, 'seat_complete');
+        if (live.inflight.get(key) === ctrl) live.inflight.delete(key);
+        continue;
+      }
       // 旁听属于这条消息，不属于当时碰巧正在等待的行动；换下一位不能取消别人的收听。
       if (!key.includes(':hear:') && (!current || !key.startsWith(`${current}:`))) {
         this.cancel(ctrl, 'decision_changed');
@@ -598,7 +618,7 @@ export class RoomRuntimeService {
   /** 逐事件同步到可见座位；同波次并行请求，全部完成后才推进下一波。 */
   private prepareWave(live: RoomRuntimeState): { seat: Seat; action: boolean }[] | null {
     const rec = live.rec;
-    const ai = rec.seats.filter((s) => !this.isHuman(rec, s.seat));
+    const ai = rec.seats.filter((s) => !this.isHuman(rec, s.seat) && rec.state && !seatTasksComplete(rec.state, s.seat));
     let next = Number.POSITIVE_INFINITY;
     for (const s of ai) {
       const unseen = rec.events.find((e) => e.seq > this.threadFor(live, s.seat).seen);
@@ -848,6 +868,7 @@ export class RoomRuntimeService {
   /** 旁听属于消息；阶段变化不直接取消，提交打断前再次校验当前许可。 */
   private async receiveWork(live: RoomRuntimeState, seat: Seat, decision: string, context?: WorkObservation): Promise<void> {
     const rec = live.rec;
+    if (!rec.state || seatTasksComplete(rec.state, seat)) return;
     const cfg = rec.seats[seat - 1];
     const adapter = this.adapters[cfg.adapter] ?? getAdapter(cfg.adapter, cfg.apiProtocol);
     const projection = this.ports.attachDeadline(rec, seat, projectSeat(rec.state!, rec.events, seat));
@@ -873,7 +894,7 @@ export class RoomRuntimeService {
         this.writeObservedAudit(live, context, { seat, model, decisionId: decision, projectionVersion: projection.version, purpose: 'listen', ok: false, error: '密钥无法解密（主密钥可能已更换）' });
         return;
       }
-      if (live.gen !== gen || ctrl.signal.aborted) return;
+      if (live.gen !== gen || ctrl.signal.aborted || seatTasksComplete(rec.state!, seat)) return;
       let result: DecideResult;
       try {
         result = await this.invokeCall(live, adapter, {
@@ -898,7 +919,7 @@ export class RoomRuntimeService {
         if (live.gen !== gen || ctrl.signal.aborted) return;
         result = { ok: false, fatal: true, error: redact((e as Error).message, config.apiKey), failureKind: 'network', toolCallIds: [], latencyMs: 0 };
       }
-      if (live.gen !== gen) return;
+      if (live.gen !== gen || ctrl.signal.aborted || seatTasksComplete(rec.state!, seat)) return;
       let error = result.ok ? undefined : result.error ?? '旁听请求失败';
       if (result.ok && result.call) {
         const call = clampTexts(result.call, tools);

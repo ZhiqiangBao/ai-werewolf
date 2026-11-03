@@ -1,12 +1,13 @@
+import { roleData } from '../role-data';
 import { gameText } from '@werewolf/protocol';
 import type { RuleSet, ToolSpec } from '@werewolf/protocol';
 import type { Seat } from '@werewolf/protocol';
 import type { Ctx } from '../context';
 import { seatLabel } from '../text';
 import { err, seatParam } from '../tools';
-import type { RoleModule } from '../types';
+import type { ResolutionRow, RoleModule } from '../types';
 
-const lastOf = (ctx: Ctx, seat: Seat) => (ctx.player(seat).data.last ?? null) as Seat | null;
+const lastOf = (ctx: Ctx, seat: Seat) => roleData(ctx.player(seat), 'guard').last ?? null;
 
 function targetsFor(ctx: Ctx, seat: Seat): Seat[] {
   const last = lastOf(ctx, seat);
@@ -17,6 +18,7 @@ function targetsFor(ctx: Ctx, seat: Seat): Seat[] {
 }
 
 export const guard: RoleModule = {
+  copiedAbility: 'guard',
   id: 'guard',
   tools: ({ seats, rules }) => [guardTool(seats, rules.values, rules.locale)],
   name: '守卫',
@@ -45,11 +47,11 @@ export const guard: RoleModule = {
   },
 
   setup(ctx, seats) {
-    for (const s of seats) Object.assign(ctx.player(s).data, { last: null, log: [] });
+    for (const s of seats) Object.assign(roleData(ctx.player(s), 'guard'), { last: null, log: [] });
   },
 
   appendix(ctx, seat) {
-    const log = (ctx.player(seat).data.log ?? []) as { night: number; target: Seat | null }[];
+    const log = roleData(ctx.player(seat), 'guard').log ?? [];
     if (!log.length) return [gameText(ctx.rules.locale, "你还没有守护记录。")];
     const last = log[log.length - 1];
     return [
@@ -101,7 +103,7 @@ export const guard: RoleModule = {
         for (const [key, call] of Object.entries(subs)) {
           const seat = Number(key);
           const target = (call.args.target as Seat | null) ?? null;
-          const data = ctx.player(seat).data;
+          const data = roleData(ctx.player(seat), 'guard');
           data.last = target;
           data.log.push({ night: ctx.state.day, target });
           if (target === null) {
@@ -117,19 +119,6 @@ export const guard: RoleModule = {
       fallback: (ctx) => ({ tool: 'guard_protect', args: { target: null } }),
     },
   },
-
-  resolveNight(ctx, rows) {
-    if (!ctx.opt<boolean>('resolve.guardAndSaveKills')) return;
-    for (const r of rows) {
-      if (r.attack.kind !== 'wolf') continue;
-      const guarded = r.blockers.some((b) => b.kind === 'guard' || b.kind === 'awakened_guard');
-      const saved = r.blockers.some((b) => b.kind === 'antidote');
-      if (guarded && saved) {
-        r.blocked = false;
-        r.causes = ['guard_and_save'];
-      }
-    }
-  },
 };
 
 function guardTool(seats: Seat[], v: RuleSet['values'], locale: string | undefined = 'zh-CN'): ToolSpec {
@@ -139,4 +128,17 @@ function guardTool(seats: Seat[], v: RuleSet['values'], locale: string | undefin
     description: gameText(locale, "守卫夜间守护时使用。target 是今晚守护的存活玩家，null 表示空守。{0}{1}守护只挡狼刀，挡不住毒药；上一晚空守会解除连续守护限制。例：{\"target\":3} 为守3号，{\"target\":null} 为空守，目标以本轮限制为准。其他阶段不要调用。", v['guard.allowSelf'] === true ? gameText(locale, "可以守护自己。") : gameText(locale, "不能守护自己。"), v['guard.noConsecutive'] === true ? gameText(locale, "不能连续两晚守护同一人。") : ''),
     params: [seatParam('target', gameText(locale, "守护目标"), seats, gameText(locale, "空守"))],
   };
+}
+
+export function resolveGuardAndSave(ctx: Ctx, rows: ResolutionRow[]): void {
+  if (!ctx.rules.values['resolve.guardAndSaveKills']) return;
+  for (const row of rows) {
+    if (row.attack.kind !== 'wolf') continue;
+    const guarded = row.blockers.some((blocker) => blocker.kind === 'guard' || blocker.kind === 'awakened_guard');
+    const saved = row.blockers.some((blocker) => blocker.kind === 'antidote');
+    if (guarded && saved) {
+      row.blocked = false;
+      row.causes = ['guard_and_save'];
+    }
+  }
 }

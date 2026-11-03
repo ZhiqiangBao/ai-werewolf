@@ -6,6 +6,7 @@ import { seatParam } from '../tools';
 import type { Step, StepHandler } from '../types';
 import { speechSteps } from './day';
 import { evaluateWin } from './win';
+import { abilityDeathSteps } from '../abilities';
 
 /**
  * 一批死亡的统一处理：先执行各身份的出局职责（例如猎人开枪，可能追加新的死亡），
@@ -21,7 +22,8 @@ export const deathSteps: Record<string, StepHandler> = {
         const duties: Step[] = [];
         for (const d of fresh) {
           d.hooked = true;
-          duties.push(...(ctx.roleOf(d.seat).onDeath?.(ctx, d) ?? []));
+          duties.push(...(ctx.roleOf(d.seat).onDeath?.(ctx, d) ?? []).map((duty) => ({ ...duty, dutySeat: d.seat })));
+          duties.push(...abilityDeathSteps(ctx, d));
         }
         ctx.pushFront(...duties, step);
         return;

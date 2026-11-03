@@ -2,6 +2,8 @@ import { gameText } from '@werewolf/protocol';
 import type { Seat } from '@werewolf/protocol';
 import { seatLabel, seatList } from '../text';
 import type { ResolutionRow, StepHandler } from '../types';
+import { abilityAction, abilityNightSteps, activateAbilities } from '../abilities';
+import { resolveGuardAndSave } from '../roles/guard';
 
 const CAUSE_LABEL: Record<string, string> = {
   wolf: '狼刀',
@@ -27,6 +29,7 @@ export const nightSteps: Record<string, StepHandler> = {
       for (const mod of ctx.modulesInGame()) mod.nightStart?.(ctx);
       ctx.pushFront(
         ...s.rules.nightOrder.map((id) => ({ type: `night:${id}` })),
+        { type: 'night:abilities' },
         { type: 'night.resolve' },
         { type: 'day.start' },
       );
@@ -44,6 +47,7 @@ export const nightSteps: Record<string, StepHandler> = {
         return { attack, blockers, blocked: blockers.length > 0, causes: [attack.kind] };
       });
       for (const mod of ctx.modulesInGame()) mod.resolveNight?.(ctx, rows);
+      resolveGuardAndSave(ctx, rows);
 
       const byTarget = new Map<Seat, Set<string>>();
       for (const r of rows) {
@@ -68,9 +72,14 @@ export const nightSteps: Record<string, StepHandler> = {
         deaths,
       });
       for (const mod of ctx.modulesInGame()) mod.afterNight?.(ctx);
+      activateAbilities(ctx);
       s.night = null;
     },
   },
+  'night:abilities': {
+    run(ctx) { ctx.pushFront(...abilityNightSteps(ctx, ctx.alive().filter((seat) => ctx.player(seat).role !== 'awakened_wolf'))); },
+  },
+  'ability.act': abilityAction,
 };
 
 export const describeDeaths = (seats: Seat[], locale: string | undefined = 'zh-CN'): string => (seats.length ? seatList(seats, locale) : gameText(locale, "无"));

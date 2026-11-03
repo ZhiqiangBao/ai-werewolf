@@ -20,7 +20,11 @@ export interface PlayerState {
   /** 技能公开的表面身份；真实 role 始终用于阵营与胜负。 */
   revealedAs?: string;
   /** 身份模块自己的私有状态，例如女巫药瓶、守卫上一夜守护对象。 */
-  data: Record<string, any>;
+  data: Record<string, unknown>;
+  /** 缺省表示旧 v0 存档。由角色数据迁移入口升级，不能重跑开局 setup。 */
+  dataVersion?: number;
+  /** 能力库存属于实例，不能与被复制对象或其他实例共享。 */
+  abilities?: import('./abilities').AbilityInstance[];
 }
 
 export type DeathVia = 'night' | 'exile' | 'shot' | 'explode' | (string & {});
@@ -69,6 +73,8 @@ export interface PendingDeaths {
 
 export interface Step {
   type: string;
+  /** 由死亡钩子创建的职责归属；继续展开子职责时须保留。 */
+  dutySeat?: Seat;
   /** 自爆发生时从议程中移除。 */
   cancelOnExplode?: boolean;
   [key: string]: unknown;
@@ -192,6 +198,10 @@ export interface ToolCatalogContext {
 }
 
 export interface RoleModule {
+  /** 固定目录声明可授予的能力；实例库存不参与 Schema 构建。 */
+  abilityCatalog?: string[];
+  /** 模仿此身份时新建的能力定义，绝不复制目标库存。 */
+  copiedAbility?: string;
   /** 身份自行声明固定工具，新身份无需修改公共目录分支。 */
   tools?(context: ToolCatalogContext): ToolSpec[];
   id: string;

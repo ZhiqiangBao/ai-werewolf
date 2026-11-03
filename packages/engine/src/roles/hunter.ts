@@ -1,5 +1,5 @@
 import { gameText } from '@werewolf/protocol';
-import type { ToolSpec } from '@werewolf/protocol';
+import type { RuleSet, ToolSpec } from '@werewolf/protocol';
 import type { Seat } from '@werewolf/protocol';
 import { seatLabel } from '../text';
 import { seatParam } from '../tools';
@@ -15,6 +15,7 @@ const bool = (key: string, label: string, def: boolean, locale: string | undefin
 });
 
 export const hunter: RoleModule = {
+  copiedAbility: 'hunter',
   id: 'hunter',
   tools: ({ seats, rules }) => [hunterTool(seats, rules.locale)],
   name: '猎人',
@@ -47,15 +48,7 @@ export const hunter: RoleModule = {
   appendix: (ctx) => [gameText(ctx.rules.locale, "你出局时如果死因不含毒药，法官会私下询问你是否开枪。开枪会公开你的身份。")],
 
   onDeath(ctx, death: DeathRecord) {
-    const c = death.causes;
-    const opt = (k: string) => ctx.opt<boolean>(k);
-    if (c.includes('poison') && !opt('hunter.shootOnPoison')) return [];
-    const allowed =
-      (c.includes('wolf') && opt('hunter.shootOnKnife')) ||
-      (c.includes('guard_and_save') && opt('hunter.shootOnGuardAndSave')) ||
-      (c.includes('exile') && opt('hunter.shootOnVote')) ||
-      (c.includes('poison') && opt('hunter.shootOnPoison'));
-    return allowed ? [{ type: 'hunter.shoot', seat: death.seat, batch: death.batch }] : [];
+    return canHunterShoot(ctx.rules, death) ? [{ type: 'hunter.shoot', seat: death.seat, batch: death.batch }] : [];
   },
 
   steps: {
@@ -109,6 +102,17 @@ export const hunter: RoleModule = {
     },
   },
 };
+
+/** 迁移和实际死亡职责共用当局的死因规则，不能把所有已处理死亡都当作开过枪。 */
+export function canHunterShoot(rules: RuleSet, death: DeathRecord): boolean {
+  const causes = death.causes;
+  const allowed = (key: string) => rules.values[key] === true;
+  if (causes.includes('poison') && !allowed('hunter.shootOnPoison')) return false;
+  return (causes.includes('wolf') && allowed('hunter.shootOnKnife')) ||
+    (causes.includes('guard_and_save') && allowed('hunter.shootOnGuardAndSave')) ||
+    (causes.includes('exile') && allowed('hunter.shootOnVote')) ||
+    (causes.includes('poison') && allowed('hunter.shootOnPoison'));
+}
 
 function hunterTool(seats: Seat[], locale: string | undefined = 'zh-CN'): ToolSpec {
   return {

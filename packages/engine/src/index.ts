@@ -7,6 +7,11 @@ import { categoryName, factionName } from './text';
 registerBuiltins();
 
 export { Ctx } from './context';
+export { seatTasksComplete } from './participation';
+export { migrateGameState, roleData, registerRoleDataSchema, UnsupportedRoleDataVersion } from './role-data';
+export type { RoleDataMap, RoleDataSchema } from './role-data';
+export { registerAbility, getAbility, grantAbility, abilityState, findAbility, abilityNightSteps } from './abilities';
+export type { AbilityInstance, AbilityDefinition, AbilityStateMap } from './abilities';
 export { createGame, submit, replay, waitingSeats, abandonGame, RulesError } from './game';
 export type { CreateGameOptions, SubmitInput, EngineResult, ActionRecord } from './game';
 export { projectSeat, projectSpectator, projectGod, buildAppendix } from './projection';

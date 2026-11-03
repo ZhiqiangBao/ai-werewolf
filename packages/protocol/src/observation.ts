@@ -28,7 +28,7 @@ export interface ObservationRef {
 export type ObservationOutcome = 'success' | 'invalid_tool' | 'timeout' | 'cancelled' |
   'http_error' | 'network_error' | 'parse_error' | 'local_error' | 'stale' | 'incomplete' |
   'await_rejected' | 'empty' | 'accepted' | 'rejected' | 'fallback' | 'skipped';
-export type CancelReason = 'pause' | 'end' | 'decision_changed' | 'dispose' | 'unknown';
+export type CancelReason = 'pause' | 'end' | 'decision_changed' | 'seat_complete' | 'dispose' | 'unknown';
 export type VariantReason = 'initial' | 'stream_unsupported' | 'tool_choice_unsupported' | 'json_format_unsupported';
 export type FirstContentKind = 'reply' | 'thinking' | 'tool_name' | 'tool_arguments';
 export type BodyEndKind = 'protocol_end' | 'eof' | 'error' | 'cancelled' | 'discarded';

@@ -5,6 +5,7 @@ import { seatParam, textParam } from './tools';
 import { getRole } from './registry';
 import { weightLabel } from './text';
 import type { GameState } from './types';
+import { getAbility } from './abilities';
 
 /**
  * 每个座位整局使用的工具。名称、顺序和参数结构只由身份与开局规则决定，不随阶段、存活或药品变化。
@@ -18,6 +19,13 @@ export function seatTools(state: GameState, seat: Seat): ToolSpec[] {
   const tools: ToolSpec[] = [speakTool(state.rules.locale), voteTool(seats, v['vote.allowAbstain'] === true, v['vote.allowSelf'] === true, Number(v['vote.normalWeight']), Number(v['vote.sheriffWeight']), state.rules.locale)];
   if (v['sheriff.enabled'] === true) tools.push(...sheriffTools(seats, v['vote.allowAbstain'] === true, Number(v['vote.normalWeight']), state.rules.electionVersion === 3, state.rules.locale));
   tools.push(...(getRole(player.role).tools?.({ seats, seat, rules: state.rules }) ?? []));
+  for (const id of getRole(player.role).abilityCatalog ?? []) {
+    for (const tool of getAbility(id).catalog?.({ seats, seat, rules: state.rules }) ?? []) {
+      const existing = tools.find((t) => t.name === tool.name);
+      if (existing && JSON.stringify(existing) !== JSON.stringify(tool)) throw new Error(`能力工具定义冲突：${tool.name}`);
+      if (!existing) tools.push(tool);
+    }
+  }
   if (new Set(tools.map((t) => t.name)).size !== tools.length) throw new Error(gameText(state.rules.locale, "身份 {0} 的工具名称重复", player.role));
   return expandActionTools(tools, state.rules).map((tool) => localizeTool(tool, state.rules.locale));
 }

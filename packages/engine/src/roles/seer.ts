@@ -1,3 +1,4 @@
+import { roleData } from '../role-data';
 import { gameText } from '@werewolf/protocol';
 import type { ToolSpec } from '@werewolf/protocol';
 import type { Seat } from '@werewolf/protocol';
@@ -5,12 +6,6 @@ import { seatLabel } from '../text';
 import { seatParam } from '../tools';
 import type { RoleModule } from '../types';
 import { INSPECTION_PRIVACY_RULE } from './inspection';
-
-interface Check {
-  night: number;
-  target: Seat;
-  result: 'good' | 'wolf';
-}
 
 export const seer: RoleModule = {
   id: 'seer',
@@ -25,17 +20,17 @@ export const seer: RoleModule = {
   ruleCard: (rules) => [gameText(rules.locale, "预言家：每晚查验一名其他存活玩家，结果只区分好人或狼人，不返回具体身份。{0}", gameText(rules.locale, INSPECTION_PRIVACY_RULE))],
 
   setup(ctx, seats) {
-    for (const s of seats) ctx.player(s).data.checks = [];
+    for (const s of seats) roleData(ctx.player(s), 'seer').checks = [];
   },
 
   knowledge(ctx, seat) {
-    return ((ctx.player(seat).data.checks ?? []) as Check[]).map((check) => ({
+    return roleData(ctx.player(seat), 'seer').checks.map((check) => ({
       seat: check.target, kind: 'alignment' as const, alignment: check.result, source: 'inspection' as const,
     }));
   },
 
   appendix(ctx, seat) {
-    const checks = (ctx.player(seat).data.checks ?? []) as Check[];
+    const checks = roleData(ctx.player(seat), 'seer').checks;
     if (!checks.length) return [gameText(ctx.rules.locale, "你的查验记录：暂无。")];
     return [
       gameText(ctx.rules.locale, "你的查验记录：{0}。", checks.map((c) => gameText(ctx.rules.locale, "第{0}夜 {1}={2}", c.night, seatLabel(c.target, ctx.rules.locale), c.result === 'wolf' ? gameText(ctx.rules.locale, "狼人") : gameText(ctx.rules.locale, "好人"))).join('；')),
@@ -79,7 +74,7 @@ export const seer: RoleModule = {
           }
           const mod = ctx.roleOf(target);
           const result: 'good' | 'wolf' = mod.inspectAs ?? (mod.faction === 'wolf' ? 'wolf' : 'good');
-          (ctx.player(seat).data.checks as Check[]).push({ night: ctx.state.day, target, result });
+          roleData(ctx.player(seat), 'seer').checks.push({ night: ctx.state.day, target, result });
           const label = result === 'wolf' ? gameText(ctx.rules.locale, "狼人") : gameText(ctx.rules.locale, "好人");
           ctx.priv([seat], 'seer.result', gameText(ctx.rules.locale, "查验结果：{0}是{1}。", seatLabel(target, ctx.rules.locale), label), { target, result });
           night?.lines.push(gameText(ctx.rules.locale, "预言家（{0}）查验 {1}：{2}", seatLabel(seat, ctx.rules.locale), seatLabel(target, ctx.rules.locale), label));

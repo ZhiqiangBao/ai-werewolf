@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildRules, Ctx, projectGod, replay, seatTools, submit } from '../src/index';
+import { abilityState, buildRules, Ctx, projectGod, replay, roleData, seatTools, submit } from '../src/index';
 import { evaluateWin } from '../src/flow/win';
 import { TestGame } from './harness';
 
@@ -61,7 +61,7 @@ describe('镜隐迷踪：真实身份、查验表现和能力', () => {
       expect(g.view(4).task?.tools.map((t) => t.name)).toEqual(['awakened_mimic', 'awakened_wait']);
       g.ok(4, 'awakened_mimic', { targetSeat: target });
       expect(g.state.players[3].role).toBe('awakened_wolf');
-      expect(g.state.players[3].data.awakened.learned).toMatchObject({ role, active: false, activeFromNight: 2 });
+      expect(roleData(g.state.players[3], 'awakened_wolf').awakened.learned).toMatchObject({ role, active: false, activeFromNight: 2 });
       expect(g.view(4).events.find((e) => e.type === 'awakened.mimic')).toMatchObject({ audience: [4], payload: { target, role, activeFromNight: 2 } });
       expect(g.view(target).events.some((e) => e.type === 'awakened.mimic')).toBe(false);
       expect(g.spectator().events.some((e) => e.type === 'awakened.mimic')).toBe(false);
@@ -71,7 +71,7 @@ describe('镜隐迷踪：真实身份、查验表现和能力', () => {
       expect(g.view(4).me?.faction).toBe('wolf');
       expect(seatTools(g.state, 4)).toEqual(tools);
       g.night();
-      expect(g.state.players[3].data.awakened.learned.active).toBe(true);
+      expect(roleData(g.state.players[3], 'awakened_wolf').awakened.learned!.active).toBe(true);
       expect(g.view(4).events.find((e) => e.type === 'awakened.activated')).toMatchObject({ audience: [4], payload: { activeFromNight: 2 } });
       expect(g.view(target).events.some((e) => e.type === 'awakened.activated')).toBe(false);
       expect(g.spectator().events.some((e) => e.type === 'awakened.activated')).toBe(false);
@@ -88,7 +88,7 @@ describe('镜隐迷踪：真实身份、查验表现和能力', () => {
     expect(g.act(4, 'awakened_mimic', { targetSeat: 12 })).toBeDefined();
     g.ok(4, 'awakened_wait'); g.night(); g.toNight();
     g.ok(4, 'awakened_mimic', { targetSeat: 6 });
-    expect(g.state.players[3].data.awakened.learned.activeFromNight).toBe(3);
+    expect(roleData(g.state.players[3], 'awakened_wolf').awakened.learned!.activeFromNight).toBe(3);
     expect(g.act(4, 'awakened_poison', { targetSeat: 9 })).toBeDefined();
     g.night(); g.toNight();
     expect(g.act(4, 'awakened_mimic', { targetSeat: 7 })).toBeDefined();
@@ -105,15 +105,15 @@ describe('镜隐迷踪：真实身份、查验表现和能力', () => {
   it('模仿女巫只获得独立的一瓶毒药；源女巫已用药也不影响资源', () => {
     const g = game(); g.ok(4, 'awakened_mimic', { targetSeat: 6 });
     g.night({ poison: 9 });
-    expect(g.state.players[3].data.awakened.learned.skill).toEqual({ kind: 'poison', available: true });
+    expect(abilityState(g.state.players[3].abilities![0], 'poison')).toEqual({ available: true });
     g.toNight(); g.until((x) => x.pending?.step.type === 'night:awakened_skill');
     expect(g.toolsOf(4).map((t) => t.name)).toEqual(['awakened_poison', 'awakened_skip_skill']);
     expect(g.act(4, 'awakened_poison', { targetSeat: 4 })).toBeDefined();
     g.ok(4, 'awakened_poison', { targetSeat: 10 });
     expect(g.state.players[9].alive).toBe(false);
-    expect(g.state.players[3].data.awakened.learned.skill.available).toBe(false);
+    expect(abilityState(g.state.players[3].abilities![0], 'poison').available).toBe(false);
     g.toNight(); g.night();
-    expect(g.state.players[3].data.awakened.learned.skill.available).toBe(false);
+    expect(abilityState(g.state.players[3].abilities![0], 'poison').available).toBe(false);
     expect(g.events.filter((e) => e.type === 'awakened.skill' && e.payload.tool === 'awakened_poison')).toHaveLength(1);
   });
 
@@ -195,7 +195,7 @@ describe('镜隐迷踪：夜间结算、刀权和死亡职责', () => {
     expect(g.events.some((e) => e.type === 'awakened.inherit')).toBe(false);
     g.toNight();
     expect(g.events.filter((e) => e.type === 'awakened.inherit')).toHaveLength(1);
-    expect(g.state.players[3].data.awakened.knifeFromNight).toBe(2);
+    expect(roleData(g.state.players[3], 'awakened_wolf').awakened.knifeFromNight).toBe(2);
   });
 
   it('复制狼人的额外刀需刀权和启用条件，只能消耗一次，可被守护挡住', () => {
@@ -206,7 +206,7 @@ describe('镜隐迷踪：夜间结算、刀权和死亡职责', () => {
     g.until((x) => x.pending?.step.type === 'night:awakened_skill'); g.ok(4, 'awakened_claw', { targetSeat: 9 });
     expect(g.state.players[8].alive).toBe(true);
     expect(g.state.players[9].alive).toBe(false);
-    expect(g.state.players[3].data.awakened.learned.skill.claw).toBe(false);
+    expect(abilityState(g.state.players[3].abilities![0], 'wolf').claw).toBe(false);
     g.toNight(); g.night();
     expect(g.events.filter((e) => e.payload.tool === 'awakened_claw')).toHaveLength(1);
   });

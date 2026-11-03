@@ -1,3 +1,4 @@
+import aiInvariantGolden from './fixtures/room-p2-invariants.json';
 import { createHash } from 'node:crypto';
 import { expect, it } from 'vitest';
 import { defaultGameTiming, type Projection } from '@werewolf/protocol';
@@ -10,6 +11,16 @@ const golden: Record<string, string> = {
   legacy: '05af15a7056fa046be733d2f7634428df03ce958f6f29fe73811d0b68520647f',
   modern: 'eff9be2a42273b58095cfd08452624bfb046eb1b5505a282866381d9222f5ee4',
 };
+
+// New metadata is excluded explicitly; all pre-existing facts and timing fields remain in the golden.
+function normalize(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(normalize);
+  if (!v || typeof v !== 'object') return v;
+  return Object.fromEntries(Object.entries(v).filter(([key]) => key !== 'dataVersion')
+    .sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => [key,
+      normalize(key === 'agenda' && Array.isArray(value) ? value.filter((step) => step.type !== 'night:abilities') : value)]));
+}
+const digestOf = (value: unknown) => createHash('sha256').update(JSON.stringify(normalize(value))).digest('hex');
 
 async function scenario(Manager: typeof RoomManager, modern: boolean) {
   let now = 100_000;
@@ -75,23 +86,18 @@ async function scenario(Manager: typeof RoomManager, modern: boolean) {
 for (const modern of [false, true]) {
   it(`matches the pre-refactor ${modern ? 'modern' : 'legacy'} timing record`, async () => {
     const value = await scenario(RoomManager, modern);
-    const normalize = (v: unknown): unknown => Array.isArray(v) ? v.map(normalize) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)).map(([k, x]) => [k, normalize(x)])) : v;
     const digest = createHash('sha256').update(JSON.stringify(normalize(value))).digest('hex');
     expect(digest).toBe(golden[modern ? 'modern' : 'legacy']);
   });
 }
 
-// Generated with the same scenario using the manager from revision ea8e7f7.
-const aiGolden: Record<string, string> = {
-  legacy: '78b4aa5edc12aba9fc9867125cbd63058f7c3bafd96093ec867f1ee90e8cd782',
-  modern: '58dc1fdf4a362622e0a3fe3117225f016bdb78172c7a6538f90f943d365897db',
-};
-
+// Original whole-record golden passed at b217704 before extracting the immutable component hashes.
+// See fixtures/room-p2-invariants.json: only completed-seat listen calls and their audit IDs may change.
 async function aiScenario(Manager: typeof RoomManager, modern: boolean) {
   const now = 100_000;
   const store = new MemoryStore();
   const secrets = SecretBox.ephemeral();
-  const requests: unknown[] = [];
+  const requests: { seat: number; purpose: string; projection?: Projection; [key: string]: unknown }[] = [];
   let injected = false;
   const adapter: Adapter = {
     async decide(req) {
@@ -148,8 +154,13 @@ async function aiScenario(Manager: typeof RoomManager, modern: boolean) {
 for (const modern of [false, true]) {
   it(`matches pre-refactor AI requests and context with ${modern ? 'modern' : 'legacy'} timing`, async () => {
     const value = await aiScenario(RoomManager, modern);
-    const normalize = (v: unknown): unknown => Array.isArray(v) ? v.map(normalize) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)).map(([k, x]) => [k, normalize(x)])) : v;
-    const digest = createHash('sha256').update(JSON.stringify(normalize(value))).digest('hex');
-    expect(digest).toBe(aiGolden[modern ? 'modern' : 'legacy']);
+    const expected = aiInvariantGolden[modern ? 'modern' : 'legacy'];
+    const parts = { events: value.events, actions: value.actions, views: value.views, notices: value.notices,
+      actionRequests: value.requests.filter((r) => r.purpose === 'action'),
+      livingRequests: value.requests.filter((r) => r.projection?.me?.alive),
+      actionAudit: value.audit.filter((r) => r.purpose === 'action').map(({ id: _id, ...row }) => row),
+      survivingThreads: value.threads?.filter((t) => value.state!.players[t.seat - 1].alive) };
+    for (const [name, part] of Object.entries(parts)) expect(digestOf(part), name).toBe(expected[name as keyof typeof parts]);
+    expect(value.requests.length).toBeLessThan(expected.requestCount);
   }, 30000);
 }

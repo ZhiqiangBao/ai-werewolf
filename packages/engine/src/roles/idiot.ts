@@ -1,3 +1,4 @@
+import { roleData } from '../role-data';
 import { gameText } from '@werewolf/protocol';
 import { seatLabel } from '../text';
 import type { RoleModule } from '../types';
@@ -33,17 +34,17 @@ export const idiot: RoleModule = {
   },
 
   setup(ctx, seats) {
-    for (const s of seats) ctx.player(s).data.flipped = false;
+    for (const s of seats) roleData(ctx.player(s), 'idiot').flipped = false;
   },
 
   appendix(ctx, seat) {
-    return [ctx.player(seat).data.flipped ? gameText(ctx.rules.locale, "你已翻牌，不能再投票，仍可发言。") : gameText(ctx.rules.locale, "你被投票放逐时会翻牌留在场上。")];
+    return [roleData(ctx.player(seat), 'idiot').flipped ? gameText(ctx.rules.locale, "你已翻牌，不能再投票，仍可发言。") : gameText(ctx.rules.locale, "你被投票放逐时会翻牌留在场上。")];
   },
 
   beforeExile(ctx, seat) {
     const p = ctx.player(seat);
-    if (p.data.flipped) return false;
-    p.data.flipped = true;
+    if (roleData(p, 'idiot').flipped) return false;
+    roleData(p, 'idiot').flipped = true;
     p.revealed = true;
     ctx.pub('idiot.flip', gameText(ctx.rules.locale, "{0}被投票放逐，翻牌：白痴。留在场上，此后不能投票。", seatLabel(seat, ctx.rules.locale)), { seat, role: 'idiot' });
     if (ctx.state.sheriff === seat && ctx.opt<string>('idiot.badgeOnFlip') === 'lost') {
@@ -55,6 +56,6 @@ export const idiot: RoleModule = {
   },
 
   canVote(ctx, seat) {
-    return !ctx.player(seat).data.flipped;
+    return !roleData(ctx.player(seat), 'idiot').flipped;
   },
 };
