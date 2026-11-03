@@ -97,5 +97,7 @@
     "packages/session/test/audio-lifecycle.test.ts": "f056c0ecceee28c651698b8095bd8e07d22ac9309d0174b40d09e8473f449e48",
     "packages/session/test/event-store-prototype.test.ts": "412e9fd4e140739f17d48a1a8871923c1d53ab5ce38f124c15e809a020ef9dda",
     "packages/session/test/model-quality-evaluation.test.ts": "78bf19b064f3a721abd367dc64f0c36b8748c5b9ae7fbc4e6a4f5bbbf6f37840"
-  }
+  },
+  "implementationCommit": "c7de581",
+  "sourceHashMode": "本次工作区原始文件字节；跨克隆请考虑Git换行转换，并按提交与逻辑内容核对"
 }

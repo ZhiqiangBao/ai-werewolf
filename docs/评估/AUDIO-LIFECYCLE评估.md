@@ -10,6 +10,8 @@
 
 测量环境为 Windows `10.0.26300`、x64、Node.js `v24.18.1`；模型 `qwen-audio-3.0-tts-plus`，固定音色 `qwen-audio-3.0-tts-plus-longshuojizhu`，速率 `1.08`，WAV 采样率 `24000 Hz`。默认指令要求普通话自然清楚朗读原文、准确读出玩家号码、不添加或改写；指令 UTF-8 SHA-256 为 `d297de130ccaf6d7d785f8dc5b64fa0e6a5b77b1fcd4cf117cde2e506b6cf9df`。第二轮实际测量脚本的 SHA-256 为 `c945897c13e040c6f5766741002d6312273d9c1d531ff5d0b9bbb65f459eea1c`；当前脚本的 SHA-256 为 `3f3695d2dd5d7f5fab88533f093ad3d03570b9f9c5aee9d3967e723f3f576876`，仅在第二轮脚本基础上增加 `--live` 显式开关，观测逻辑相同，未因此重测。第一轮脚本尚未加入 WAV data 首字节探针。
 
+固定请求还使用 `locale=zh-CN`、`language_hints=["zh"]`、`format=wav`、`seed=31415`，由测量调用和当时适配器默认值推定；没有为此保存含凭据的请求正文。数据中的 `sourceSha256` 同时绑定提供方、Qwen 适配器、语音服务及缓存源码；摘要为当时工作区原始字节，跨克隆需留意换行转换。
+
 从项目根目录复现当前测量（依赖已安装，并具备已授权的项目 Qwen Token Plan 凭据和网络访问）：
 
 ```powershell
