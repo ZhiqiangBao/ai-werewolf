@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { GameEvent, Projection, SpeechProviderView } from '@werewolf/protocol';
 import { api } from '../api';
+import { useI18n } from '../i18n';
 import { audibleSpeech, SpeechCursor, type SpeechItem } from '../speech';
 import { browserSpeechOutput, serverSpeechOutput, type SpeechOutput } from '../speech-output';
 
@@ -121,33 +122,40 @@ export function useSpeechPlayback(roomId: string, token: string, projection: Pro
 
 export type SpeechPlayback = ReturnType<typeof useSpeechPlayback>;
 export function SpeechControls({ player }: { player: SpeechPlayback }) {
-  return <section className="speech-controls" aria-label="发言朗读">
+  const { t } = useI18n();
+  // Only translate fixed playback errors; server messages and player speech pass through unchanged.
+  const localError = (error: string) => {
+    const nativeFailure = /^浏览器原生朗读失败（([a-z-]+)），请检查系统音色或选择其他来源。$/.exec(error);
+    if (nativeFailure) return t('浏览器原生朗读失败（{0}），请检查系统音色或选择其他来源。', nativeFailure[1]);
+    return ['无法载入服务端朗读来源。', '所选朗读来源已删除，请重新选择。', '当前浏览器不支持原生朗读，请选择其他来源。', '请先选择可用的朗读来源。', '浏览器未能播放，请再次点击继续。', '浏览器没有启动原生朗读，请检查系统音色或选择其他来源。', '朗读来源暂时不可用。', '音频播放失败，可重听该条或选择其他来源。', '请点击继续播放以启用声音。'].includes(error) ? t(error) : error;
+  };
+  return <section className="speech-controls" aria-label={t('发言朗读')}>
     <audio ref={player.audio} preload="auto" />
     <div className="row" style={{ flexWrap: 'wrap', marginBottom: 8 }}>
-      <b>发言朗读</b>
-      <select className="speech-source" aria-label="朗读来源" value={player.source} onChange={(e) => player.changeSource(e.target.value)}>
-        {!player.source && <option value="">请选择来源</option>}
-        <option value="browser" disabled={!player.native}>浏览器原生{!player.native ? '（当前不可用）' : ''}</option>
+      <b>{t('发言朗读')}</b>
+      <select className="speech-source" aria-label={t('朗读来源')} value={player.source} onChange={(e) => player.changeSource(e.target.value)}>
+        {!player.source && <option value="">{t('请选择来源')}</option>}
+        <option value="browser" disabled={!player.native}>{t('浏览器原生')}{!player.native ? t('（当前不可用）') : ''}</option>
         {player.providers.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
       </select>
-      {player.source === 'browser' && <select className="speech-source" aria-label="浏览器朗读音色" value={player.voice} onChange={(e) => player.changeVoice(e.target.value)}>
-        <option value="">系统默认音色</option>
+      {player.source === 'browser' && <select className="speech-source" aria-label={t('浏览器朗读音色')} value={player.voice} onChange={(e) => player.changeVoice(e.target.value)}>
+        <option value="">{t('系统默认音色')}</option>
         {player.voices.map((voice) => <option key={voice.voiceURI} value={voice.voiceURI}>{voice.name} · {voice.lang}</option>)}
       </select>}
     </div>
     <div className="row" style={{ flexWrap: 'wrap' }}>
-      <button className="btn sm primary" disabled={!player.source} onClick={player.enabled ? player.stop : player.start}>{player.enabled ? '关闭自动朗读' : '开启自动朗读'}</button>
-      <button className="btn sm" disabled={!player.current} onClick={() => void player.togglePause()}>{player.paused ? '继续播放' : '暂停'}</button>
-      <button className="btn sm" disabled={!player.current && !player.queued} onClick={player.stop}>停止</button>
-      <label className="row small">语速 <select aria-label="朗读语速" value={player.rate} onChange={(e) => player.setRate(Number(e.target.value))}>
+      <button className="btn sm primary" disabled={!player.source} onClick={player.enabled ? player.stop : player.start}>{player.enabled ? t('关闭自动朗读') : t('开启自动朗读')}</button>
+      <button className="btn sm" disabled={!player.current} onClick={() => void player.togglePause()}>{player.paused ? t('继续播放') : t('暂停')}</button>
+      <button className="btn sm" disabled={!player.current && !player.queued} onClick={player.stop}>{t('停止')}</button>
+      <label className="row small">{t('语速')} <select aria-label={t('朗读语速')} value={player.rate} onChange={(e) => player.setRate(Number(e.target.value))}>
         {[.8, 1, 1.25, 1.5, 2].map((rate) => <option key={rate} value={rate}>{rate}×</option>)}
       </select></label>
     </div>
     <div className="small muted" role="status" style={{ marginTop: 8 }}>
-      {player.current ? `${player.loading ? '正在准备' : player.paused ? '已暂停' : '正在朗读'}：${player.current.seat}号发言${player.queued ? ` · 后续 ${player.queued} 条` : ''}` : player.enabled ? '等待当前视角的新发言，重连不会重读历史。' : '开启后先读最新一条，再按顺序朗读当前视角的新发言；「朗读」可重听单条。'}
+      {player.current ? t('{0}：{1}号发言{2}', player.loading ? t('正在准备') : player.paused ? t('已暂停') : t('正在朗读'), player.current.seat, player.queued ? ` · ${t('后续 {0} 条', player.queued)}` : '') : player.enabled ? t('等待当前视角的新发言，重连不会重读历史。') : t('开启后先读最新一条，再按顺序朗读当前视角的新发言；「朗读」可重听单条。')}
     </div>
-    {player.source === 'browser' && <div className="tiny muted">原生音色由系统提供；部分浏览器的语速调整在下一条朗读时生效。</div>}
-    {player.providerError && <div className="small muted">{player.providerError}</div>}
-    {player.error && <div className="error-box small" role="alert">{player.error}</div>}
+    {player.source === 'browser' && <div className="tiny muted">{t('原生音色由系统提供；部分浏览器的语速调整在下一条朗读时生效。')}</div>}
+    {player.providerError && <div className="small muted">{localError(player.providerError)}</div>}
+    {player.error && <div className="error-box small" role="alert">{localError(player.error)}</div>}
   </section>;
 }

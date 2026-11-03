@@ -1,5 +1,7 @@
 import type { CSSProperties } from 'react';
 import type { Audience, Catalog } from '@werewolf/protocol';
+import { gameText } from '@werewolf/protocol';
+import { getUiLocale } from './i18n';
 
 export const seatName = (seat: number) => `${seat}号`;
 
@@ -16,16 +18,16 @@ export function roleTone(catalog: Catalog | null, role?: string): string {
   return r.faction === 'wolf' ? 'wolf' : r.category === 'villager' ? 'villager' : 'god';
 }
 
-export function audienceText(a: Audience): string {
-  if (a === 'public') return '公开';
-  if (!a.length) return '仅上帝';
-  return `受众：${a.map(seatName).join('、')}`;
+export function audienceText(a: Audience, locale?: string): string {
+  if (a === 'public') return gameText(locale, '公开');
+  if (!a.length) return gameText(locale, '仅上帝');
+  return gameText(locale, '受众：{0}', a.map((s) => gameText(locale, '{0}号', s)).join(gameText(locale, '、')));
 }
 
-export function phaseLabel(day: number, phase: string): string {
-  if (phase === 'setup' || day === 0) return '准备';
-  if (phase === 'end') return '终局';
-  return `第${day}${phase === 'night' ? '夜' : '天'}`;
+export function phaseLabel(day: number, phase: string, locale?: string): string {
+  if (phase === 'end') return gameText(locale, '终局');
+  if (phase === 'setup' || day === 0) return gameText(locale, '准备');
+  return gameText(locale, '第{0}{1}', day, gameText(locale, phase === 'night' ? '夜' : '天'));
 }
 
 export async function copyText(text: string): Promise<boolean> {
@@ -47,6 +49,5 @@ export const link = (kind: 'host' | 'seat' | 'watch', roomId: string, token: str
   `${location.origin}${location.pathname}#/${kind}/${roomId}/${token}`;
 
 export function formatTime(ms: number): string {
-  const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+  return new Intl.DateTimeFormat(getUiLocale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(ms));
 }

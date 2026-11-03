@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { GodProjection, Projection, RoomBrief, RoomSetupView, ToolCall, ViewResponse } from '@werewolf/protocol';
+import { gameText } from '@werewolf/protocol';
+import { useI18n } from '../i18n';
 import { api, exportUrl, rememberRoom } from '../api';
 import { go, useCatalog, useView } from '../hooks';
 import { AuditPanel } from '../components/AuditPanel';
@@ -18,7 +20,9 @@ import { phaseLabel, seatName } from '../util';
 import { LinksPanel, Setup } from './Setup';
 
 function TopBar({ room, projection, who, children }: { room: RoomBrief; projection: Projection | null; who: string; children?: ReactNode }) {
+  const { t } = useI18n();
   const phase = projection?.status === 'ended' ? 'end' : (projection?.phase ?? 'setup');
+  const avatarName = AVATAR_STYLES.find((style) => style.id === room.avatarStyle)?.name;
   useEffect(() => {
     if (room.avatarStyle) applyAvatarStyle(room.avatarStyle);
     return initializeAvatarStyle;
@@ -34,20 +38,20 @@ function TopBar({ room, projection, who, children }: { room: RoomBrief; projecti
     <div className="topbar">
       <a className="brand" href="#/">
         <Logo />
-        <span>AI 狼人杀<small>THE MOONLIT VILLAGE</small></span>
+        <span>{t('AI 狼人杀')}<small>THE MOONLIT VILLAGE</small></span>
       </a>
       <span className="muted small room-meta">
-        {room.presetName} · 房间 {room.roomId}
+        {room.presetName} · {t('房间 {0}', room.roomId)}
       </span>
       {projection && (
         <span className={`phase-pill ${phase}`}>
           {phase !== 'end' && <PhaseIcon phase={phase} size={14} />}
-          {phase === 'end' ? '已结束' : phaseLabel(projection.day, projection.phase)}
+          {phase === 'end' ? gameText(projection.locale ?? room.locale, '终局') : phaseLabel(projection.day, projection.phase, projection.locale ?? room.locale)}
         </span>
       )}
-      {room.paused && room.status === 'running' && <span className="tag gold">已暂停</span>}
+      {room.paused && room.status === 'running' && <span className="tag gold">{t('已暂停')}</span>}
       <span className="spacer" />
-      {room.avatarStyle && <span className="tag">{AVATAR_STYLES.find((style) => style.id === room.avatarStyle)?.name}</span>}
+      {avatarName && <span className="tag">{t(avatarName)}</span>}
       {children}
       <span className="tag">{who}</span>
     </div>
@@ -55,17 +59,18 @@ function TopBar({ room, projection, who, children }: { room: RoomBrief; projecti
 }
 
 function Loading({ error }: { error: string | null }) {
+  const { t } = useI18n();
   return (
     <div className="center-screen">
       {error ? (
         <div>
           <div className="error-box">{error}</div>
           <a className="btn" style={{ marginTop: 16 }} href="#/">
-            回到首页
+            {t('回到首页')}
           </a>
         </div>
       ) : (
-        <div className="muted">正在连接房间…</div>
+        <div className="muted">{t('正在连接房间…')}</div>
       )}
     </div>
   );
@@ -76,13 +81,14 @@ function Loading({ error }: { error: string | null }) {
 // ---------------------------------------------------------------------------
 
 export function HostPage({ roomId, token }: { roomId: string; token: string }) {
+  const { t } = useI18n();
   const { data, error, refresh } = useView(roomId, token);
   if (!data) return <Loading error={error} />;
-  if (data.room.viewer !== 'host') return <Loading error="这个链接不是房主链接。" />;
+  if (data.room.viewer !== 'host') return <Loading error={t('这个链接不是房主链接。')} />;
   if (data.room.status === 'setup' || !data.projection) {
     return (
       <>
-        <TopBar room={data.room} projection={null} who="房主" />
+        <TopBar room={data.room} projection={null} who={t('房主')} />
         <Setup roomId={roomId} token={token} onStarted={() => void refresh()} />
       </>
     );
@@ -91,6 +97,7 @@ export function HostPage({ roomId, token }: { roomId: string; token: string }) {
 }
 
 function HostGame({ roomId, token, room, projection: p, presentation, refresh }: { roomId: string; token: string; room: RoomBrief; projection: GodProjection; presentation?: ViewResponse['presentation']; refresh: () => Promise<void> }) {
+  const { t } = useI18n();
   const catalog = useCatalog();
   const [tab, setTab] = useState<'god' | 'audit' | 'links' | 'rules'>('god');
   const [setup, setSetup] = useState<RoomSetupView | null>(null);
@@ -117,7 +124,7 @@ function HostGame({ roomId, token, room, projection: p, presentation, refresh }:
   };
 
   const endMatch = () => {
-    if (!window.confirm('终结这一局？正在进行的模型请求会被取消。本局记为流局，无胜负，不公开身份。')) return;
+    if (!window.confirm(t('终结这一局？正在进行的模型请求会被取消。本局记为流局，无胜负，不公开身份。'))) return;
     void control('end');
   };
 
@@ -133,30 +140,30 @@ function HostGame({ roomId, token, room, projection: p, presentation, refresh }:
 
   return (
     <>
-      <TopBar room={room} projection={p} who="房主 · 上帝视角">
+      <TopBar room={room} projection={p} who={t('房主 · 上帝视角')}>
         {running && !room.paused && (
           <button className="btn sm" disabled={busy} onClick={() => void control('pause')}>
-            暂停
+            {t('暂停')}
           </button>
         )}
         {running && room.paused && (
           <>
-            <button className="btn sm" disabled={busy} onClick={() => void control('step')} title="让模型座位只走一步">
-              单步
+            <button className="btn sm" disabled={busy} onClick={() => void control('step')} title={t('让模型座位只走一步')}>
+              {t('单步')}
             </button>
             <button className="btn sm primary" disabled={busy} onClick={() => void control('resume')}>
-              继续
+              {t('继续')}
             </button>
           </>
         )}
         {running && (
           <button className="btn sm danger" disabled={busy} onClick={endMatch}>
-            终结
+            {t('终结')}
           </button>
         )}
         {!running && (
           <button className="btn sm primary" onClick={() => void again()}>
-            同配置再来一局
+            {t('同配置再来一局')}
           </button>
         )}
       </TopBar>
@@ -168,7 +175,7 @@ function HostGame({ roomId, token, room, projection: p, presentation, refresh }:
         )}
         <div className="game">
           <div className="game-left">
-            {p.result && <ResultBanner result={p.result} />}
+            {p.result && <ResultBanner result={p.result} locale={p.locale ?? room.locale} />}
             <HumanStatus participants={room.participants ?? []} seats={room.seats} />
             <div className="panel">
               <SeatRing projection={p} room={room} catalog={catalog} roles={p.god.roles} deaths={presentation?.deaths} />
@@ -184,23 +191,23 @@ function HostGame({ roomId, token, room, projection: p, presentation, refresh }:
                   ] as const
                 ).map(([k, label]) => (
                   <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
-                    {label}
+                    {t(label)}
                   </button>
                 ))}
               </div>
               {tab === 'god' && <GodPanel projection={p} room={room} catalog={catalog} deaths={presentation?.deaths} />}
-              {tab === 'audit' && <AuditPanel roomId={roomId} token={token} />}
+              {tab === 'audit' && <AuditPanel roomId={roomId} token={token} locale={p.locale ?? room.locale} />}
               {tab === 'links' && (
                 <div style={{ display: 'grid', gap: 12 }}>
                   {setup && <LinksPanel roomId={roomId} setup={setup} />}
                   <div className="row">
                     <a className="btn sm" href={exportUrl(roomId, token, 'public')}>
-                      导出公开记录
+                      {t('导出公开记录')}
                     </a>
                     <a className="btn sm" href={exportUrl(roomId, token, 'god')}>
-                      导出原始上帝记录
+                      {t('导出原始上帝记录')}
                     </a>
-                    <button className="btn sm primary" onClick={() => downloadVideoScript(p, room)}>导出视频剪辑稿</button>
+                    <button className="btn sm primary" onClick={() => downloadVideoScript(p, room)}>{t('导出视频剪辑稿')}</button>
                   </div>
                 </div>
               )}
@@ -208,8 +215,8 @@ function HostGame({ roomId, token, room, projection: p, presentation, refresh }:
             </div>
           </div>
           <div className="game-right">
-            <ThoughtFeed thoughts={p.thoughts} seats={p.seats} events={p.events} />
-            <EventLog events={p.events} seats={p.seats} mode="god" onRead={speech.read} controls={<SpeechControls player={speech} />} />
+            <ThoughtFeed thoughts={p.thoughts} seats={p.seats} events={p.events} locale={p.locale ?? room.locale} />
+            <EventLog events={p.events} seats={p.seats} mode="god" locale={p.locale ?? room.locale} onRead={speech.read} controls={<SpeechControls player={speech} />} />
           </div>
         </div>
       </div>
@@ -222,15 +229,16 @@ function HostGame({ roomId, token, room, projection: p, presentation, refresh }:
 // ---------------------------------------------------------------------------
 
 export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
+  const { t } = useI18n();
   const { data, error, refresh } = useView(roomId, token);
   const catalog = useCatalog();
   const speech = useSpeechPlayback(roomId, token, data?.projection ?? null);
   if (!data) return <Loading error={error} />;
   const { room } = data;
-  if (room.viewer !== 'seat' || !room.seat) return <Loading error="这个链接不是座位链接。" />;
+  if (room.viewer !== 'seat' || !room.seat) return <Loading error={t('这个链接不是座位链接。')} />;
   const mine = room.seats.find((s) => s.seat === room.seat);
   const human = mine?.controller === 'human';
-  const who = `${seatName(room.seat)}${mine && mine.name !== seatName(room.seat) ? ` ${mine.name}` : ''}${human ? '' : '（AI 控制）'}`;
+  const who = `${gameText(room.locale, '{0}号', room.seat)}${mine && mine.name !== seatName(room.seat) && mine.name !== gameText(room.locale, '{0}号', room.seat) ? ` ${mine.name}` : ''}${human ? '' : t('（AI 控制）')}`;
 
   if (!data.projection) {
     return (
@@ -238,9 +246,9 @@ export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
         <TopBar room={room} projection={null} who={who} />
         {human ? <HumanLobby room={room} token={token} refresh={refresh} /> : <div className="center-screen">
           <div>
-            <h2>你是 {seatName(room.seat)}</h2>
-            <p className="muted">等待房主开局。开局后身份会随机发放，这个页面会自动刷新。</p>
-            {!human && <p className="muted small">这个座位目前由 AI 控制，你只能旁观它的视角。</p>}
+            <h2>{t('你是 {0}', gameText(room.locale, '{0}号', room.seat))}</h2>
+            <p className="muted">{t('等待房主开局。开局后身份会随机发放，这个页面会自动刷新。')}</p>
+            {!human && <p className="muted small">{t('这个座位目前由 AI 控制，你只能旁观它的视角。')}</p>}
           </div>
         </div>}
       </>
@@ -252,7 +260,7 @@ export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
     try {
       const r = await api.act(roomId, token, { decisionId, ...call });
       await refresh();
-      return r.ok ? null : (r.error?.message ?? '行动没有被接受');
+      return r.ok ? null : (r.error?.message ?? t('行动没有被接受'));
     } catch (e) {
       await refresh();
       return (e as Error).message;
@@ -263,26 +271,26 @@ export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
     <>
       <TopBar room={room} projection={p} who={who}>
         {human && ((p.task && !p.task.submitted) || p.interrupts.some((t) => t.name === 'sheriff_withdraw')) && !room.paused && (
-          <button className="btn sm primary" aria-label={`前往行动：${p.task && !p.task.submitted ? p.task.title : '退水'}`} onClick={() => document.getElementById('player-action')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
-            {p.task && !p.task.submitted ? '轮到你了' : '可退水'}
+          <button className="btn sm primary" aria-label={t('前往行动：{0}', p.task && !p.task.submitted ? p.task.title : gameText(p.locale ?? room.locale, '退水'))} onClick={() => document.getElementById('player-action')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+            {p.task && !p.task.submitted ? t('轮到你了') : t('可退水')}
           </button>
         )}
       </TopBar>
       <div className="wrap game-wrap">
-        {error && <div className="error-box" role="alert">连接中断：{error}。草稿保留，恢复连接后再提交。</div>}
+        {error && <div className="error-box" role="alert">{t('连接中断：{0}。草稿保留，恢复连接后再提交。', error)}</div>}
         <div className="game">
           <div className="game-left">
-            {p.result && <ResultBanner result={p.result} />}
+            {p.result && <ResultBanner result={p.result} locale={p.locale ?? room.locale} />}
             <div className="panel">
               <SeatRing projection={p} room={room} catalog={catalog} deaths={data.presentation?.deaths} />
             </div>
-            <TaskPanel projection={p} human={human} paused={room.paused} availableAt={data.presentation?.actionAvailableAt} onAct={act} />
-            {p.me && <IdentityCard me={p.me} catalog={catalog} />}
-            <RuleCard text={p.ruleCard} />
+            <TaskPanel projection={p} locale={p.locale ?? room.locale} human={human} paused={room.paused} availableAt={data.presentation?.actionAvailableAt} onAct={act} />
+            {p.me && <IdentityCard me={p.me} catalog={catalog} locale={p.locale ?? room.locale} />}
+            <RuleCard text={p.ruleCard} locale={p.locale ?? room.locale} />
           </div>
           <div className="game-right">
-            <ThoughtFeed thoughts={p.thoughts} seats={p.seats} events={p.events} />
-            <EventLog events={p.events} seats={p.seats} mode="seat" mySeat={room.seat} onRead={speech.read} controls={<SpeechControls player={speech} />} />
+            <ThoughtFeed thoughts={p.thoughts} seats={p.seats} events={p.events} locale={p.locale ?? room.locale} />
+            <EventLog events={p.events} seats={p.seats} mode="seat" locale={p.locale ?? room.locale} mySeat={room.seat} onRead={speech.read} controls={<SpeechControls player={speech} />} />
           </div>
         </div>
       </div>
@@ -295,6 +303,7 @@ export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
 // ---------------------------------------------------------------------------
 
 export function WatchPage({ roomId, token }: { roomId: string; token: string }) {
+  const { t } = useI18n();
   const { data, error } = useView(roomId, token);
   const catalog = useCatalog();
   const speech = useSpeechPlayback(roomId, token, data?.projection ?? null);
@@ -303,33 +312,33 @@ export function WatchPage({ roomId, token }: { roomId: string; token: string }) 
   if (!data.projection) {
     return (
       <>
-        <TopBar room={room} projection={null} who="观战" />
-        <div className="center-screen muted">等待房主开局，开局后自动刷新。</div>
+        <TopBar room={room} projection={null} who={t('观战')} />
+        <div className="center-screen muted">{t('等待房主开局，开局后自动刷新。')}</div>
       </>
     );
   }
   const p = data.projection;
   return (
     <>
-      <TopBar room={room} projection={p} who="观战">
+      <TopBar room={room} projection={p} who={t('观战')}>
         {p.status === 'ended' && (
           <a className="btn sm" href={exportUrl(roomId, token, 'public')}>
-            导出对局记录
+            {t('导出对局记录')}
           </a>
         )}
       </TopBar>
       <div className="wrap game-wrap">
         <div className="game">
           <div className="game-left">
-            {p.result && <ResultBanner result={p.result} />}
+            {p.result && <ResultBanner result={p.result} locale={p.locale ?? room.locale} />}
             <div className="panel">
               <SeatRing projection={p} room={room} catalog={catalog} deaths={data.presentation?.deaths} />
             </div>
-            <div className="note-box small">观战只能看到公开信息：发言、投票、公布的出局和翻开的身份。</div>
-            <RuleCard text={p.ruleCard} />
+            <div className="note-box small">{t('观战只能看到公开信息：发言、投票、公布的出局和翻开的身份。')}</div>
+            <RuleCard text={p.ruleCard} locale={p.locale ?? room.locale} />
           </div>
           <div className="game-right">
-            <EventLog events={p.events} seats={p.seats} mode="spectator" onRead={speech.read} controls={<SpeechControls player={speech} />} />
+            <EventLog events={p.events} seats={p.seats} mode="spectator" locale={p.locale ?? room.locale} onRead={speech.read} controls={<SpeechControls player={speech} />} />
           </div>
         </div>
       </div>

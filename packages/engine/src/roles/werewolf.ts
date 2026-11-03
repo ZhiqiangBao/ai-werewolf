@@ -9,7 +9,7 @@ import type { RoleModule, Step } from '../types';
 type Pick = [Seat, Seat | null];
 
 const pickText = (picks: Pick[], locale: string | undefined = 'zh-CN') =>
-  picks.map(([w, t]) => `${seatLabel(w, locale)}→${t === null ? gameText(locale, "空刀") : seatLabel(t, locale)}`).join('，');
+  picks.map(([w, t]) => `${seatLabel(w, locale)}→${t === null ? gameText(locale, "空刀") : seatLabel(t, locale)}`).join(gameText(locale, '，'));
 
 function killTargets(ctx: Ctx): Seat[] {
   const allowTeam = ctx.opt<boolean>('wolf.allowTeammateTarget');
@@ -184,7 +184,7 @@ export const werewolf: RoleModule = {
             : tied
               ? gameText(ctx.rules.locale, "刀口并列，取座位号较小的目标。今晚刀口：{0}", seatLabel(knife, ctx.rules.locale))
               : gameText(ctx.rules.locale, "今晚刀口：{0}", seatLabel(knife, ctx.rules.locale));
-        ctx.priv(wolves, 'wolf.kill.result', `${outcome}（${pickText(picks, ctx.rules.locale)}）。`, { picks, knife });
+        ctx.priv(wolves, 'wolf.kill.result', gameText(ctx.rules.locale, '{0}（{1}）。', outcome, pickText(picks, ctx.rules.locale)), { picks, knife });
         night.lines.push(gameText(ctx.rules.locale, "狼人（{0}）{1}", seatList(wolves, ctx.rules.locale), knife === null ? gameText(ctx.rules.locale, "空刀") : gameText(ctx.rules.locale, "刀 {0}", seatLabel(knife, ctx.rules.locale))));
       },
       fallback: (ctx) => ({ tool: 'wolf_kill', args: { target: null } }),

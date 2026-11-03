@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { apiBase, apiUrl, type ApiProtocol, type ModelPresetView } from '@werewolf/protocol';
+import { LocalizedError, apiBase, apiUrl, type ApiProtocol, type ModelPresetView } from '@werewolf/protocol';
 import { loadQwenPresets } from './qwen-presets';
 import type { SecretBox } from './secret';
 import { isScopeBinding, type EvidenceScopeBinding, type RetirementEvidence } from './model-retirement';
@@ -52,11 +52,11 @@ export class ModelLibrary {
   ) {
     if (!file || !existsSync(file)) return;
     const parsed = JSON.parse(readFileSync(file, 'utf8')) as { version?: number; legacyImported?: boolean; models?: SavedModel[] };
-    if ((parsed.version !== undefined && parsed.version !== 2) || !Array.isArray(parsed.models) || parsed.models.some((m) => !m || !m.id || !m.name || !m.baseUrl || (m.apiKeyEnc !== null && typeof m.apiKeyEnc !== 'string') || (m.lifecycle !== undefined && !['active', 'disabled', 'archived'].includes(m.lifecycle)))) throw Error('项目模型库格式无效，请检查 models.json；原文件未被覆盖');
+    if ((parsed.version !== undefined && parsed.version !== 2) || !Array.isArray(parsed.models) || parsed.models.some((m) => !m || !m.id || !m.name || !m.baseUrl || (m.apiKeyEnc !== null && typeof m.apiKeyEnc !== 'string') || (m.lifecycle !== undefined && !['active', 'disabled', 'archived'].includes(m.lifecycle)))) throw new LocalizedError('项目模型库格式无效，请检查 models.json；原文件未被覆盖');
     const models = parsed.models;
-    if (models.some((m) => m.maintenanceScope !== undefined && (!isScopeBinding(m.maintenanceScope) || 'routeId' in m.maintenanceScope))) throw Error('项目模型库维护作用域无效；原文件未被覆盖');
+    if (models.some((m) => m.maintenanceScope !== undefined && (!isScopeBinding(m.maintenanceScope) || 'routeId' in m.maintenanceScope))) throw new LocalizedError('项目模型库维护作用域无效；原文件未被覆盖');
     const ids = new Set(models.map((m) => m.id));
-    if (ids.size !== models.length || models.some((m) => m.mergedInto !== undefined && (typeof m.mergedInto !== 'string' || m.mergedInto === m.id || !ids.has(m.mergedInto) || models.find((target) => target.id === m.mergedInto)?.mergedInto !== undefined))) throw Error('项目模型库别名关系无效；原文件未被覆盖');
+    if (ids.size !== models.length || models.some((m) => m.mergedInto !== undefined && (typeof m.mergedInto !== 'string' || m.mergedInto === m.id || !ids.has(m.mergedInto) || models.find((target) => target.id === m.mergedInto)?.mergedInto !== undefined))) throw new LocalizedError('项目模型库别名关系无效；原文件未被覆盖');
     this.added = models;
     this.legacyImported = parsed.legacyImported === true;
     for (const model of models.filter((m) => m.mergedInto)) {
@@ -72,7 +72,7 @@ export class ModelLibrary {
           const url = new URL(String(evidence?.sourceUrl ?? ''));
           if (evidence?.kind !== 'official_same_model' || evidence.sourceModel !== source.model || evidence.targetModel !== target.model || evidence.protocol !== source.apiProtocol || evidence.providerId !== route.hostname.toLowerCase() || evidence.routeId !== routeId || !/^[a-f0-9]{64}$/i.test(String(evidence.sourceDigest ?? '')) || !Number.isFinite(Date.parse(String(evidence.checkedAt ?? ''))) || Date.parse(String(evidence.checkedAt)) > Date.now() || typeof evidence.summary !== 'string' || !evidence.summary || evidence.summary.length > 500 || /(?:sk-[\w-]{8,}|bearer\s+\S+|https?:\/\/\S+)/i.test(evidence.summary) || url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw Error();
         }
-      } catch { throw Error('项目模型库别名配置不一致；原文件未被覆盖'); }
+      } catch { throw new LocalizedError('项目模型库别名配置不一致；原文件未被覆盖'); }
     }
   }
 
@@ -131,10 +131,10 @@ export class ModelLibrary {
     const model = name.trim();
     const url = apiBase(baseUrl, protocol);
     const key = apiKey.trim();
-    if (!model) throw new Error('请填写模型名称');
-    if (!url) throw new Error('请填写接口地址');
-    if (!key) throw new Error('请填写密钥');
-    if (this.added.some((m) => (m.model ?? m.name) === model && m.baseUrl === url && (m.apiProtocol ?? 'chat_completions') === protocol)) throw new Error('这个名称、地址和协议已经添加过了');
+    if (!model) throw new LocalizedError('请填写模型名称');
+    if (!url) throw new LocalizedError('请填写接口地址');
+    if (!key) throw new LocalizedError('请填写密钥');
+    if (this.added.some((m) => (m.model ?? m.name) === model && m.baseUrl === url && (m.apiProtocol ?? 'chat_completions') === protocol)) throw new LocalizedError('这个名称、地址和协议已经添加过了');
     const saved: SavedModel = {
       id: `m_${randomBytes(8).toString('hex')}`,
       name: model.slice(0, 120),

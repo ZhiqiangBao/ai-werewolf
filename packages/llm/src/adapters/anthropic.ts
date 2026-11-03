@@ -38,21 +38,21 @@ export const anthropicAdapter: Adapter = {
   decide(req) {
     return runRequest(req, async (signal, started, onDelta, observation) => {
       const config = { ...req.config, apiProtocol: 'anthropic_messages' as const };
-      const url = apiUrl(config.baseUrl, 'anthropic_messages', req.projection?.locale);
+      const url = apiUrl(config.baseUrl, 'anthropic_messages', req.projection?.locale ?? req.locale);
       const json = config.toolMode === 'json' && req.toolChoice !== 'auto';
-      const thinking = thinkingParameters(config.baseUrl, config.model, config.thinkingMode, 'anthropic_messages');
+      const thinking = thinkingParameters(config.baseUrl, config.model, config.thinkingMode, 'anthropic_messages', req.projection?.locale ?? req.locale);
       const budget = (thinking.thinking as { budget_tokens?: number } | undefined)?.budget_tokens ?? 0;
       const max = config.maxOutputTokens ?? 32768;
-      if (budget >= max) return failure(started, gameText(req.projection?.locale, '单次输出上限必须大于思考预算，才能留出工具参数空间'), { fatal: true });
+      if (budget >= max) return failure(started, gameText(req.projection?.locale ?? req.locale, '单次输出上限必须大于思考预算，才能留出工具参数空间'), { fatal: true });
       const request = observation?.observer.start('http_request', observation.adapter.id, { variantIndex: 0, variantReason: 'initial', features: {
         stream: !!req.stream, toolChoice: json ? 'none' : 'auto', responseFormat: false,
       } });
       try {
       const body = observeSync(observation?.observer, request, 'request_encode', () => {
-      const input = anthropicInput(json ? [...req.messages, { role: 'user', content: jsonInstruction(req.tools, req.projection?.locale) }] : req.messages, config);
+      const input = anthropicInput(json ? [...req.messages, { role: 'user', content: jsonInstruction(req.tools, req.projection?.locale ?? req.locale) }] : req.messages, config);
       const body: Record<string, unknown> = { model: config.model, max_tokens: max, ...input, ...thinking, ...(req.stream ? { stream: true } : {}) };
       if (!json) {
-        body.tools = req.tools.map((t) => ({ name: t.name, description: `${t.title}：${t.description}`, input_schema: toolToJsonSchema(t, req.projection?.locale) }));
+        body.tools = req.tools.map((t) => ({ name: t.name, description: `${t.title}：${t.description}`, input_schema: toolToJsonSchema(t, req.projection?.locale ?? req.locale) }));
         // auto 同时兼容手动思考、强制思考和旁听，并避免切换 tool_choice 破坏消息缓存。
         // 正式行动仍由本地解析器要求恰好一个工具，失败按现有纠错流程处理。
         body.tool_choice = { type: 'auto', disable_parallel_tool_use: true };
@@ -63,7 +63,7 @@ export const anthropicAdapter: Adapter = {
       const argumentsByIndex = new Map<number, string>();
       let message: any;
       let stopped = false;
-      req.onRequest?.({ apiProtocol: 'anthropic_messages', tools: structuredClone(body.tools as unknown[] ?? []), toolChoice: body.tool_choice, ...(json ? { toolInstruction: jsonInstruction(req.tools, req.projection?.locale) } : {}) });
+      req.onRequest?.({ apiProtocol: 'anthropic_messages', tools: structuredClone(body.tools as unknown[] ?? []), toolChoice: body.tool_choice, ...(json ? { toolInstruction: jsonInstruction(req.tools, req.projection?.locale ?? req.locale) } : {}) });
       const result = await post(url, body, {
         ...(config.apiKey ? { 'x-api-key': config.apiKey } : {}), 'anthropic-version': '2023-06-01',
       }, signal, (e) => {
@@ -72,7 +72,7 @@ export const anthropicAdapter: Adapter = {
         if (e.type === 'content_block_start') blocks.set(e.index, { ...e.content_block });
         if (e.type === 'content_block_delta') {
           const block = blocks.get(e.index);
-          if (!block) throw new HttpError(200, gameText(req.projection?.locale, '缺少 content_block_start'));
+          if (!block) throw new HttpError(200, gameText(req.projection?.locale ?? req.locale, '缺少 content_block_start'));
           const d = e.delta;
           if (d.type === 'text_delta') { block.text = (block.text ?? '') + d.text; onDelta({ reply: d.text }); }
           if (d.type === 'thinking_delta') { block.thinking = (block.thinking ?? '') + d.thinking; onDelta({ thinking: d.thinking }); }
@@ -81,23 +81,23 @@ export const anthropicAdapter: Adapter = {
         }
         if (e.type === 'message_delta' && message) { Object.assign(message, e.delta); message.usage = { ...message.usage, ...e.usage }; }
         if (e.type === 'message_stop') stopped = true;
-      }, req.projection?.locale, observation && request ? { observer: observation.observer, request, protocol: 'anthropic_messages' } : undefined);
+      }, req.projection?.locale ?? req.locale, observation && request ? { observer: observation.observer, request, protocol: 'anthropic_messages' } : undefined);
       request?.finish('success');
       return observeSync(observation?.observer, observation?.adapter, 'parse', () => {
-      if (!result && (!message || !stopped)) throw new HttpError(200, gameText(req.projection?.locale, 'Anthropic 流式连接提前结束，未执行任何工具'));
+      if (!result && (!message || !stopped)) throw new HttpError(200, gameText(req.projection?.locale ?? req.locale, 'Anthropic 流式连接提前结束，未执行任何工具'));
       const data = result ?? { ...message, content: [...blocks.entries()].sort(([a], [b]) => a - b).map(([i, block]) => {
         if (argumentsByIndex.has(i)) { try { block.input = JSON.parse(argumentsByIndex.get(i)!); } catch { block.invalidArguments = argumentsByIndex.get(i); } }
         return block;
       }) };
-      if (!Array.isArray(data.content)) return failure(started, gameText(req.projection?.locale, 'Anthropic 回复缺少 content blocks'), { raw: data });
-      if (data.stop_reason === 'max_tokens' || data.stop_reason === 'model_context_window_exceeded') throw new HttpError(200, gameText(req.projection?.locale, 'Anthropic 回复被截断：{0}', data.stop_reason));
+      if (!Array.isArray(data.content)) return failure(started, gameText(req.projection?.locale ?? req.locale, 'Anthropic 回复缺少 content blocks'), { raw: data });
+      if (data.stop_reason === 'max_tokens' || data.stop_reason === 'model_context_window_exceeded') throw new HttpError(200, gameText(req.projection?.locale ?? req.locale, 'Anthropic 回复被截断：{0}', data.stop_reason));
       const reply = data.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('');
       const mind = data.content.filter((b: any) => b.type === 'thinking').map((b: any) => b.thinking).join('');
       const assistant = { role: 'assistant' as const, content: json || req.toolChoice === 'auto' ? reply || null : null,
         calls: data.content.filter((b: any) => b.type === 'tool_use').map((b: any) => ({ id: b.id, name: b.name, arguments: b.invalidArguments ?? JSON.stringify(b.input) })),
         ...(!data.content.some((b: any) => b.invalidArguments !== undefined) ? { native: { protocol: 'anthropic_messages' as const, binding: protocolBinding(config), items: data.content } } : {}),
       };
-      return { ...(json ? parseJson(started, assistant, req.tools, data, req.projection?.locale) : parseAssistant(started, assistant, req.tools, data, req.toolChoice === 'auto', req.projection?.locale)),
+      return { ...(json ? parseJson(started, assistant, req.tools, data, req.projection?.locale ?? req.locale) : parseAssistant(started, assistant, req.tools, data, req.toolChoice === 'auto', req.projection?.locale ?? req.locale)),
         reply: reply || undefined, thinking: mind || undefined, usage: tokenUsage(data.usage, 'anthropic_messages'),
       };
       });

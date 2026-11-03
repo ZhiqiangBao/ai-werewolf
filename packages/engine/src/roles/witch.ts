@@ -39,9 +39,9 @@ function promptFor(ctx: Ctx, seat: Seat): string {
     parts.push(knife !== null ? gameText(ctx.rules.locale, "狼人今晚选择刀 {0}。", seatLabel(knife, ctx.rules.locale)) : gameText(ctx.rules.locale, "狼人今晚没有落刀。"));
     if (knife === seat && !selfSaveAllowed(ctx)) parts.push(gameText(ctx.rules.locale, "本局规则不允许你自救。"));
   }
-  parts.push(gameText(ctx.rules.locale, "你现在持有：{0}。", [p.antidote ? gameText(ctx.rules.locale, "解药") : '', p.poison ? gameText(ctx.rules.locale, "毒药") : ''].filter(Boolean).join('、')));
+  parts.push(gameText(ctx.rules.locale, "你现在持有：{0}。", [p.antidote ? gameText(ctx.rules.locale, "解药") : '', p.poison ? gameText(ctx.rules.locale, "毒药") : ''].filter(Boolean).join(gameText(ctx.rules.locale, '、'))));
   if (p.antidote && p.poison && !ctx.opt<boolean>('witch.bothPotionsSameNight')) parts.push(gameText(ctx.rules.locale, "同一晚不能既救又毒。"));
-  return parts.join('');
+  return parts.join(new Intl.Locale(ctx.rules.locale ?? 'zh-CN').language === 'en' ? '\n' : '');
 }
 
 export const witch: RoleModule = {

@@ -210,9 +210,9 @@ export async function runRequest(
       ...(partial.reply ? { assistant: { role: 'assistant', content: partial.reply } } : {}),
       ...(partial.reply || partial.thinking ? { raw: { partial: true, ...partial } } : {}),
     };
-    if (req.signal?.aborted) return failure(started, gameText(req.projection?.locale, '请求已取消'), { ...notes, failureKind: 'cancelled' });
-    if (budget.aborted) return failure(started, gameText(req.projection?.locale, '超过 {0} 秒没有完成回复', req.config.timeoutSec), { ...notes, failureKind: 'timeout' });
-    if (error instanceof HttpError) return failure(started, redact(gameText(req.projection?.locale, '接口返回 {0}：{1}', error.status, error.body.slice(0, 300)), req.config.apiKey), { ...notes, failureKind: 'http' });
-    return failure(started, redact(gameText(req.projection?.locale, '请求失败：{0}', (error as Error).message), req.config.apiKey), { ...notes, failureKind: 'network' });
+    if (req.signal?.aborted) return failure(started, gameText(req.projection?.locale ?? req.locale, '请求已取消'), { ...notes, failureKind: 'cancelled' });
+    if (budget.aborted) return failure(started, gameText(req.projection?.locale ?? req.locale, '超过 {0} 秒没有完成回复', req.config.timeoutSec), { ...notes, failureKind: 'timeout' });
+    if (error instanceof HttpError) return failure(started, redact(gameText(req.projection?.locale ?? req.locale, '接口返回 {0}：{1}', error.status, error.body.slice(0, 300)), req.config.apiKey), { ...notes, failureKind: 'http' });
+    return failure(started, redact(gameText(req.projection?.locale ?? req.locale, '请求失败：{0}', (error as Error).message), req.config.apiKey), { ...notes, failureKind: 'network' });
   }
 }

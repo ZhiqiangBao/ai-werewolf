@@ -1,4 +1,5 @@
 import { gameText } from './locale';
+import { LocalizedError } from './errors';
 
 export const API_PROTOCOLS = ['chat_completions', 'responses', 'anthropic_messages'] as const;
 export type ApiProtocol = (typeof API_PROTOCOLS)[number];
@@ -9,7 +10,7 @@ export const API_PROTOCOL_LABELS: Record<ApiProtocol, string> = {
 
 export function apiProtocol(value: unknown): ApiProtocol {
   if (value === undefined) return 'chat_completions';
-  if (!API_PROTOCOLS.includes(value as ApiProtocol)) throw new Error('无效的接口协议');
+  if (!API_PROTOCOLS.includes(value as ApiProtocol)) throw new LocalizedError('无效的接口协议');
   return value as ApiProtocol;
 }
 
@@ -19,11 +20,24 @@ const paths: Record<ApiProtocol, string> = { chat_completions: '/chat/completion
 export function apiBase(value: string, protocol: ApiProtocol = 'chat_completions', locale?: string): string {
   const base = value.trim().replace(/\/+$/, '');
   if (!base || base.includes('${')) return '';
-  const url = new URL(base);
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error(gameText(locale, '接口地址必须是无凭证、无查询参数的 HTTP(S) 地址'));
+  let url: URL;
+  try { url = new URL(base); } catch {
+    const error = new LocalizedError('请输入完整的 HTTP 或 HTTPS 接口地址');
+    error.message = gameText(locale, error.localization.key);
+    throw error;
+  }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+    const error = new LocalizedError('接口地址必须是无凭证、无查询参数的 HTTP(S) 地址');
+    if (locale) error.message = gameText(locale, error.localization.key);
+    throw error;
+  }
   const endpoint = Object.values(paths).find((p) => url.pathname.endsWith(p));
   if (endpoint) {
-    if (endpoint !== paths[protocol]) throw new Error(gameText(locale, '接口地址与 {0} 协议不匹配', API_PROTOCOL_LABELS[protocol]));
+    if (endpoint !== paths[protocol]) {
+      const error = new LocalizedError('接口地址与 {0} 协议不匹配', API_PROTOCOL_LABELS[protocol]);
+      if (locale) error.message = gameText(locale, error.localization.key, API_PROTOCOL_LABELS[protocol]);
+      throw error;
+    }
     return base;
   }
   return /\/v\d+(?:beta)?$/.test(url.pathname) ? base : `${base}/v1`;

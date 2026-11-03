@@ -1,9 +1,11 @@
+import { uiLanguageHeader, useI18n } from '../i18n';
 import { useEffect, useRef, useState } from 'react';
 import { SPEECH_CONNECTION_TEMPLATES, type SpeechConnectionDraft, type SpeechConnectionKind, type SpeechConnectionView, type SpeechSettingsView } from '@werewolf/protocol';
 import { api, savedRooms } from '../api';
 
 const empty = (): SpeechConnectionDraft => ({ kind: 'speech-compatible', name: '', url: '', apiKey: '', model: '', voice: '' });
 export function SpeechSettings() {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false), [data, setData] = useState<SpeechSettingsView | null>(null);
   const [draft, setDraft] = useState(empty), [editing, setEditing] = useState<string>();
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState(''), [sample, setSample] = useState('');
@@ -31,7 +33,7 @@ export function SpeechSettings() {
   };
   const save = async () => {
     setBusy(true); setError(''); setNotice('');
-    try { await api.saveSharedSpeech(draft, editing); reset(); await changed(); setNotice('已保存，所有房间均可选用。'); }
+    try { await api.saveSharedSpeech(draft, editing); reset(); await changed(); setNotice(t('已保存，所有房间均可选用。')); }
     catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   };
@@ -42,7 +44,7 @@ export function SpeechSettings() {
   };
   const remove = async (id: string) => {
     setBusy(true); setError(''); setNotice(''); setSample('');
-    try { await api.deleteSharedSpeech(id); if (editing === id) reset(); await changed(); setNotice('已删除此朗读来源。'); }
+    try { await api.deleteSharedSpeech(id); if (editing === id) reset(); await changed(); setNotice(t('已删除此朗读来源。')); }
     catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   };
@@ -50,63 +52,63 @@ export function SpeechSettings() {
     controller.current?.abort(); const own = new AbortController(); controller.current = own;
     setBusy(true); setError(''); setNotice(''); setSample('');
     try {
-      const response = await fetch(`/api/v1/speech-settings/${encodeURIComponent(id)}/test`, { method: 'POST', signal: own.signal });
-      if (!response.ok) { const body = await response.json().catch(() => ({})); throw Error(body.message ?? '试听失败'); }
+      const response = await fetch(`/api/v1/speech-settings/${encodeURIComponent(id)}/test`, { method: 'POST', headers: { 'Accept-Language': uiLanguageHeader() }, signal: own.signal });
+      if (!response.ok) { const body = await response.json().catch(() => ({})); throw Error(body.message ?? t('试听失败')); }
       const blob = await response.blob();
-      if (!own.signal.aborted) { setSample(URL.createObjectURL(blob)); setNotice('试听音频已生成，请点击播放器播放。'); }
+      if (!own.signal.aborted) { setSample(URL.createObjectURL(blob)); setNotice(t('试听音频已生成，请点击播放器播放。')); }
     } catch (e) { if (!own.signal.aborted) setError((e as Error).message); }
     finally { if (!own.signal.aborted) setBusy(false); }
   };
   const share = async (roomId: string, token: string, id: string) => {
     setBusy(true); setError(''); setNotice('');
-    try { await api.shareSpeech(roomId, token, id); await changed(); setNotice('已导入首页共享库，所有房间均可选用。'); }
+    try { await api.shareSpeech(roomId, token, id); await changed(); setNotice(t('已导入首页共享库，所有房间均可选用。')); }
     catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   };
   const custom = draft.kind === 'http-audio' || draft.kind === 'http-json-audio';
   return <>
-    <button className="btn sm" onClick={() => setOpen(true)}>TTS 设置</button>
+    <button className="btn sm" onClick={() => setOpen(true)}>{t('TTS 设置')}</button>
     <dialog ref={dialog} className="speech-settings" aria-labelledby="speech-settings-title" onCancel={(event) => { event.preventDefault(); close(); }}>
-      <div className="row"><div><h2 id="speech-settings-title">语音服务库</h2><p className="small muted">添加一次，所有房间均可选用。试听会向所填服务发送一条固定测试句。</p></div><button className="btn sm" onClick={close} aria-label="关闭 TTS 设置">关闭</button></div>
-      {data?.builtins.length ? <p className="small muted">已有来源：{data.builtins.map((item) => item.label).join('、')}</p> : null}
+      <div className="row"><div><h2 id="speech-settings-title">{t('语音服务库')}</h2><p className="small muted">{t('添加一次，所有房间均可选用。试听会向所填服务发送一条固定测试句。')}</p></div><button className="btn sm" onClick={close} aria-label={t('关闭 TTS 设置')}>{t('关闭')}</button></div>
+      {data?.builtins.length ? <p className="small muted">{t('已有来源：{0}', data.builtins.map((item) => item.label).join('、'))}</p> : null}
       <form autoComplete="off" onSubmit={(event) => { event.preventDefault(); void save(); }}>
         <fieldset disabled={busy || !!data?.error}>
           <div className="speech-settings-grid">
-            <label className="field">接入类型<select value={draft.kind} onChange={(e) => selectKind(e.target.value as SpeechConnectionKind)}>{SPEECH_CONNECTION_TEMPLATES.map((item) => <option key={item.kind} value={item.kind}>{item.label}</option>)}</select></label>
-            <label className="field">名称<input required maxLength={120} value={draft.name} placeholder="例如：我的语音服务" onChange={(e) => patch({ name: e.target.value })} /></label>
-            <label className="field speech-settings-wide">接口 URL<input required type="url" value={draft.url} placeholder="https://你的服务地址/v1/audio/speech" onChange={(e) => patch({ url: e.target.value })} /></label>
-            <label className="field speech-settings-wide">API Key<input name="tts-api-key" type="password" autoComplete="new-password" required={!editing} value={draft.apiKey ?? ''} placeholder={editing ? '留空保留已有密钥' : '输入服务商的 API Key'} onChange={(e) => patch({ apiKey: e.target.value })} /></label>
+            <label className="field">{t('接入类型')}<select value={draft.kind} onChange={(e) => selectKind(e.target.value as SpeechConnectionKind)}>{SPEECH_CONNECTION_TEMPLATES.map((item) => <option key={item.kind} value={item.kind}>{t(item.label)}</option>)}</select></label>
+            <label className="field">{t('名称')}<input required maxLength={120} value={draft.name} placeholder={t('例如：我的语音服务')} onChange={(e) => patch({ name: e.target.value })} /></label>
+            <label className="field speech-settings-wide">{t('接口 URL')}<input required type="url" value={draft.url} placeholder="https://example.com/v1/audio/speech" onChange={(e) => patch({ url: e.target.value })} /></label>
+            <label className="field speech-settings-wide">API Key<input name="tts-api-key" type="password" autoComplete="new-password" required={!editing} value={draft.apiKey ?? ''} placeholder={editing ? t('留空保留已有密钥') : t('输入服务商的 API Key')} onChange={(e) => patch({ apiKey: e.target.value })} /></label>
             {!custom && <>
-              <label className="field">模型 ID<input value={draft.model ?? ''} placeholder="接口有默认值时可留空" onChange={(e) => patch({ model: e.target.value })} /></label>
-              <label className="field">音色 ID<input value={draft.voice ?? ''} placeholder="按服务商音色列表填写" onChange={(e) => patch({ voice: e.target.value })} /></label>
+              <label className="field">{t('模型 ID')}<input value={draft.model ?? ''} placeholder={t('接口有默认值时可留空')} onChange={(e) => patch({ model: e.target.value })} /></label>
+              <label className="field">{t('音色 ID')}<input value={draft.voice ?? ''} placeholder={t('按服务商音色列表填写')} onChange={(e) => patch({ voice: e.target.value })} /></label>
             </>}
           </div>
-          <p className="tiny muted">{draft.kind === 'speech-compatible' ? '填写完整语音合成地址；模型、音色是否必填取决于服务商。名称只用于显示。' : draft.kind === 'qwen' ? '填写 Qwen SpeechSynthesizer 完整地址及对应线路的 Key；不会自动换计费线路。' : draft.kind === 'mimo' ? '使用小米的 OpenAI 兼容语音地址；支持预置音色。Token Plan 的使用范围以服务商说明为准。' : draft.kind === 'minimax' ? '使用 MiniMax 同步语音合成地址；模板按非流式 MP3 配置。' : '把 {{text}} 放在 JSON 模板的字符串中，发送时会替换为已授权的原文。'}</p>
+          <p className="tiny muted">{draft.kind === 'speech-compatible' ? t('填写完整语音合成地址；模型、音色是否必填取决于服务商。名称只用于显示。') : draft.kind === 'qwen' ? t('填写 Qwen SpeechSynthesizer 完整地址及对应线路的 Key；不会自动换计费线路。') : draft.kind === 'mimo' ? t('使用小米的 OpenAI 兼容语音地址；支持预置音色。Token Plan 的使用范围以服务商说明为准。') : draft.kind === 'minimax' ? t('使用 MiniMax 同步语音合成地址；模板按非流式 MP3 配置。') : t('把 {{text}} 放在 JSON 模板的字符串中，发送时会替换为已授权的原文。')}</p>
           {draft.kind !== 'qwen' && <details className="speech-settings-advanced" open={custom}>
-            <summary>高级设置</summary>
+            <summary>{t('高级设置')}</summary>
             <div className="speech-settings-grid">
-              <label className="field">密钥请求头<input value={draft.apiKeyHeader ?? 'Authorization'} onChange={(e) => patch({ apiKeyHeader: e.target.value })} /></label>
-              <label className="field">密钥前缀<input value={draft.apiKeyPrefix ?? 'Bearer '} onChange={(e) => patch({ apiKeyPrefix: e.target.value })} /></label>
-              {custom && <label className="field speech-settings-wide">请求 JSON 模板<textarea rows={6} value={draft.bodyJson ?? ''} onChange={(e) => patch({ bodyJson: e.target.value })} spellCheck={false} /></label>}
+              <label className="field">{t('密钥请求头')}<input value={draft.apiKeyHeader ?? 'Authorization'} onChange={(e) => patch({ apiKeyHeader: e.target.value })} /></label>
+              <label className="field">{t('密钥前缀')}<input value={draft.apiKeyPrefix ?? 'Bearer '} onChange={(e) => patch({ apiKeyPrefix: e.target.value })} /></label>
+              {custom && <label className="field speech-settings-wide">{t('请求 JSON 模板')}<textarea rows={6} value={draft.bodyJson ?? ''} onChange={(e) => patch({ bodyJson: e.target.value })} spellCheck={false} /></label>}
               {draft.kind === 'http-json-audio' && <>
-                <label className="field">音频字段路径<input value={draft.audioPath ?? 'audio'} placeholder="例如 data.audio" onChange={(e) => patch({ audioPath: e.target.value })} /></label>
-                <label className="field">音频编码<select value={draft.encoding ?? 'base64'} onChange={(e) => patch({ encoding: e.target.value as 'base64' | 'hex' })}><option value="base64">Base64</option><option value="hex">Hex</option></select></label>
+                <label className="field">{t('音频字段路径')}<input value={draft.audioPath ?? 'audio'} placeholder={t('例如 data.audio')} onChange={(e) => patch({ audioPath: e.target.value })} /></label>
+                <label className="field">{t('音频编码')}<select value={draft.encoding ?? 'base64'} onChange={(e) => patch({ encoding: e.target.value as 'base64' | 'hex' })}><option value="base64">Base64</option><option value="hex">Hex</option></select></label>
               </>}
-              {custom && <label className="field">音频类型<select value={draft.mimeType ?? ''} onChange={(e) => patch({ mimeType: e.target.value || undefined })}><option value="">{draft.kind === 'http-json-audio' ? 'WAV（默认）' : '使用响应 Content-Type'}</option>{['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/webm', 'audio/mp4', 'audio/flac'].map((type) => <option key={type} value={type}>{type}</option>)}</select></label>}
+              {custom && <label className="field">{t('音频类型')}<select value={draft.mimeType ?? ''} onChange={(e) => patch({ mimeType: e.target.value || undefined })}><option value="">{draft.kind === 'http-json-audio' ? t('WAV（默认）') : t('使用响应 Content-Type')}</option>{['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/webm', 'audio/mp4', 'audio/flac'].map((type) => <option key={type} value={type}>{type}</option>)}</select></label>}
             </div>
           </details>}
-          <div className="row"><button className="btn primary sm" type="submit">{busy ? '处理中…' : editing ? '保存修改' : '添加来源'}</button>{editing && <button className="btn sm" type="button" onClick={reset}>取消编辑</button>}</div>
+          <div className="row"><button className="btn primary sm" type="submit">{busy ? t('处理中…') : editing ? t('保存修改') : t('添加来源')}</button>{editing && <button className="btn sm" type="button" onClick={reset}>{t('取消编辑')}</button>}</div>
         </fieldset>
       </form>
       {error && <div className="error-box small" role="alert">{error}</div>}
       {notice && <p className="small" role="status">{notice}</p>}
-      {sample && <audio controls src={sample} aria-label="TTS 试听音频" />}
+      {sample && <audio controls src={sample} aria-label={t('TTS 试听音频')} />}
       <div className="speech-settings-list">{data?.connections.map((item) => <article key={item.id}>
-        <div><b>{item.name}</b><span className="tiny muted">{SPEECH_CONNECTION_TEMPLATES.find((template) => template.kind === item.kind)?.label} · {item.hasKey ? '已保存密钥' : '密钥不可用'}</span><span className="tiny muted">{item.url}</span></div>
-        <div className="row"><button className="btn sm" disabled={busy || !item.hasKey} onClick={() => void test(item.id)} aria-label={`试听 ${item.name}`}>试听</button><button className="btn sm" disabled={busy} onClick={() => edit(item)} aria-label={`编辑 ${item.name}`}>编辑</button><button className="btn sm ghost" disabled={busy} onClick={() => void remove(item.id)} aria-label={`删除 ${item.name}`}>删除</button></div>
+        <div><b>{item.name}</b><span className="tiny muted">{t(SPEECH_CONNECTION_TEMPLATES.find((template) => template.kind === item.kind)?.label ?? '')} · {item.hasKey ? t('已保存密钥') : t('密钥不可用')}</span><span className="tiny muted">{item.url}</span></div>
+        <div className="row"><button className="btn sm" disabled={busy || !item.hasKey} onClick={() => void test(item.id)} aria-label={t('试听 {0}', item.name)}>{t('试听')}</button><button className="btn sm" disabled={busy} onClick={() => edit(item)} aria-label={t('编辑 {0}', item.name)}>{t('编辑')}</button><button className="btn sm ghost" disabled={busy} onClick={() => void remove(item.id)} aria-label={t('删除 {0}', item.name)}>{t('删除')}</button></div>
       </article>)}</div>
-      {legacy.length > 0 && <details><summary>导入已有房间的语音配置</summary><p className="tiny muted">导入后加入共享库，其他房间也能使用同一来源；密钥无需重新填写。</p>{legacy.flatMap((room) => room.connections.map((item) => <div className="row" key={item.id}><span className="small">房间 {room.roomId} · {item.name}</span><button className="btn sm" disabled={busy || !!data?.error} onClick={() => void share(room.roomId, room.token, item.id)}>导入共享库</button></div>))}</details>}
-      <p className="tiny muted">密钥加密保存在服务端。房间的朗读选单只显示来源名称，其他已打开的页面刷新即可看到更新。</p>
+      {legacy.length > 0 && <details><summary>{t('导入已有房间的语音配置')}</summary><p className="tiny muted">{t('导入后加入共享库，其他房间也能使用同一来源；密钥无需重新填写。')}</p>{legacy.flatMap((room) => room.connections.map((item) => <div className="row" key={item.id}><span className="small">{t('房间 {0}', room.roomId)} · {item.name}</span><button className="btn sm" disabled={busy || !!data?.error} onClick={() => void share(room.roomId, room.token, item.id)}>{t('导入共享库')}</button></div>))}</details>}
+      <p className="tiny muted">{t('密钥加密保存在服务端。房间的朗读选单只显示来源名称，其他已打开的页面刷新即可看到更新。')}</p>
     </dialog>
   </>;
 }

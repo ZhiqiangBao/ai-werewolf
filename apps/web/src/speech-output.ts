@@ -1,5 +1,8 @@
 import { gameLanguage, gameText } from '@werewolf/protocol';
 import type { SpeechItem } from './speech';
+import { getUiLocale, uiText, uiLanguageHeader } from './i18n';
+
+const text = (source: string, ...values: unknown[]) => uiText(getUiLocale(), source, ...values);
 
 export interface SpeechOutputEvents { ready(): void; ended(): void; blocked(message: string): void; failed(message: string): void }
 /** 浏览器原生与服务端音频共用播放生命周期；来源切换无需改动事件队列。 */
@@ -26,8 +29,8 @@ export function browserSpeechOutput(synthesis: SpeechSynthesis, utterance: () =>
       u.lang = voice?.lang ?? language.speechLang;
       u.onstart = () => { clear(); if (own === generation) events.ready(); };
       u.onend = () => { clear(); if (own === generation) events.ended(); };
-      u.onerror = (e) => { clear(); if (own === generation) events.failed(`浏览器原生朗读失败（${e.error}），请检查系统音色或选择其他来源。`); };
-      timeout = setTimeout(() => { if (own === generation) events.failed('浏览器没有启动原生朗读，请检查系统音色或选择其他来源。'); }, 10000);
+      u.onerror = (e) => { clear(); if (own === generation) events.failed(text('浏览器原生朗读失败（{0}），请检查系统音色或选择其他来源。', e.error)); };
+      timeout = setTimeout(() => { if (own === generation) events.failed(text('浏览器没有启动原生朗读，请检查系统音色或选择其他来源。')); }, 10000);
       synthesis.speak(u);
     },
     pause() { clear(); synthesis.pause(); },
@@ -48,16 +51,16 @@ export function serverSpeechOutput(audio: HTMLAudioElement, roomId: string, toke
       stop(); const own = generation; rate = speed; controller = new AbortController();
       try {
         const response = await fetch(`/api/v1/rooms/${roomId}/speech`, {
-          method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Accept-Language': uiLanguageHeader() },
           body: JSON.stringify({ eventSeq: item.seq, providerId }), signal: controller.signal,
         });
-        if (!response.ok) { const body = await response.json().catch(() => ({})); throw Error(body.message ?? '朗读来源暂时不可用。'); }
+        if (!response.ok) { const body = await response.json().catch(() => ({})); throw Error(body.message ?? text('朗读来源暂时不可用。')); }
         const blob = await response.blob(); if (own !== generation) return;
         url = URL.createObjectURL(blob); audio.src = url; audio.playbackRate = rate;
         audio.onended = () => { if (own === generation) events.ended(); };
-        audio.onerror = () => { if (own === generation) events.failed('音频播放失败，可重听该条或选择其他来源。'); };
+        audio.onerror = () => { if (own === generation) events.failed(text('音频播放失败，可重听该条或选择其他来源。')); };
         events.ready();
-        if (!paused) try { await audio.play(); } catch { if (own === generation) events.blocked('请点击继续播放以启用声音。'); }
+        if (!paused) try { await audio.play(); } catch { if (own === generation) events.blocked(text('请点击继续播放以启用声音。')); }
       } catch (e) { if (own === generation) events.failed((e as Error).message); }
     },
     pause() { paused = true; audio.pause(); },

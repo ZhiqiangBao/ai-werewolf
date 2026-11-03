@@ -207,7 +207,7 @@ export class RoomRuntimeService {
 
   control(rec: RoomRuntimeRecord, action: ControlAction): void {
     const live = this.state(rec);
-    if (rec.status !== 'running') throw new ApiFailure(409, 'NOT_RUNNING', '对局不在进行中');
+    if (rec.status !== 'running') throw new ApiFailure(409, 'NOT_RUNNING', '对局不在进行中', { key: '对局不在进行中' });
     if (action === 'resume' || action === 'step') {
       try { if (rec.state) rec.state = migrateGameState(rec.state); }
       catch (error) {
@@ -243,27 +243,27 @@ export class RoomRuntimeService {
         this.armDeadlines(live, false);
       } else this.armDeadlines(live, true);
     } else if (action === 'step') {
-      if (!rec.paused) throw new ApiFailure(409, 'NOT_PAUSED', '单步只在暂停时可用');
+      if (!rec.paused) throw new ApiFailure(409, 'NOT_PAUSED', '单步只在暂停时可用', { key: '单步只在暂停时可用' });
       if (rec.timing && rec.actionAvailableAt && (rec.actionGateRemainingMs ?? Math.max(0, rec.actionAvailableAt - (live.gatePausedAt ?? this.now()))) > 0) {
-        throw new ApiFailure(409, 'ACTION_NOT_OPEN', '推进间隔尚未结束，请恢复对局后继续');
+        throw new ApiFailure(409, 'ACTION_NOT_OPEN', '推进间隔尚未结束，请恢复对局后继续', { key: '推进间隔尚未结束，请恢复对局后继续' });
       }
       if (rec.timing && rec.deadlineRemainingMs) rec.deadlines = Object.fromEntries(Object.entries(rec.deadlineRemainingMs).map(([key, remaining]) => [key, this.now() + remaining]));
       live.stepBudget += 1;
     } else if (action === 'end') {
       this.stopMatch(live);
-    } else throw new ApiFailure(400, 'BAD_REQUEST', `未知操作：${String(action)}`);
+    } else throw new ApiFailure(400, 'BAD_REQUEST', `未知操作：${String(action)}`, { key: '未知操作：{0}', values: [String(action)] });
     this.changedState(live);
     if (action !== 'end') void this.pump(live);
   }
 
   act(rec: RoomRuntimeRecord, viewer: Viewer, body: { decisionId?: unknown; tool?: unknown; args?: unknown }) {
     const live = this.state(rec);
-    if (viewer.role !== 'seat') throw new ApiFailure(403, 'FORBIDDEN', '只有座位凭证可以提交行动');
-    if (rec.status !== 'running' || !rec.state) throw new ApiFailure(409, 'NOT_RUNNING', '对局不在进行中');
-    if (rec.seats[viewer.seat - 1].controller !== 'human') throw new ApiFailure(409, 'NOT_HUMAN_SEAT', '这个座位由模型控制');
-    if (rec.paused) throw new ApiFailure(409, 'PAUSED', '对局已暂停');
-    if (typeof body.decisionId !== 'string' || !body.decisionId) throw new ApiFailure(400, 'BAD_REQUEST', '行动必须带上决策标识，请刷新后再提交');
-    if (typeof body.tool !== 'string' || !body.args || typeof body.args !== 'object' || Array.isArray(body.args)) throw new ApiFailure(400, 'BAD_REQUEST', '行动须包含工具名称和参数对象');
+    if (viewer.role !== 'seat') throw new ApiFailure(403, 'FORBIDDEN', '只有座位凭证可以提交行动', { key: '只有座位凭证可以提交行动' });
+    if (rec.status !== 'running' || !rec.state) throw new ApiFailure(409, 'NOT_RUNNING', '对局不在进行中', { key: '对局不在进行中' });
+    if (rec.seats[viewer.seat - 1].controller !== 'human') throw new ApiFailure(409, 'NOT_HUMAN_SEAT', '这个座位由模型控制', { key: '这个座位由模型控制' });
+    if (rec.paused) throw new ApiFailure(409, 'PAUSED', '对局已暂停', { key: '对局已暂停' });
+    if (typeof body.decisionId !== 'string' || !body.decisionId) throw new ApiFailure(400, 'BAD_REQUEST', '行动必须带上决策标识，请刷新后再提交', { key: '行动必须带上决策标识，请刷新后再提交' });
+    if (typeof body.tool !== 'string' || !body.args || typeof body.args !== 'object' || Array.isArray(body.args)) throw new ApiFailure(400, 'BAD_REQUEST', '行动须包含工具名称和参数对象', { key: '行动须包含工具名称和参数对象' });
     const args = body.args as Record<string, unknown>;
     const input: SubmitInput = {
       seat: viewer.seat,
@@ -292,7 +292,7 @@ export class RoomRuntimeService {
 
   private stopMatch(live: RoomRuntimeState): void {
     const rec = live.rec;
-    if (!rec.state) throw new ApiFailure(409, 'NOT_RUNNING', '对局不在进行中');
+    if (!rec.state) throw new ApiFailure(409, 'NOT_RUNNING', '对局不在进行中', { key: '对局不在进行中' });
     live.gen += 1;
     live.again = false;
     live.stepBudget = 0;
@@ -313,9 +313,9 @@ export class RoomRuntimeService {
   private apply(live: RoomRuntimeState, input: SubmitInput, causedBy?: ObservationRef): EngineResult {
     const rec = live.rec;
     if (rec.status !== 'running' || rec.state?.result) {
-      return { state: rec.state!, events: [], error: { code: 'GAME_ENDED', reason: '对局已经结束' } };
+      return { state: rec.state!, events: [], error: { code: 'GAME_ENDED', reason: gameText(rec.state?.rules.locale ?? rec.locale, '对局已经结束') } };
     }
-    if (rec.timing && rec.actionAvailableAt && this.now() < rec.actionAvailableAt) throw new ApiFailure(409, 'ACTION_NOT_OPEN', '推进间隔尚未结束，请稍后行动');
+    if (rec.timing && rec.actionAvailableAt && this.now() < rec.actionAvailableAt) throw new ApiFailure(409, 'ACTION_NOT_OPEN', '推进间隔尚未结束，请稍后行动', { key: '推进间隔尚未结束，请稍后行动' });
     const previous = rec.state?.pending;
     let action: ObservationSpan | undefined;
     if (this.observability) {
@@ -920,7 +920,7 @@ export class RoomRuntimeService {
         result = { ok: false, fatal: true, error: redact((e as Error).message, config.apiKey), failureKind: 'network', toolCallIds: [], latencyMs: 0 };
       }
       if (live.gen !== gen || ctrl.signal.aborted || seatTasksComplete(rec.state!, seat)) return;
-      let error = result.ok ? undefined : result.error ?? '旁听请求失败';
+      let error = result.ok ? undefined : result.error ?? gameText(rec.state!.rules.locale, '旁听请求失败');
       if (result.ok && result.call) {
         const call = clampTexts(result.call, tools);
         const allowed = projection.interrupts.some((t) => t.name === call.tool) &&
@@ -1031,7 +1031,7 @@ export class RoomRuntimeService {
           this.writeObservedAudit(live, context, { seat, model, decisionId: decision, projectionVersion: projection.version, purpose: 'action', attempt, deadline, failureKind: 'cancelled', ok: false, messages, request, apiProtocol: config.apiProtocol, error: '决策已经结束，这次结果作废', latencyMs: result.latencyMs });
           return;
         }
-        let error = result.ok && result.call ? undefined : result.error ?? '没有调用工具';
+        let error = result.ok && result.call ? undefined : result.error ?? gameText(rec.state!.rules.locale, '没有调用工具');
         if (result.ok && result.call) {
           const res = this.apply(live, { seat, call: clampTexts(result.call, tools), decisionId: decision }, context?.call?.ref);
           if (res.error) error = res.error.reason;
@@ -1057,7 +1057,7 @@ export class RoomRuntimeService {
         });
         if (!error) return;
         if (result.fatal) {
-          this.fallbackIfWaiting(live, seat, decision, result.failureKind === 'timeout' || /^超过/.test(result.error ?? '') ? 'timeout' : 'request_failed');
+          this.fallbackIfWaiting(live, seat, decision, result.failureKind === 'timeout' ? 'timeout' : 'request_failed');
           return;
         }
       }
