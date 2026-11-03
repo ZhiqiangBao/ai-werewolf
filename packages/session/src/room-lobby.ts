@@ -5,7 +5,7 @@ import { DEFAULT_PRESET, allOptions, buildRuleCard, buildRules, engineCatalog, g
 import { STYLES, redact, testConnection } from '@werewolf/llm';
 import { ApiFailure } from './room-failure';
 import { adapterConfig } from './room-model';
-import type { ModelLibrary } from './model-library';
+import { sameModelRoute, type ModelLibrary } from './model-library';
 import { maskKey, type SecretBox } from './secret';
 import type { OwnedRoomFields, RoomLobbyRecord, RoomReadRecord, Viewer } from './room-types';
 import type { RoomRecord, SeatRecord } from './store';
@@ -194,6 +194,7 @@ export class RoomLobbyService {
     }
     if (s.baseUrl !== undefined) seat.baseUrl = text(s.baseUrl, 300);
     if (s.model !== undefined) seat.model = text(s.model, 120);
+    if (!s.presetId && ((s.baseUrl !== undefined && seat.baseUrl !== current.baseUrl) || (s.model !== undefined && seat.model !== current.model) || (s.apiProtocol !== undefined && seat.apiProtocol !== current.apiProtocol))) seat.modelId = null;
     if (s.temperature !== undefined) seat.temperature = clamp(s.temperature, 0, 2, 0.7);
     if (s.timeoutSec !== undefined) seat.timeoutSec = Math.round(clamp(s.timeoutSec, 90, 300, 90));
     if (s.thinkingMode !== undefined) {
@@ -212,6 +213,7 @@ export class RoomLobbyService {
     if (s.presetId) {
       const preset = this.models.find(s.presetId);
       if (!preset) throw new ApiFailure(400, 'BAD_REQUEST', '没有这个模型');
+      if (preset.lifecycle !== 'active') throw new ApiFailure(409, 'MODEL_DISABLED', '模型已停用，请选择其他模型');
       seat.modelId = s.modelId === null ? null : preset.id;
       seat.model = preset.model;
       seat.baseUrl = preset.baseUrl;
@@ -241,12 +243,13 @@ export class RoomLobbyService {
 
   seatView(s: SeatRecord): SeatConfigView {
     const { apiKeyEnc: _enc, apiKeyMask, nameSource: _nameSource, ...rest } = s;
-    return { ...rest, apiProtocol: s.apiProtocol ?? 'chat_completions', ...(s.adapter === 'openai_compatible' ? { thinkingMode: s.thinkingMode ?? defaultThinkingMode(s.baseUrl, s.model, s.apiProtocol) } : {}), apiKeyMasked: apiKeyMask, modelId: s.modelId ?? null };
+    return { ...rest, apiProtocol: s.apiProtocol ?? 'chat_completions', ...(s.adapter === 'openai_compatible' ? { thinkingMode: s.thinkingMode ?? defaultThinkingMode(s.baseUrl, s.model, s.apiProtocol) } : {}), apiKeyMasked: apiKeyMask, modelId: s.modelId ? this.models.find(s.modelId)?.id ?? s.modelId : null };
   }
 
   setupErrors(rec: RoomReadRecord): string[] {
     const errors = validateRules(buildRules(rec.presetId, rec.ruleValues, { locale: rec.locale }));
     for (const s of rec.seats) {
+      if (this.unavailableModel(s)) errors.push(`${s.seat}号：模型已停用或不存在，请选择其他模型`);
       if (s.controller === 'human' && rec.participants && !rec.participants[s.seat]?.ready) errors.push(`${s.seat}号：等待真人进入座位并确认准备`);
       if (s.controller !== 'ai' || s.adapter !== 'openai_compatible') continue;
       if (!s.baseUrl) errors.push(`${s.seat}号：没有填写接口地址`);
@@ -258,13 +261,13 @@ export class RoomLobbyService {
     return errors;
   }
 
-  async testSeat(rec: RoomReadRecord, seat: Seat): Promise<SeatTestResult> {
+  async testSeat(rec: RoomReadRecord, seat: Seat, signal?: AbortSignal): Promise<SeatTestResult> {
     const s = rec.seats.find((x) => x.seat === seat);
     if (!s) throw new ApiFailure(404, 'NOT_FOUND', `没有 ${seat} 号座位`);
     if (s.adapter === 'mock') return { ok: true, message: '模拟玩家不需要联网。', latencyMs: 0 };
     const config = adapterConfig(s, this.secrets);
     if (!config.baseUrl || !config.model) return { ok: false, message: '请先为这个座位选择模型。', latencyMs: 0 };
-    const r = await testConnection(config);
+    const r = await testConnection(config, signal);
     return { ...r, message: redact(r.message, config.apiKey) };
   }
 
@@ -307,7 +310,20 @@ export class RoomLobbyService {
 
   validateStart(rec: RoomReadRecord): void {
     if (rec.status !== 'setup') throw new ApiFailure(409, 'ALREADY_STARTED', '对局已经开始');
+    this.assertModelsAvailable(rec);
     const errors = this.setupErrors(rec);
     if (errors.length) throw new ApiFailure(422, 'INVALID_SETUP', errors.join('；'));
+  }
+
+  assertModelsAvailable(rec: RoomReadRecord): void {
+    for (const seat of rec.seats) {
+      if (this.unavailableModel(seat)) throw new ApiFailure(409, 'MODEL_DISABLED', `${seat.seat}号的模型已停用或不存在，请先替换`);
+    }
+  }
+
+  private unavailableModel(seat: SeatRecord): boolean {
+    if (seat.modelId && this.models.find(seat.modelId)?.lifecycle !== 'active') return true;
+    if (seat.adapter !== 'openai_compatible') return false;
+    return this.models.list().some((m) => this.models.find(m.id)?.lifecycle !== 'active' && m.model === seat.model && m.apiProtocol === (seat.apiProtocol ?? 'chat_completions') && sameModelRoute(m.baseUrl, seat.baseUrl, m.apiProtocol));
   }
 }

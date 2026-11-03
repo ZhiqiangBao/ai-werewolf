@@ -1,4 +1,4 @@
-import type { AdapterKind, Seat } from '@werewolf/protocol';
+import type { AdapterKind, AuditEntry, ObservabilityOptions, Seat } from '@werewolf/protocol';
 import type { Adapter } from '@werewolf/llm';
 import type { SecretBox } from './secret';
 import type { RoomRecord, RoomStore } from './store';
@@ -67,6 +67,9 @@ export interface RoomRuntimeState {
   /** 终结或暂停时加一；旧请求和推进循环不能再提交。 */
   gen: number;
   inflight: Map<string, AbortController>;
+  disposeController: AbortController;
+  externalWaits: number;
+  pendingCalls: Map<AbortController, { entry: Omit<AuditEntry, 'id' | 'at' | 'latencyMs'>; startedAt: number }>;
 }
 
 /** 连接与通知计数不持久化；重启后在线状态从空连接集合推导。 */
@@ -77,6 +80,8 @@ export interface RoomViewState {
 }
 
 export interface ManagerOptions {
+  /** 默认关闭的独立诊断旁路，不参与对局恢复与调度。 */
+  observability?: ObservabilityOptions;
   store: RoomStore;
   secrets: SecretBox;
   now?: () => number;

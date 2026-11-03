@@ -1,0 +1,2340 @@
+{
+  "schemaVersion": 1,
+  "auditDate": "2026-11-03",
+  "report": "docs/P1四项外部审计报告.md",
+  "scope": "Static audit, historical execution evidence, read-only release metadata, bounded offline synthetic archive reconciliation. No project tests/build/HTTP load/engine replay or paid calls run by the auditor.",
+  "commits": {
+    "8664333": "86643333c8fcc8623a7cdcccae6b5ceee592291b",
+    "a2e7a67": "a2e7a67069660c7b94dbd7b996867b2c65654938",
+    "42a42d2": "42a42d262fd72823eb972a5fc2a92bfb00a5636e",
+    "8dcfa7d": "8dcfa7da327ba9891cd2bcb0fc873ff230922c4c",
+    "8a6563e": "8a6563ebc1678412c8a5e1bdf563cb4e59f40b3e",
+    "6f626e6": "6f626e6fe645b93bd93edca11aa4e839d3c63b66",
+    "6325ea6": "6325ea652731dcc9e5c99b2b170adbbe69e5659e",
+    "accd212": "accd21234ec002e6735a70e7b3352933e13fd30c",
+    "53d04e1": "53d04e11c1a49bcec673b6f3c06c9b7572e25a79",
+    "024e196": "024e196e3d4408a9a034ef3aa0cde5e02bf618d1"
+  },
+  "branch": "codex/observability",
+  "remote": "https://github.com/ZhiqiangBao/ai-werewolf.git",
+  "preexistingDiff": {
+    "path": ".gitignore",
+    "addedLine": "规则卡精简版-仅供参考-author：cursor.md",
+    "preserved": true,
+    "bytes": 282,
+    "sha256": "fba241f48ab6538c7592ffd3ed29efc9ba605bef9a526890f2a4e53571931748"
+  },
+  "designDocumentsAtHead": [
+    {
+      "path": "docs/P1剩余四项一揽子实施方案.md",
+      "representation": "Git blob at audit HEAD before audit edits",
+      "bytes": 61352,
+      "sha256": "fd8b94851a6979fa7f39aeba8fce351377e1ca4d083372778ec8582d8857ac4e"
+    },
+    {
+      "path": "docs/待解决问题.md",
+      "representation": "Git blob at audit HEAD before audit edits",
+      "bytes": 10913,
+      "sha256": "fdd267aaa945baab07cb562e29effa6ab30ec73eb04b207f5556a3044c0066e3"
+    },
+    {
+      "path": "docs/已解决问题与已实现改进.md",
+      "representation": "Git blob at audit HEAD before audit edits",
+      "bytes": 22598,
+      "sha256": "737bd3b4bddb08b13ea4803d24d6ef50d60053870da3267530a595c356727f4d"
+    }
+  ],
+  "sourceFileHashRepresentation": "Current Windows worktree bytes at the audited HEAD; see report for archived source-pin/Git newline reconciliation.",
+  "sourceFiles": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 12549,
+      "sha256": "4a4d2a2fa93d4951088b16a53bc44eafa3127d0fc4dff2d46481b27e788bd938"
+    },
+    {
+      "path": "agent-release-manifest.json",
+      "bytes": 684,
+      "sha256": "292be1bc283c78835b9a24f852bd4af4dc69f95ca67d83b58f4517ff06af3eac"
+    },
+    {
+      "path": "apps/server/src/event-stream.ts",
+      "bytes": 822,
+      "sha256": "f9228611a54035ba62ce6c4ad42ed328828ee70a7e056e6882b9e361a6fb810a"
+    },
+    {
+      "path": "apps/server/src/main.ts",
+      "bytes": 14255,
+      "sha256": "1e12084bf0503373514f03500a8199815b32c72e388078ac746034517fe1ba89"
+    },
+    {
+      "path": "apps/server/src/shutdown.ts",
+      "bytes": 1705,
+      "sha256": "0d7712c418c0ddf9503bc4e72369aa50db51a443b61fd5816cdfea6aa489dfdb"
+    },
+    {
+      "path": "apps/server/test/shutdown.test.ts",
+      "bytes": 2602,
+      "sha256": "5c305097b63a295e5aec2303c7f70df0ed9cb89b460e58ba427381959d9f45a8"
+    },
+    {
+      "path": "packages/session/src/data-lease.ts",
+      "bytes": 1867,
+      "sha256": "2ad85267d537f77c16fc9939d136779b10c00c4944e6b4b529b3c9fb432bebe8"
+    },
+    {
+      "path": "packages/session/src/experiments/passive-archive.ts",
+      "bytes": 3720,
+      "sha256": "9b26b1d62415ac562c69829b2add51b45dd7e7d00c2e326110f486a92c8468b8"
+    },
+    {
+      "path": "packages/session/src/experiments/passive-budget.ts",
+      "bytes": 4406,
+      "sha256": "4b7c2e98c617aeb8968ce094081aaa14ed23ae67666b579367c0886e976ab7a6"
+    },
+    {
+      "path": "packages/session/src/experiments/passive-loopback.ts",
+      "bytes": 17621,
+      "sha256": "de0cef0ce25726baa3b470488db866092fd4536830dbd78be2a3abb414095131"
+    },
+    {
+      "path": "packages/session/src/experiments/passive-projections.ts",
+      "bytes": 1486,
+      "sha256": "48869badf607b461f2ae8cb79b0c8d32bfadfcc294bd3b5122374a36582b7255"
+    },
+    {
+      "path": "packages/session/src/experiments/passive-queue.ts",
+      "bytes": 3339,
+      "sha256": "e8170baa263ea19cf390f738ccff6f7e139a1ed762a80fe3e8a81dfc57007b0c"
+    },
+    {
+      "path": "packages/session/src/experiments/passive-receipts.ts",
+      "bytes": 2036,
+      "sha256": "d81349de74eebb2adbf47dec96f87dc0d8f30d875771879e5e9bd9d15756acc6"
+    },
+    {
+      "path": "packages/session/src/experiments/passive-screen.ts",
+      "bytes": 1589,
+      "sha256": "033e5026991f2bf2ccbb4ba35c62dbad0a70569a9e3e3c40ede15a216e98d6c6"
+    },
+    {
+      "path": "packages/session/src/experiments/passive-source.ts",
+      "bytes": 1837,
+      "sha256": "0dc1fc671d097678c2ee8d55a2c2035b0e2a574bb6542a7ecdc7ed2212db2899"
+    },
+    {
+      "path": "packages/session/src/experiments/passive-validator.ts",
+      "bytes": 5315,
+      "sha256": "fb247c3e34d8c9ed41c88c5fde503670d93f19fd8110889cd728db69f54b8e19"
+    },
+    {
+      "path": "packages/session/src/manager.ts",
+      "bytes": 9722,
+      "sha256": "0d4159d681161ddc9876e632b981aec924ffda099bcc01d892406c2c562206aa"
+    },
+    {
+      "path": "packages/session/src/model-library.ts",
+      "bytes": 10031,
+      "sha256": "d36f5dc049d84aa50b8e604181e056cbb0b9a56b9b9abf272a668ad49396f70a"
+    },
+    {
+      "path": "packages/session/src/model-maintenance.ts",
+      "bytes": 13800,
+      "sha256": "3c1577cf8f1dc347ddcc90a224c3d0ca8b819919f84e8aeda2351d5679e915e9"
+    },
+    {
+      "path": "packages/session/src/model-retirement.ts",
+      "bytes": 3157,
+      "sha256": "756b9d456bc18f834ff08b19653c31f7a636526bd962a2352f8d66d28fbd0d83"
+    },
+    {
+      "path": "packages/session/src/project-models.ts",
+      "bytes": 1148,
+      "sha256": "dc4d56be401a3f613726c628680ba903ac23ce68f5f9dc6dcb455b5192f2f96a"
+    },
+    {
+      "path": "packages/session/src/room-lobby.ts",
+      "bytes": 17726,
+      "sha256": "08422048dab52cc2ec7425bedc27926914d01d694bee1230b8a09d616a058906"
+    },
+    {
+      "path": "packages/session/src/room-persistence.ts",
+      "bytes": 2545,
+      "sha256": "51c60f58710b454a6a0f2fd45d525339df14a299bd58ec8e70d2603a4e594bec"
+    },
+    {
+      "path": "packages/session/src/room-runtime.ts",
+      "bytes": 54453,
+      "sha256": "7623b02f28a350e3352a594ebf70e18bfd9a8845b498282e958ade12fccf9c35"
+    },
+    {
+      "path": "packages/session/src/room-view.ts",
+      "bytes": 9593,
+      "sha256": "aef5679447ad30ea8f9b7a3562951e3303828ec0efe086a83cb236ba9115cae1"
+    },
+    {
+      "path": "packages/session/test/message-regression.test.ts",
+      "bytes": 11719,
+      "sha256": "f35f9a4ca2f75a55398b854af89e4ced7a4d2c2e38842a6201a494c331242a2a"
+    },
+    {
+      "path": "packages/session/test/model-maintenance.test.ts",
+      "bytes": 23868,
+      "sha256": "4b02f499e54aaf8becbb57787cc0158e3fda0dbf4d6149c42cae5b9d8f39dbab"
+    },
+    {
+      "path": "packages/session/test/passive-archive.test.ts",
+      "bytes": 2012,
+      "sha256": "b47387aa254602924cdb1e47fb1d7c53f1a43dc2a4d4ca0d654f2ac840c65f4d"
+    },
+    {
+      "path": "packages/session/test/passive-deadline.test.ts",
+      "bytes": 2168,
+      "sha256": "7de871aa0189b2398291e6a68dd2f3eb8b91ad3ef9a63e672bc23af96763a2e3"
+    },
+    {
+      "path": "packages/session/test/passive-engine.test.ts",
+      "bytes": 1317,
+      "sha256": "e7e45f0524129e8293c2aaa1a608a1b7cde082157050a794d1cefa5d55a50c2e"
+    },
+    {
+      "path": "packages/session/test/passive-native.test.ts",
+      "bytes": 1855,
+      "sha256": "e3e37d602f41c8b5515fed9eec63068b3485298ec500f3d21881ee50decab991"
+    },
+    {
+      "path": "packages/session/test/passive-projections.test.ts",
+      "bytes": 1446,
+      "sha256": "4fadbe0dd829dc546f1ed4763fa4568b356f3ed247aeda8a50b9229e7068a2f3"
+    },
+    {
+      "path": "packages/session/test/passive-queue.test.ts",
+      "bytes": 2768,
+      "sha256": "02487fee2f268b1ae03b7f179dfaef16b42dbd2ba0b087d08a0ea058cbda3eba"
+    },
+    {
+      "path": "packages/session/test/passive-receipts.test.ts",
+      "bytes": 1628,
+      "sha256": "f483015c67517da3e776775ef2b4f70bcaab4129d1b7a7c1db18f66bbada3280"
+    },
+    {
+      "path": "packages/session/test/passive-screen.test.ts",
+      "bytes": 820,
+      "sha256": "2eb1cbdb8fa5c43b47c536b1d46a7f923a2d16822745355fe672990e35c12f92"
+    },
+    {
+      "path": "packages/session/test/passive-validator.test.ts",
+      "bytes": 7554,
+      "sha256": "c51c3253275c67d5c747e630804d4ac7438b3262fd299491af1cf68f35c57567"
+    },
+    {
+      "path": "packages/session/test/protocol-session.test.ts",
+      "bytes": 8448,
+      "sha256": "1453de10da6bc259f3dd7cc7d2ab4921a3af96987d151d7d30aa8f9fabd3347d"
+    },
+    {
+      "path": "packages/session/test/qwen-presets.test.ts",
+      "bytes": 8051,
+      "sha256": "04d11064bb69317b45b1b21fef5f7fdd35091a540ead4b3b38a5ac68fffbacd2"
+    },
+    {
+      "path": "packages/session/test/room-disposal.test.ts",
+      "bytes": 15249,
+      "sha256": "093f58e7f8993b0bb33c3394b3329e8a3e04625378ddbc87f4bf879845b21279"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "bytes": 46801,
+      "sha256": "3e13a85da838ccc3784eedcf155a9a61fd5da68cbfacc2b127890266ee92df4f"
+    },
+    {
+      "path": "scripts/model-maintenance.ts",
+      "bytes": 2534,
+      "sha256": "7d9ee5fdc5d6ca4f3d105ea9dd56d4e2b055bce40221dc8ebf0f5e05ac7cb3dd"
+    },
+    {
+      "path": "scripts/package-agent.mjs",
+      "bytes": 4343,
+      "sha256": "18b238b9270ab7971ca0e4d83b41f3824b4199477903600939da661cba6b50b9"
+    },
+    {
+      "path": "scripts/passive-experiment.ts",
+      "bytes": 13694,
+      "sha256": "d53719ddd25c5ecac700bbe6e16d3941a21fce0bd355296a65a205d2c78b18d9"
+    }
+  ],
+  "evidenceFiles": [
+    {
+      "path": "data/diagnostics/p1-20261103/baseline.json",
+      "bytes": 8094,
+      "sha256": "6354f8923db61e97af34960bcc62869b909e05bebc5584bc384403234ea6a7cf"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/budget.json",
+      "bytes": 6738,
+      "sha256": "89de85b632b26832f1d0a3dd128b51a7039883a4650072299ed9dbb3261d7d48"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/batch-clock.json",
+      "bytes": 196,
+      "sha256": "711d46a3813c253dd52c7dbecc16b1772ab266587a7c01b4dc029f067e35590a"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/budget-runtime-pin.json",
+      "bytes": 316,
+      "sha256": "38a89fc5c1b4b1d036d206a95c6925260126440eeb529f961e18639c04f7951c"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/network-counts.json",
+      "bytes": 890,
+      "sha256": "57682e71c09ecb5d5050b1c8c305fa5a2522b2aa0ed47bda32dd22702de1a30b"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/obs-cleanup.json",
+      "bytes": 1409,
+      "sha256": "b07d485ababc4a1debbb71fa81896b53175eb9bd1658a82469b850a835def2a1"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/model-service-stop.json",
+      "bytes": 476,
+      "sha256": "7c121321389786b87964c21bfb6261526ef9e5329270953735e311509311c007"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/real-model-probes.json",
+      "bytes": 4106,
+      "sha256": "ef45cf2bd91d218a8cd9c43d28632677be35547228862299a77b2f8c0db9648d"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/real-model-budget.json",
+      "bytes": 195,
+      "sha256": "477cabdc974c7afcd41399d278159f91789634521b25fbb86e2c5ee5bbc63073"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/model-maintenance-result.json",
+      "bytes": 2543,
+      "sha256": "73387684985b79646ef243067131de00d12f61762854f79399d1d3019e1b2425"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/apply-model-maintenance.mjs",
+      "bytes": 7272,
+      "sha256": "b6256a1e126b21c94a2bbe047f52c93a55d9607cd1a0348657c786d00a1c9244"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/client-server-check.mjs",
+      "bytes": 8106,
+      "sha256": "66479ccd4c56867d112dde5245325202f4af272a47b457584fa85a60a03c5280"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/run-client-final.mjs",
+      "bytes": 1618,
+      "sha256": "c1da5bbb76fe3cca12e876ede6e654b94e032da1ca261a3d77928818a914b38d"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/run-full-regression.mjs",
+      "bytes": 1123,
+      "sha256": "541a7b0a0e8fe4797f252b158399aabe31898466a543d4d222951eefa728272d"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/run-targeted-tests.mjs",
+      "bytes": 1277,
+      "sha256": "009209e46775332a1151136101d831119247b5773c94ade5a2c8e8f0d9587e65"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/network-preload.mjs",
+      "bytes": 2616,
+      "sha256": "bb8d5a9aa0635c688719b4900c952ccfd5a94342219f18c42678d9d1e6c7f806"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/budget-runtime.mjs",
+      "bytes": 4406,
+      "sha256": "5f5bd273361d02c6d5dbcde47d1c70bb990a90606b625ab552f8322806aefdc2"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/client/acceptance-summary.json",
+      "bytes": 912,
+      "sha256": "de9e4cd9da573f56b727e3aadb6907e311655087a84e4df37b8b02284c9df14e"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/client/initial-hashes.json",
+      "bytes": 2852,
+      "sha256": "714abf77b6f934edf6d8d1bb3afa8e28c13a1d73d6076243d0286fa2ac4eb2c3"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/client/final-package.json",
+      "bytes": 2639,
+      "sha256": "cd53e206f2d0203c0a951151b70a77a951428acfc9d63da2099ea202c12994ad"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/client/final-tests.log",
+      "bytes": 3013,
+      "sha256": "8ed671dc44f12b5699e8806707aa995474ea8cb53008f6fd2668eb698e742821"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/client/final-tests.json",
+      "bytes": 508,
+      "sha256": "e95eaa196ad9910d5b76f55c7291619dd2f7d3a76f93b2d0587a2784ee59d2c4"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/client/final-tests-clean.log",
+      "bytes": 194,
+      "sha256": "841322d23bcf6f3168f2ac8d03f31468be825bc17aa8f1f7fb886a89deb59d58"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/client/final-tests-clean.json",
+      "bytes": 153,
+      "sha256": "89bfc8a9866055d8ef8506e5304238b2ccde04bde76d8bb82421c88d793278ba"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/client-package-final.json",
+      "bytes": 826,
+      "sha256": "21843add8930b886bcf765a44c9cb20f361306e2db91b754b91b8c78bb052aeb"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/client-release-published.json",
+      "bytes": 1052,
+      "sha256": "cae55eec79cb8ffdfb588e633303c6b087b6fe92f55638a67a01971e4d68e1fb"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/client-server/summary.json",
+      "bytes": 1250,
+      "sha256": "9db23c2d1a5fbb8bb006e8ff212f2c637b05d1e951268673cfe2ab5f35b8d5db"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/client-server-final/summary.json",
+      "bytes": 1250,
+      "sha256": "58c7984a4e807b326e2f7963ba40ebb2707fe111aa41dde4f853cc631f897f67"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/client-timeout-v3/summary.json",
+      "bytes": 378,
+      "sha256": "0a6cf7d7c124767637915a6faa5780d493c31d5035f72613d4aeaaf26c9ff02d"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/regression/results.json",
+      "bytes": 263553,
+      "sha256": "905504e4274f2bb904f5a866d473b6828958946da6708b52db0ac1316c9554b3"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/regression/lifecycle-fixed.json",
+      "bytes": 23589,
+      "sha256": "3fbd1da46eb0bf4cbc99032a509862cd8cc75676e759cee211b1f54b862df491"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/regression/http-budget-completion.json",
+      "bytes": 3047,
+      "sha256": "3b1bc501a3bb5bc0a5a28f1bdc0bc80c51b560600bf6c73a2ef6be89729d96da"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/passive/reconciliation.json",
+      "bytes": 42686,
+      "sha256": "31226254ad73f92824aa5843dddd86b0a8c9ca5b19a6b6aa856c219da21617d9"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/passive/screen-summary.json",
+      "bytes": 2549,
+      "sha256": "1a6679250c03f026c4c10565afbd39e427186449dfb0e43df889954e2910403e"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/passive/batch-meta.json",
+      "bytes": 107,
+      "sha256": "d8c6221427eb414dc4600ad7572500cb90c279338c05ef617b738244393599be"
+    },
+    {
+      "path": "data/diagnostics/p1-20261103/passive-failed-6f626e6/batch-meta.json",
+      "bytes": 107,
+      "sha256": "96184586653c4f036111d7bc66993817f11cbf4b0716a8d00c7ba4425514909b"
+    }
+  ],
+  "syntheticEnvironment": {
+    "node": "v24.18.1",
+    "pnpmVersion": null,
+    "os": "win32 10.0.26300",
+    "cpu": "13th Gen Intel(R) Core(TM) i5-13500HX",
+    "cpus": 20,
+    "totalMemoryBytes": 25467224064,
+    "freeMemoryBytes": 10143428608,
+    "loadAverage": null,
+    "powerCondition": null,
+    "sourceCommit": "6325ea652731dcc9e5c99b2b170adbbe69e5659e",
+    "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+    "command": [
+      "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+      "--execute",
+      "preflight",
+      "--exclusive-authorized"
+    ],
+    "seed": "obs-standard12-001"
+  },
+  "syntheticSeed": "obs-standard12-001",
+  "offlineAudit": {
+    "program": {
+      "path": "data/diagnostics/p1-external-audit-20261103/audit.py",
+      "bytes": 9947,
+      "sha256": "72f6a97400611a70a5dd61baf68cf616d8d8e559b1cbf12361add71ac68cbdd6"
+    },
+    "resultFile": {
+      "path": "data/diagnostics/p1-external-audit-20261103/result.json",
+      "bytes": 8972,
+      "sha256": "889a5dd5a20924bad85151e63a73db611ffc4c432cfb6580c0f1cad8ca74e965"
+    },
+    "command": "python data/diagnostics/p1-external-audit-20261103/audit.py",
+    "method": "One gzip at a time in 64 KiB chunks; reconstruct schedule from frozen config and frames without importing the project validator or executing the engine. No raw files expanded to disk.",
+    "result": {
+      "counts": {
+        "windows": 34,
+        "complete": 33,
+        "expected": 1492,
+        "client_rows": 2944,
+        "server_rows": 2932,
+        "complete_requests": 1466,
+        "failed": 1,
+        "failed_reserved": 12
+      },
+      "source": {
+        "6325ea6": {
+          "entries": 129,
+          "categories": {
+            "exact": 81,
+            "git_lf_to_crlf_exact": 34,
+            "worktree_exact_git_mixed_newlines": 14
+          },
+          "examples": {}
+        },
+        "6f626e6": {
+          "entries": 129,
+          "categories": {
+            "exact": 81,
+            "git_lf_to_crlf_exact": 34,
+            "worktree_exact_git_mixed_newlines": 14
+          },
+          "examples": {}
+        }
+      },
+      "budget": {
+        "pActual": 1478,
+        "groups": {
+          "preflight": 38,
+          "screen": 1170,
+          "fault": 270,
+          "formal": 0
+        },
+        "integrationActual": 1462,
+        "externalActual": 6
+      },
+      "screen": [
+        {
+          "protocol": "chat-completions",
+          "topology": "S01",
+          "passes": false
+        },
+        {
+          "protocol": "chat-completions",
+          "topology": "S02",
+          "passes": false
+        },
+        {
+          "protocol": "chat-completions",
+          "topology": "S03",
+          "passes": true
+        },
+        {
+          "protocol": "responses",
+          "topology": "S01",
+          "passes": true
+        },
+        {
+          "protocol": "responses",
+          "topology": "S02",
+          "passes": false
+        },
+        {
+          "protocol": "responses",
+          "topology": "S03",
+          "passes": false
+        },
+        {
+          "protocol": "anthropic-messages",
+          "topology": "S01",
+          "passes": false
+        },
+        {
+          "protocol": "anthropic-messages",
+          "topology": "S02",
+          "passes": false
+        },
+        {
+          "protocol": "anthropic-messages",
+          "topology": "S03",
+          "passes": true
+        }
+      ],
+      "screen_passes": 3,
+      "windows": [
+        {
+          "window": "passive/d4-A.manifest.json",
+          "status": "complete",
+          "expected": 54,
+          "client_rows": 108,
+          "server_rows": 108,
+          "reserved": 54
+        },
+        {
+          "window": "passive/d4-D.manifest.json",
+          "status": "complete",
+          "expected": 54,
+          "client_rows": 108,
+          "server_rows": 108,
+          "reserved": 54
+        },
+        {
+          "window": "passive/d8-A.manifest.json",
+          "status": "complete",
+          "expected": 54,
+          "client_rows": 108,
+          "server_rows": 108,
+          "reserved": 54
+        },
+        {
+          "window": "passive/d8-D.manifest.json",
+          "status": "complete",
+          "expected": 54,
+          "client_rows": 108,
+          "server_rows": 108,
+          "reserved": 54
+        },
+        {
+          "window": "passive/fault503-A.manifest.json",
+          "status": "complete",
+          "expected": 54,
+          "client_rows": 108,
+          "server_rows": 108,
+          "reserved": 54
+        },
+        {
+          "window": "passive/preflight.manifest.json",
+          "status": "complete",
+          "expected": 26,
+          "client_rows": 52,
+          "server_rows": 52,
+          "reserved": 26
+        },
+        {
+          "window": "passive/screen-anthropic-messages-S01-A.manifest.json",
+          "status": "complete",
+          "expected": 26,
+          "client_rows": 52,
+          "server_rows": 52,
+          "reserved": 26
+        },
+        {
+          "window": "passive/screen-anthropic-messages-S01-AD.manifest.json",
+          "status": "complete",
+          "expected": 26,
+          "client_rows": 52,
+          "server_rows": 52,
+          "reserved": 26
+        },
+        {
+          "window": "passive/screen-anthropic-messages-S01-B.manifest.json",
+          "status": "complete",
+          "expected": 26,
+          "client_rows": 52,
+          "server_rows": 52,
+          "reserved": 26
+        },
+        {
+          "window": "passive/screen-anthropic-messages-S02-A.manifest.json",
+          "status": "complete",
+          "expected": 52,
+          "client_rows": 104,
+          "server_rows": 104,
+          "reserved": 52
+        },
+        {
+          "window": "passive/screen-anthropic-messages-S02-AD.manifest.json",
+          "status": "complete",
+          "expected": 52,
+          "client_rows": 104,
+          "server_rows": 104,
+          "reserved": 52
+        },
+        {
+          "window": "passive/screen-anthropic-messages-S02-B.manifest.json",
+          "status": "complete",
+          "expected": 52,
+          "client_rows": 104,
+          "server_rows": 104,
+          "reserved": 52
+        },
+        {
+          "window": "passive/screen-anthropic-messages-S03-A.manifest.json",
+          "status": "complete",
+          "expected": 52,
+          "client_rows": 104,
+          "server_rows": 104,
+          "reserved": 52
+        },
+        {
+          "window": "passive/screen-anthropic-messages-S03-AD.manifest.json",
+          "status": "complete",
+          "expected": 52,
+          "client_rows": 104,
+          "server_rows": 104,
+          "reserved": 52
+        },
+        {
+          "window": "passive/screen-anthropic-messages-S03-B.manifest.json",
+          "status": "complete",
+          "expected": 52,
+          "client_rows": 104,
+          "server_rows": 104,
+          "reserved": 52
+        },
+        {
+          "window": "passive/screen-chat-completions-S01-A.manifest.json",
+          "status": "complete",
+          "expected": 26,
+          "client_rows": 52,
+          "server_rows": 52,
+          "reserved": 26
+        },
+        {
+          "window": "passive/screen-chat-completions-S01-AD.manifest.json",
+          "status": "complete",
+          "expected": 26,
+          "client_rows": 52,
+          "server_rows": 52,
+          "reserved": 26
+        },
+        {
+          "window": "passive/screen-chat-completions-S01-B.manifest.json",
+          "status": "complete",
+          "expected": 26,
+          "client_rows": 52,
+          "server_rows": 52,
+          "reserved": 26
+        },
+        {
+          "window": "passive/screen-chat-completions-S02-A.manifest.json",
+          "status": "complete",
+          "expected": 52,
+          "client_rows": 104,
+          "server_rows": 104,
+          "reserved": 52
+        },
+        {
+          "window": "passive/screen-chat-completions-S02-AD.manifest.json",
+          "status": "complete",
+          "expected": 52,
+          "client_rows": 104,
+          "server_rows": 104,
+          "reserved": 52
+        },
+        {
+          "window": "passive/screen-chat-completions-S02-B.manifest.json",
+          "status": "complete",
+          "expected": 52,
+          "client_rows": 104,
+          "server_rows": 104,
+          "reserved": 52
+        },
+        {
+          "window": "passive/screen-chat-completions-S03-A.manifest.json",
+          "status": "complete",
+          "expected": 52,
+          "client_rows": 104,
+          "server_rows": 104,
+          "reserved": 52
+        },
+        {
+          "window": "passive/screen-chat-completions-S03-AD.manifest.json",
+          "status": "complete",
+          "expected": 52,
+          "client_rows": 104,
+          "server_rows": 104,
+          "reserved": 52
+        },
+        {
+          "window": "passive/screen-chat-completions-S03-B.manifest.json",
+          "status": "complete",
+          "expected": 52,
+          "client_rows": 104,
+          "server_rows": 104,
+          "reserved": 52
+        },
+        {
+          "window": "passive/screen-responses-S01-A.manifest.json",
+          "status": "complete",
+          "expected": 26,
+          "client_rows": 52,
+          "server_rows": 52,
+          "reserved": 26
+        },
+        {
+          "window": "passive/screen-responses-S01-AD.manifest.json",
+          "status": "complete",
+          "expected": 26,
+          "client_rows": 52,
+          "server_rows": 52,
+          "reserved": 26
+        },
+        {
+          "window": "passive/screen-responses-S01-B.manifest.json",
+          "status": "complete",
+          "expected": 26,
+          "client_rows": 52,
+          "server_rows": 52,
+          "reserved": 26
+        },
+        {
+          "window": "passive/screen-responses-S02-A.manifest.json",
+          "status": "complete",
+          "expected": 52,
+          "client_rows": 104,
+          "server_rows": 104,
+          "reserved": 52
+        },
+        {
+          "window": "passive/screen-responses-S02-AD.manifest.json",
+          "status": "complete",
+          "expected": 52,
+          "client_rows": 104,
+          "server_rows": 104,
+          "reserved": 52
+        },
+        {
+          "window": "passive/screen-responses-S02-B.manifest.json",
+          "status": "complete",
+          "expected": 52,
+          "client_rows": 104,
+          "server_rows": 104,
+          "reserved": 52
+        },
+        {
+          "window": "passive/screen-responses-S03-A.manifest.json",
+          "status": "complete",
+          "expected": 52,
+          "client_rows": 104,
+          "server_rows": 104,
+          "reserved": 52
+        },
+        {
+          "window": "passive/screen-responses-S03-AD.manifest.json",
+          "status": "complete",
+          "expected": 52,
+          "client_rows": 104,
+          "server_rows": 104,
+          "reserved": 52
+        },
+        {
+          "window": "passive/screen-responses-S03-B.manifest.json",
+          "status": "complete",
+          "expected": 52,
+          "client_rows": 104,
+          "server_rows": 104,
+          "reserved": 52
+        },
+        {
+          "window": "passive-failed-6f626e6/preflight.manifest.json",
+          "status": "failed",
+          "expected": 26,
+          "client_rows": 12,
+          "server_rows": 0,
+          "reserved": 12
+        }
+      ],
+      "failures": []
+    }
+  },
+  "passiveWindows": [
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/d4-A.manifest.json",
+        "bytes": 1422,
+        "sha256": "8ae7baec996000d4af615ded20e58a779486997221612644ebb8262b3007e72b"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/d4-A.gz",
+        "bytes": 22227,
+        "sha256": "83212b86a63ccbcb49a5271b7e12692d4c5b88735f5604f05145c5b140473eb8"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/d4-A",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "5f3599481894ee3eb38666ef624e1111266eab9d277a94af55a4905cf2c311aa",
+      "mode": "d4",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "d4",
+        "--exclusive-authorized"
+      ],
+      "protocol": "responses",
+      "topology": "S02",
+      "candidate": "A",
+      "slots": 4,
+      "status": "complete",
+      "reserved": 54,
+      "logicalBytes": 364189,
+      "logicalSha256": "c76d18341f0dc1c3cf7f4b9a3bc85ace57372b3a805c3c1e2029a4e4b2b299f7"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/d4-D.manifest.json",
+        "bytes": 1431,
+        "sha256": "9394a816f49e7216b9c5d470f2a27ef464b022edb87ee80362b1412ba9928637"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/d4-D.gz",
+        "bytes": 22418,
+        "sha256": "ba412b19f9f8c35a9fbe9ea773cf102f7e1c5baa83a02b0a64ad958477ba8096"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/d4-D",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "f877293c50ef6b8e95e8f38b1548374904689d700d9374d14e4228659c12d906",
+      "mode": "d4",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "d4",
+        "--exclusive-authorized"
+      ],
+      "protocol": "responses",
+      "topology": "S02",
+      "candidate": "A+D",
+      "slots": 4,
+      "status": "complete",
+      "reserved": 54,
+      "logicalBytes": 364493,
+      "logicalSha256": "b06c002c363f1f9d9b9f8b7729839d28c806c96ea5f870eb90c94c0baa91602c"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/d8-A.manifest.json",
+        "bytes": 1411,
+        "sha256": "5f3540155d3098c4169ab7b855b5ae31489aad1577aa21bd3881d56103482f59"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/d8-A.gz",
+        "bytes": 22212,
+        "sha256": "f9f62085cafc128fb7e0ff1a78a45064d321b26dca48da2428419545bae43bfd"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/d8-A",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "d3a6cf1fda9ddc696fddbdd1f50eadf1d4ec23844e7215600b497c31002ce64f",
+      "mode": "d8",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "d8",
+        "--exclusive-authorized"
+      ],
+      "protocol": "responses",
+      "topology": "S02",
+      "candidate": "A",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 54,
+      "logicalBytes": 364186,
+      "logicalSha256": "0b3cb6ce849822d5c91da75fd00fac8fcb5e366a3337f06c0f2bb0375e412916"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/d8-D.manifest.json",
+        "bytes": 1413,
+        "sha256": "9a8236832c2104dd2ca1ebe1a16faf00a8f2adcdf03fdc5c3f1884aae73b3ca1"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/d8-D.gz",
+        "bytes": 22332,
+        "sha256": "1d11f5aed024810748313efe9426b7496a3a746840acf83489bf488a8a51e831"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/d8-D",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "4235301b5cce5a745ca5d8543d0717768e94e5d883ee7fa4c80a89482c2ffda8",
+      "mode": "d8",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "d8",
+        "--exclusive-authorized"
+      ],
+      "protocol": "responses",
+      "topology": "S02",
+      "candidate": "A+D",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 54,
+      "logicalBytes": 364342,
+      "logicalSha256": "dae87841fe60dd281dbdf54e8e2d39b77b32dc7c2058b6a38081f9a12773751b"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/fault503-A.manifest.json",
+        "bytes": 1439,
+        "sha256": "df37aa88f7bf5985b9546de4fca7b531097b1ad462298e79ae435ccbeb6b9f59"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/fault503-A.gz",
+        "bytes": 22259,
+        "sha256": "46d64e1f02ea0dca4ccb13c332544db6a94d59e20886676ad33598c9daa3b91f"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/fault503-A",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "9abdd2df01b90b49952939532703709c979933b9226d6cadae5958ffba777f4b",
+      "mode": "fault503",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "fault503",
+        "--exclusive-authorized"
+      ],
+      "protocol": "responses",
+      "topology": "S02",
+      "candidate": "A",
+      "slots": 4,
+      "status": "complete",
+      "reserved": 54,
+      "logicalBytes": 365869,
+      "logicalSha256": "b71aa59a2bce9e1113e05b33b37d10e846c582424c458d541d47fb4cc125093c"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/preflight.manifest.json",
+        "bytes": 1421,
+        "sha256": "dcb1e180fbc44acfed03d708d296ec1f2d5fa865b2a6f9496502d6f6e1947bee"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/preflight.gz",
+        "bytes": 19012,
+        "sha256": "454d7963827ae9d43d93dc4df6db1407ead7dfdb672f6418896c65be104b1325"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/preflight",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "69e6ba6c16c78d45c20e27143adcb6f24f6355a41b7b55d026ede17d41e8b6f3",
+      "mode": "preflight",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "preflight",
+        "--exclusive-authorized"
+      ],
+      "protocol": "chat-completions",
+      "topology": "S01",
+      "candidate": "A",
+      "slots": 4,
+      "status": "complete",
+      "reserved": 26,
+      "logicalBytes": 301771,
+      "logicalSha256": "adb16b0417326c3273b2bd84bdafd855b30c3ebba51624344fc80c9903ae04ab"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-anthropic-messages-S01-A.manifest.json",
+        "bytes": 1446,
+        "sha256": "df233755762e62447772867b2085f70f3c1376ed00f2c349673f87a91071aa6b"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-anthropic-messages-S01-A.gz",
+        "bytes": 19177,
+        "sha256": "07bfcca2ceef790df9f3070f267ff221ff2d9a5d6b2d134dcf81d09644ad39b3"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-anthropic-messages-S01-A",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "37e4afb8887c9a3574d99c6e79b6ccfed4ac22ca64c2137200793e0c1bcead93",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "anthropic-messages",
+      "topology": "S01",
+      "candidate": "A",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 26,
+      "logicalBytes": 308522,
+      "logicalSha256": "514d4f23c297cdb0efb70972d64e2cd7a02fe88dc4ca98bf5015a5be2a37bce6"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-anthropic-messages-S01-AD.manifest.json",
+        "bytes": 1449,
+        "sha256": "ad0dd007467ae2dd56de09d618faefcbed795b390a8d69719d22d534d55377db"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-anthropic-messages-S01-AD.gz",
+        "bytes": 19262,
+        "sha256": "fc9f66132058c2bf791dcf3028f6be054ad19d86a4cc21c38c558ad69f717682"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-anthropic-messages-S01-AD",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "31b916406a97ce1a36b723c110808069619455892d0eae98e1ecd0ae6a947b37",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "anthropic-messages",
+      "topology": "S01",
+      "candidate": "A+D",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 26,
+      "logicalBytes": 308662,
+      "logicalSha256": "5c8ab1af6ed84108e9b769d2f92458e37d52855067d7b2625fa809e7ded1411e"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-anthropic-messages-S01-B.manifest.json",
+        "bytes": 1445,
+        "sha256": "ec2e5fece10c97c13264e637092354214b2d2684f56de3028bcef9cdb0db65ab"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-anthropic-messages-S01-B.gz",
+        "bytes": 19161,
+        "sha256": "814f0de6aae4dadea46b23b666f9d549f3706b1ecd344472ea7ca43f4a28e5b1"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-anthropic-messages-S01-B",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "a70d0bf1e671adeed888faac1146add90d92c997227a253fca52322299dfc898",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "anthropic-messages",
+      "topology": "S01",
+      "candidate": "B",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 26,
+      "logicalBytes": 308532,
+      "logicalSha256": "72a7087948714867822283e42e1f33954788b1ff75e1423e29b7f6bcfab46d26"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-anthropic-messages-S02-A.manifest.json",
+        "bytes": 1482,
+        "sha256": "c761aa2d512762f05720e66a927034e32182942f9457d401be5b95526ac7bce4"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-anthropic-messages-S02-A.gz",
+        "bytes": 22701,
+        "sha256": "f62b89437643c54ee11785bfcedb28f8e34525a6e6dc99c8146ddfef41251e3b"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-anthropic-messages-S02-A",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "fdf3e9f43c11dcb88337d70d2d23f9695f06cd870868c99fcf875003ec9964ab",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "anthropic-messages",
+      "topology": "S02",
+      "candidate": "A",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 52,
+      "logicalBytes": 385617,
+      "logicalSha256": "694163f8246593b35fb2c8829a69a2912c5bf9d394940e51e33948dc0dea4092"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-anthropic-messages-S02-AD.manifest.json",
+        "bytes": 1486,
+        "sha256": "c35be4dbdd38284bc96b23d43a3cca13bb556778d5275419fd4c3de0832edb04"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-anthropic-messages-S02-AD.gz",
+        "bytes": 22928,
+        "sha256": "3b2f33ce1e02dea27dd5d544f6ef9458f75df936f5a0861169122f1589fbc1f5"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-anthropic-messages-S02-AD",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "c37d3b46986da4cf1c66b48cb1a103945572dd25aecc9350356e1a33e7eb552d",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "anthropic-messages",
+      "topology": "S02",
+      "candidate": "A+D",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 52,
+      "logicalBytes": 385863,
+      "logicalSha256": "1dd741ef72a4ee8e01d1719b3f129882ed9c3121a0efee0bea2a3df99b8754b9"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-anthropic-messages-S02-B.manifest.json",
+        "bytes": 1483,
+        "sha256": "c5748a140ff72ae80d74b0dd20b920d5da173268fe97c3e5506102cad688dedb"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-anthropic-messages-S02-B.gz",
+        "bytes": 22653,
+        "sha256": "6f2d7ba5c311bd06ec515a6aaba33e6e33d9cdac52900801d10f1f694c5f3371"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-anthropic-messages-S02-B",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "f94b5204fc59cd8aefbdf68971fcac967928f7aa582423f10eaf72a30983c25d",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "anthropic-messages",
+      "topology": "S02",
+      "candidate": "B",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 52,
+      "logicalBytes": 385607,
+      "logicalSha256": "328f5cf4d2e0d36febbbee2a2c7cfc4a1b479ac3637d0de245902808b2013f0b"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-anthropic-messages-S03-A.manifest.json",
+        "bytes": 1485,
+        "sha256": "ac7b1fdc841c41e960b945addc9f10f5869b21d2415e6d116f4674027d13e10b"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-anthropic-messages-S03-A.gz",
+        "bytes": 22680,
+        "sha256": "b81d5bc835131c1fa2d3ff158f1ce11b6fca5bdec31934e9aaee3de14314502d"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-anthropic-messages-S03-A",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "a1d15c1e36834d14429a30c5cbb526a1da2d3166c13f1912ccd5d4030b869d7f",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "anthropic-messages",
+      "topology": "S03",
+      "candidate": "A",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 52,
+      "logicalBytes": 385621,
+      "logicalSha256": "14096c7bc8990738f7f12fad5613b156be8bbc743905bfe5d198e391233f86b2"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-anthropic-messages-S03-AD.manifest.json",
+        "bytes": 1487,
+        "sha256": "05d1f275462708f7e598cd4155d83e4ef6cfadd4418d4ae4c92e627e37059175"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-anthropic-messages-S03-AD.gz",
+        "bytes": 22868,
+        "sha256": "fe781be8b169b0313c23e4e1e29047c2cdafc78a60c6d1d91b879f042e1cd5ef"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-anthropic-messages-S03-AD",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "4fa1d230d1e59b742e44398c82fc9a9fca795b369c8ef0416ff338f0573e5e0b",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "anthropic-messages",
+      "topology": "S03",
+      "candidate": "A+D",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 52,
+      "logicalBytes": 385867,
+      "logicalSha256": "39a0045527e23f66e2341d69b483e00656e8ba28db360c9fff80c23e93d18309"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-anthropic-messages-S03-B.manifest.json",
+        "bytes": 1484,
+        "sha256": "cdda531ba6f732a1e37f03380a8b86b5cc0ea73d3a5c3457e97ef38b4771c536"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-anthropic-messages-S03-B.gz",
+        "bytes": 22671,
+        "sha256": "5eb131cb8ee16d19c75afe7bd1e93451fdb4ad0ff6fa7b9a36ae6910306fe1d5"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-anthropic-messages-S03-B",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "61b78d185ce5233c717b6f9b89f4bc15af0f8a0d3192bbf2f1aa67e1b744e9d6",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "anthropic-messages",
+      "topology": "S03",
+      "candidate": "B",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 52,
+      "logicalBytes": 385617,
+      "logicalSha256": "31ce53fb0f5945346e8996d6f5fb58ab74872544d16010a7151d8c7b65488bef"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-chat-completions-S01-A.manifest.json",
+        "bytes": 1433,
+        "sha256": "24f5d8181f784987b023347a6faabc6c982c8172267eb0472d395517ba2458b5"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-chat-completions-S01-A.gz",
+        "bytes": 19042,
+        "sha256": "55a169e92986b92d81cce9c6ab4a6b63d6b85d425622654025b4cf2ce6faf5ca"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-chat-completions-S01-A",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "6d3a4dd65722b6a626928de6daa9333ff524cd64036b0afc605f747a59b5537d",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "chat-completions",
+      "topology": "S01",
+      "candidate": "A",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 26,
+      "logicalBytes": 304382,
+      "logicalSha256": "1af87ec6ed419ed5c4996d749177a9edff2ab250838167140b3f1339fc3d07bb"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-chat-completions-S01-AD.manifest.json",
+        "bytes": 1435,
+        "sha256": "92e3306346dbdb17a118db2e01fa7def3f37c4a2dbb8be01f0984bfcc84d7e4d"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-chat-completions-S01-AD.gz",
+        "bytes": 19111,
+        "sha256": "d0ef1580301352726f6eec45bf154d8d3a42c12d84b8da02ad19049c27cf6aae"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-chat-completions-S01-AD",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "91b45c979b430646f666bc66900ae7afb8c08ca5c7ba6c08f540f3afe3100e0f",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "chat-completions",
+      "topology": "S01",
+      "candidate": "A+D",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 26,
+      "logicalBytes": 304611,
+      "logicalSha256": "075ff572fcb5c69fade6aa29a159c385d2e2d5aabcefd99bfe2da98146ade77b"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-chat-completions-S01-B.manifest.json",
+        "bytes": 1444,
+        "sha256": "9b3879ae4e5be1ba44a7db5ec9cb4b3a0e51517c265c43a7dbcf6a4da4e03c58"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-chat-completions-S01-B.gz",
+        "bytes": 19030,
+        "sha256": "6b32c6c0977f1f9618ea41d3e054d1e2fed1912ca386b53abd22acd4fbd2fcbd"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-chat-completions-S01-B",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "e3b94177d4a6b0444cbe7ebfc5aa42be57bdd35cbe231af6b11dd8c1d183034e",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "chat-completions",
+      "topology": "S01",
+      "candidate": "B",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 26,
+      "logicalBytes": 304481,
+      "logicalSha256": "b4feae5047caa7567196067e76d5b1375abe5fc373434e48bd26dd77a1354ec5"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-chat-completions-S02-A.manifest.json",
+        "bytes": 1480,
+        "sha256": "d530e68e34145452f38c12c038e3a2d565f37e4929523d83dfad6deb45cac770"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-chat-completions-S02-A.gz",
+        "bytes": 22099,
+        "sha256": "967ca3b0a6c67fd6a9350b43194166ae2de22be1b6a23f31513d99adb62380c2"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-chat-completions-S02-A",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "279e9410898c6c5c1825077d33ad758643511c5ef670bf4ed1dd1af1a33971e1",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "chat-completions",
+      "topology": "S02",
+      "candidate": "A",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 52,
+      "logicalBytes": 377529,
+      "logicalSha256": "3a8a9989259774cffa4154a9b8f59883879215674927594c6e44dfe34cc51f57"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-chat-completions-S02-AD.manifest.json",
+        "bytes": 1482,
+        "sha256": "90f0529a73b653d67ec70d8b0398a45dba8919bfb2c916ccf56ca63c704cd791"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-chat-completions-S02-AD.gz",
+        "bytes": 22335,
+        "sha256": "11d683895b4c151bc2b6cf2a61e154936cd191f96b33e11820dd9d9d43998146"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-chat-completions-S02-AD",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "eaac2ad90bbd1384a425d57077b99670267750a8ff0d0445c3e7150fe80da9a6",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "chat-completions",
+      "topology": "S02",
+      "candidate": "A+D",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 52,
+      "logicalBytes": 377799,
+      "logicalSha256": "06121bb5d87179bbed7e0a531895e7a0f104474124336754d69090b545f82cd2"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-chat-completions-S02-B.manifest.json",
+        "bytes": 1481,
+        "sha256": "3260cf88ad073866d1ccd08069d0f711f5e29904aab85a339a823d55d3c2c614"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-chat-completions-S02-B.gz",
+        "bytes": 22080,
+        "sha256": "356e8aefa68b3c11da1a3e3d738b862039ff57fcf5b8cb5f6329f5f946d119b0"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-chat-completions-S02-B",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "bb8c7071d7fc801ac261891190586b3d533812e4beca481a49e1364109dd3611",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "chat-completions",
+      "topology": "S02",
+      "candidate": "B",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 52,
+      "logicalBytes": 377549,
+      "logicalSha256": "eda51a2f45408bc0da05a41a28b582debbb0f4517f9503100413e9c5d1d7f9a9"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-chat-completions-S03-A.manifest.json",
+        "bytes": 1478,
+        "sha256": "dbc6a6ccbd5015e54671f1c1c3ecd97724c0d410122826b962cfea32f3032df4"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-chat-completions-S03-A.gz",
+        "bytes": 22114,
+        "sha256": "7db3ed3ce6da6db2695b52847b2c08dc0eb33466065f632992c62a50f1bbf13a"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-chat-completions-S03-A",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "546a1d085361eb3753e6561a5be3db49f894281e3382435302a23efbea6df5ca",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "chat-completions",
+      "topology": "S03",
+      "candidate": "A",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 52,
+      "logicalBytes": 377542,
+      "logicalSha256": "0b5a70c99eb280ce04e5c6842ab8c25b54b955775cabf2c13728bc68842cd638"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-chat-completions-S03-AD.manifest.json",
+        "bytes": 1484,
+        "sha256": "0233b16c21c73e1edffd869d6fc42f2cf2480635e825cfdb4670b4503c83348d"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-chat-completions-S03-AD.gz",
+        "bytes": 22199,
+        "sha256": "946720968d018fb6fca408d3487ac331547e6e6f98b37d6bbc67e28a1826b1a7"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-chat-completions-S03-AD",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "64eea1d3c5ffd289f30f515dcd7da6a19a499d11124bce9632d45e047354f2c8",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "chat-completions",
+      "topology": "S03",
+      "candidate": "A+D",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 52,
+      "logicalBytes": 377798,
+      "logicalSha256": "0b54b75f1b1044520a3cdf50250be336f3770066966b82533cc9fbbcda310057"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-chat-completions-S03-B.manifest.json",
+        "bytes": 1480,
+        "sha256": "e29b0830a587bfe2f6b8aca89590c72f26790f9b0c1e5165ad22a78a56d4f17e"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-chat-completions-S03-B.gz",
+        "bytes": 22091,
+        "sha256": "42e2e1910a26e5d6c5e68e6fb30b27a33199beac17f0bd4c25743a8b6c0c718e"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-chat-completions-S03-B",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "a6a05d37e7ab375105d2f533ed8510857daa27883a64f24827c54baf6bb55bd8",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "chat-completions",
+      "topology": "S03",
+      "candidate": "B",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 52,
+      "logicalBytes": 377549,
+      "logicalSha256": "dcb3de79b9c7254c8af1f7fddb45056dbffb4cf597c6442303e6a88aab73c76b"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-responses-S01-A.manifest.json",
+        "bytes": 1428,
+        "sha256": "8dde9571c971a9b65771f22c8631ec758b67ba65964a172a3203455165af8ecd"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-responses-S01-A.gz",
+        "bytes": 19027,
+        "sha256": "a35d4621ca26abacb879fd03f0033152075f914c908283b71f968a5427814e56"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-responses-S01-A",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "6775a8343fb72e354c5b15dcb42163748c9f091e318213101cb781de070b4ad4",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "responses",
+      "topology": "S01",
+      "candidate": "A",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 26,
+      "logicalBytes": 298762,
+      "logicalSha256": "9f4b4ddd4646473b3b96f0f21e6cd75826d7df76f9c5ee98ca51889f74394976"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-responses-S01-AD.manifest.json",
+        "bytes": 1420,
+        "sha256": "d4441c08e58d2de916c0e99c6709f04fbf027bae98113c98042ebd3ded7b9523"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-responses-S01-AD.gz",
+        "bytes": 19042,
+        "sha256": "d78689b4710f9c944ea018607618b51613882a2124513be11aa702119e84e28a"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-responses-S01-AD",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "cb1d8eeff5522cedb29da9578eaaa413731820dd875713ee86fe5c8f9bf12379",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "responses",
+      "topology": "S01",
+      "candidate": "A+D",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 26,
+      "logicalBytes": 298982,
+      "logicalSha256": "da34b8592ccb2a54a436267042a837c8419abbe47d65ea0422f1388b174dca69"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-responses-S01-B.manifest.json",
+        "bytes": 1430,
+        "sha256": "9ef661450bbec0c558e97ff723b9d7f7b723cadf1c6c5e168d29b232cce2be83"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-responses-S01-B.gz",
+        "bytes": 19033,
+        "sha256": "1606908fa0773acfebb57a81e68f7096e396b0600ef35d5347d3743f2adc4388"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-responses-S01-B",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "6fdd43550b4cab24ed87a8bb1c4a0a6ac2f5d81b45bb06afbd4244b16fd1cdce",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "responses",
+      "topology": "S01",
+      "candidate": "B",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 26,
+      "logicalBytes": 298862,
+      "logicalSha256": "e4203816601b7c22598289cd3f38a60b271fd226fbd56aaf99708dbeebca6994"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-responses-S02-A.manifest.json",
+        "bytes": 1464,
+        "sha256": "58b7571effcb4942a3cb027581e4dfcd0a673afb10504e48ed50ff0ad6310005"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-responses-S02-A.gz",
+        "bytes": 22065,
+        "sha256": "ff2999d951494393e2ab67b6bdc7f6a9187225efc2bcb2f874473261454172c9"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-responses-S02-A",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "84f6db18415e94839b74012520193b488c1974cd7a3f51f03302113d4e33046a",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "responses",
+      "topology": "S02",
+      "candidate": "A",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 52,
+      "logicalBytes": 366289,
+      "logicalSha256": "3b5e25e64a0bf745f3e054bf8247823144f69cc75adbd44cf33d0fab6fbc21e5"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-responses-S02-AD.manifest.json",
+        "bytes": 1469,
+        "sha256": "4bf276762e22faf4473a62d2340b05ced08e715f2ccdc4be0479023fc5df8b7c"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-responses-S02-AD.gz",
+        "bytes": 22155,
+        "sha256": "aad8deea74ae7d914b12b3114284c226713e907701f06f941e1fea09dfda40a1"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-responses-S02-AD",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "8a57dfcf5c86e02e64270cbd9fa9b13b2986f0cc5e6959b57a66ff7538467f74",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "responses",
+      "topology": "S02",
+      "candidate": "A+D",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 52,
+      "logicalBytes": 366555,
+      "logicalSha256": "62a1c43bfa1d66bfbafbf1f2d32459e14ee5cd23d156cc2e5199c559ab363201"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-responses-S02-B.manifest.json",
+        "bytes": 1466,
+        "sha256": "5f39a5cfd0b164aa3e6e728bb0187131159ff507e98ed67bb78c85eb28b3522c"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-responses-S02-B.gz",
+        "bytes": 21984,
+        "sha256": "3602d42395cef23172a9ee504616c72d6d859d63a7a84cfc9a74304cb96afc41"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-responses-S02-B",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "2ed35d65c16e62ac10c039bf074d192b4f04fbfa6ad5c4c312270e4c4aee974d",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "responses",
+      "topology": "S02",
+      "candidate": "B",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 52,
+      "logicalBytes": 366302,
+      "logicalSha256": "fd2c4cfa1b3e111ea3d91a6c238fba0e9df13742bbe4b569885615482697b14f"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-responses-S03-A.manifest.json",
+        "bytes": 1465,
+        "sha256": "9275d82f2e75729b0883d82f15942cae8605d83d849ff4ad42681070b03c794d"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-responses-S03-A.gz",
+        "bytes": 22022,
+        "sha256": "3fb1d9d0fd4c055c1e93a9b18c9dcea0820baea7e4ca8b6fed0ea26759a6e119"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-responses-S03-A",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "37441c41d6118acbcd47bd388ba28002a1a9bd9556c841dcabe21916e98542c4",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "responses",
+      "topology": "S03",
+      "candidate": "A",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 52,
+      "logicalBytes": 366285,
+      "logicalSha256": "f577ea2b37c3b40bef92628089b74040ff4017b6b6e1c5601be35e55a82b7854"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-responses-S03-AD.manifest.json",
+        "bytes": 1458,
+        "sha256": "b7476761a026be09f457f02032aa79e4c93268b8b8d080d9da250a17784cc335"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-responses-S03-AD.gz",
+        "bytes": 22099,
+        "sha256": "a5645b664fa1381011d7a252cd3d02cfe372252f3a0d06d219728b4f79097b0d"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-responses-S03-AD",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "d060de7c3518efdf5d35eccefaf24a32da4c16b0658b13b5475956e1f978be1b",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "responses",
+      "topology": "S03",
+      "candidate": "A+D",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 52,
+      "logicalBytes": 366537,
+      "logicalSha256": "74d99c5c7130febb2bc631b96b1b6fb1dbf567e463b8a441bc5ef731027034ae"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-responses-S03-B.manifest.json",
+        "bytes": 1468,
+        "sha256": "c76085d02f9d3b505fb3642c581f6ffc53b8349547da212da312423c95d8aa6e"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive/screen-responses-S03-B.gz",
+        "bytes": 22009,
+        "sha256": "629a575acac1de96bff5b728330937f17d2a7b1b3dbad6335cd6aadb0277b810"
+      },
+      "run": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e/screen-responses-S03-B",
+      "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "270e9a00fc733f638b507a0f5441a19003ae2866621617b84c99b2b8c3560eb9",
+      "mode": "screen",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "screen",
+        "--exclusive-authorized"
+      ],
+      "protocol": "responses",
+      "topology": "S03",
+      "candidate": "B",
+      "slots": 8,
+      "status": "complete",
+      "reserved": 52,
+      "logicalBytes": 366294,
+      "logicalSha256": "daa9bc16292b999fb7f13c8dc049348468355b69d40d6ab1baa9215c23718bc1"
+    },
+    {
+      "manifest": {
+        "path": "data/diagnostics/p1-20261103/passive-failed-6f626e6/preflight.manifest.json",
+        "bytes": 2375,
+        "sha256": "71e108f20a7a2a5dc9c3f4fab7b4421eb270fee4223e34c7fdf4705e01b57743"
+      },
+      "archive": {
+        "path": "data/diagnostics/p1-20261103/passive-failed-6f626e6/preflight.gz",
+        "bytes": 17379,
+        "sha256": "4e781bbcbc519c06b1c423543d3c4f57375a9eaa66c3c903532a443d014e8d7a"
+      },
+      "run": "preflight",
+      "sourceHash": "e1d21a2701b8f0ba0090b6c845282f70da791f1403f4ce822989e7270cbafba7",
+      "inputHash": "5ab594b6d9a5d01731f05b32dfda1861ac20cb9e2e56cac0948a26047a9256f8",
+      "expectedHash": "688a5389b19e08b5a5c69f55cfbfba5058a21d03e5ad89a1368057212b7d675e",
+      "mode": "preflight",
+      "seed": "obs-standard12-001",
+      "recordedArgv": [
+        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "--execute",
+        "preflight",
+        "--exclusive-authorized"
+      ],
+      "protocol": "chat-completions",
+      "topology": "S01",
+      "candidate": "A",
+      "slots": 4,
+      "status": "failed",
+      "reserved": 12,
+      "logicalBytes": 249216,
+      "logicalSha256": "a118480f65cbd96f8b025ac7c67203b0d0bb7c654f8667c05b22403210be3a24"
+    }
+  ],
+  "client": {
+    "manifest": {
+      "version": "agent-v0.1.0",
+      "status": "published",
+      "releaseUrl": "https://github.com/ZhiqiangBao/ai-werewolf/releases/tag/agent-v0.1.0",
+      "zipUrl": "https://github.com/ZhiqiangBao/ai-werewolf/releases/download/agent-v0.1.0/agent-v0.1.0.zip",
+      "releaseTargetCommit": "accd21234ec002e6735a70e7b3352933e13fd30c",
+      "sha256": "5483cf9a9f0ec828ea1f74f590cf79139c9da32d02a528fa74298aeaaabc67bd",
+      "size": 73210,
+      "treeSha256": "fb442a6e96890d1df53b9257ec998e79585a46c62af66a073f179e6ffd58497f",
+      "minimumNode": "22.12",
+      "testedNode": "24.18.1",
+      "validatedServerCommits": [
+        "6325ea652731dcc9e5c99b2b170adbbe69e5659e",
+        "8a6563ebc1678412c8a5e1bdf563cb4e59f40b3e"
+      ]
+    },
+    "localWhitelist": [
+      {
+        "path": "local-clients/werewolf-agent/.cursor/rules/player.mdc",
+        "bytes": 509,
+        "sha256": "7d8f13384f22d07ff6287dced653e4af6afdc090a27e6b3c99de1254d8877237"
+      },
+      {
+        "path": "local-clients/werewolf-agent/.github/copilot-instructions.md",
+        "bytes": 619,
+        "sha256": "083b568fe1c364771c0affdc9fdf9f1a315790a9ea7c55c51484ba391133e193"
+      },
+      {
+        "path": "local-clients/werewolf-agent/.gitignore",
+        "bytes": 116,
+        "sha256": "ad77fc15e1982f02e4a7dc0dd5be11c89f45103c6a0dbd7ae293fb508d87a419"
+      },
+      {
+        "path": "local-clients/werewolf-agent/AGENTS.md",
+        "bytes": 7645,
+        "sha256": "b8f50575855042da7504a388acb03e3d324a99a572357e6103d84c5739f111ec"
+      },
+      {
+        "path": "local-clients/werewolf-agent/CLAUDE.md",
+        "bytes": 386,
+        "sha256": "2bcf56d736ff2967d82cbf5bd6cfd7062d1c7f82c16ec28f8eb70f74f7a36961"
+      },
+      {
+        "path": "local-clients/werewolf-agent/GEMINI.md",
+        "bytes": 382,
+        "sha256": "a01a9a7621271bd40d0e69f2758da52494145f83c7951accf49b9df8413f0a42"
+      },
+      {
+        "path": "local-clients/werewolf-agent/QWEN.md",
+        "bytes": 381,
+        "sha256": "6ef81de7edd7922e271aa50de70071742cf81853bbda0d295d8e5856c39a0efd"
+      },
+      {
+        "path": "local-clients/werewolf-agent/README.md",
+        "bytes": 989,
+        "sha256": "462c08c851552c8f9a12bc2a2680fb51624d71fd3cfdd0374daa758dfb46e82a"
+      },
+      {
+        "path": "local-clients/werewolf-agent/player.mjs",
+        "bytes": 26368,
+        "sha256": "0f823153edd4292a13d03d94585bd0300234656ff88934ff5f54e6c838faf7b8"
+      },
+      {
+        "path": "local-clients/werewolf-agent/rules/classic9.md",
+        "bytes": 7332,
+        "sha256": "70866bc238b123b4924a87d2a2fa29294dd98a6136e28f238290d4705284dcf7"
+      },
+      {
+        "path": "local-clients/werewolf-agent/rules/idiot12.md",
+        "bytes": 7550,
+        "sha256": "3c362a2af758c52fb48ac0ecc0359439c5bbfb8671838bdee683d10625c3902f"
+      },
+      {
+        "path": "local-clients/werewolf-agent/rules/mirror12.md",
+        "bytes": 9381,
+        "sha256": "f1733dd1797357b6a65514dad5dd8b8613994c5b33ec5c6f5f9961baf28d16fa"
+      },
+      {
+        "path": "local-clients/werewolf-agent/rules/standard12.md",
+        "bytes": 7813,
+        "sha256": "bf36dc4afc5fc06106aff46a036e119c9889b026d414153260ad329258341fee"
+      }
+    ],
+    "liveReleaseRead": {
+      "checkedAt": "2026-11-03T01:55:32.754Z",
+      "source": "GitHub GET release/tag during external audit; asset bytes were not downloaded",
+      "url": "https://github.com/ZhiqiangBao/ai-werewolf/releases/tag/agent-v0.1.0",
+      "tagName": "agent-v0.1.0",
+      "targetCommitish": "accd21234ec002e6735a70e7b3352933e13fd30c",
+      "draft": false,
+      "prerelease": false,
+      "publishedAt": "2026-11-03T01:20:43Z",
+      "assets": [
+        {
+          "name": "agent-v0.1.0-manifest.json",
+          "size": 2253,
+          "state": "uploaded",
+          "digest": "sha256:b7493a42463e6372b8455e25e197bf76d7361eb236c9038a64a4a15c68769000",
+          "url": "https://github.com/ZhiqiangBao/ai-werewolf/releases/download/agent-v0.1.0/agent-v0.1.0-manifest.json"
+        },
+        {
+          "name": "agent-v0.1.0.zip",
+          "size": 73210,
+          "state": "uploaded",
+          "digest": "sha256:5483cf9a9f0ec828ea1f74f590cf79139c9da32d02a528fa74298aeaaabc67bd",
+          "url": "https://github.com/ZhiqiangBao/ai-werewolf/releases/download/agent-v0.1.0/agent-v0.1.0.zip"
+        },
+        {
+          "name": "SHA256SUMS.txt",
+          "size": 176,
+          "state": "uploaded",
+          "digest": "sha256:c8427dde20ab2f5c501556c11d07ff38264fd9edeb3f1cb933744cd211ee18e8",
+          "url": "https://github.com/ZhiqiangBao/ai-werewolf/releases/download/agent-v0.1.0/SHA256SUMS.txt"
+        }
+      ]
+    },
+    "installationMapping": "Six locale installation directories in two batches matched the 13-file release source tree. Candidate and final ZIP payloads differ only in manifest metadata. No seat/credential state inspected.",
+    "languageCompliance": "Prompt/flow and synthetic API validation only; no real external model compliance test."
+  },
+  "obs": {
+    "reviewedSource": "53d04e1",
+    "reviewCommit": "024e196",
+    "priorExternalScope": {
+      "normalWindows": 90,
+      "requests": 31938,
+      "rawMembers": 180
+    },
+    "priorInternalMemberCount": 2982,
+    "deletedArchive": {
+      "path": "data/diagnostics/obs-raw-jsonl-20261103.zip",
+      "existsNow": false,
+      "historicalBytes": 237697148,
+      "historicalSha256": "fbaa639ab6c2c1d437895eff661b77e99f462a34916d1bd991d0ca52d8f67e13",
+      "deletedAtFromRecord": "2026-11-02T23:55:41.160Z"
+    },
+    "retained": [
+      {
+        "path": "data/diagnostics/obs-raw-jsonl-20261103-index.json",
+        "bytes": 659653,
+        "sha256": "96bd710c1503b993471df8c8e534cdeb58151f6da7eccca00c8993ca3bd16349",
+        "matchesCleanup": true
+      },
+      {
+        "path": "data/diagnostics/obs-acceptance-coverage/19ee1bf/summary.json",
+        "bytes": 160563,
+        "sha256": "baeb8e91d8a185cf01f578c63a184a18b0f578d6eb5d336333e3c6d4739911aa",
+        "matchesCleanup": true
+      },
+      {
+        "path": "data/diagnostics/obs-acceptance-coverage/19ee1bf/input-manifest.json",
+        "bytes": 75236,
+        "sha256": "d63d8ea6c40ea395bae0550506def731cac1fdcaf83f0c69d272cb636d6f7451",
+        "matchesCleanup": true
+      },
+      {
+        "path": "data/diagnostics/obs-external-review-53d04e1/normal-reconciliation.json",
+        "bytes": 36886,
+        "sha256": "5a71c9248363fac6f39996010f94354cdb2d341abb2cd5990a9bc46d878bfc6d",
+        "matchesCleanup": true
+      },
+      {
+        "path": "docs/ARCH-OBSERVABILITY外部审计报告.md",
+        "bytes": 16870,
+        "sha256": "211376e71ef4dbd0eba822df710ae0adad8bb5ba03f2399c7592150f0f5d1748",
+        "matchesCleanup": true
+      }
+    ],
+    "rawReaudited": false
+  },
+  "historicalExecutionEvents": {
+    "threadId": "01a19cbc-ed22-7d40-a641-a4c97adddb1c",
+    "note": "Read command execution status from implementation chat; these were not rerun by auditor.",
+    "events": [
+      {
+        "name": "fullRegression",
+        "eventIdPrefix": "15f1f787",
+        "exitCode": 1
+      },
+      {
+        "name": "clientFinal",
+        "eventIdPrefix": "bb29e725",
+        "exitCode": 1
+      },
+      {
+        "name": "clientCleanInstallRetry",
+        "eventIdPrefix": "77b9de9c",
+        "exitCode": 0
+      },
+      {
+        "name": "lifecycle66",
+        "eventIdPrefix": "b2379f14",
+        "exitCode": 0
+      },
+      {
+        "name": "httpBudgetRetry",
+        "eventIdPrefix": "0274435d",
+        "exitCode": 0
+      },
+      {
+        "name": "finalClientServer",
+        "eventIdPrefix": "e104c502",
+        "exitCode": 0
+      },
+      {
+        "name": "finalPackage",
+        "eventIdPrefix": "f7ee4800",
+        "exitCode": 0
+      },
+      {
+        "name": "finalTypecheck",
+        "eventIdPrefix": "469be800",
+        "exitCode": 0
+      },
+      {
+        "name": "finalBuild",
+        "eventIdPrefix": "da9cb68c",
+        "exitCode": 0
+      }
+    ]
+  },
+  "historicalCommands": [
+    {
+      "threadId": "01a19cbc-ed22-7d40-a641-a4c97adddb1c",
+      "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
+      "eventId": "exec-ea010117-bf01-461b-b0e0-9660fd7f59fb",
+      "commandInPowerShell": "'node --import tsx scripts/passive-experiment.ts --execute preflight --exclusive-authorized'",
+      "cwd": "D:\\document\\狼人杀",
+      "exitCode": 0,
+      "durationMs": 1735
+    },
+    {
+      "threadId": "01a19cbc-ed22-7d40-a641-a4c97adddb1c",
+      "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
+      "eventId": "exec-1836ff28-9c0b-43de-abb0-f55ec702943d",
+      "commandInPowerShell": "'node --import tsx scripts/passive-experiment.ts --execute d4 --exclusive-authorized'",
+      "cwd": "D:\\document\\狼人杀",
+      "exitCode": 0,
+      "durationMs": 4871
+    },
+    {
+      "threadId": "01a19cbc-ed22-7d40-a641-a4c97adddb1c",
+      "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
+      "eventId": "exec-6c7824e4-e2ed-4985-9a2f-544a4d206dd2",
+      "commandInPowerShell": "'node --import tsx scripts/passive-experiment.ts --execute d8 --exclusive-authorized'",
+      "cwd": "D:\\document\\狼人杀",
+      "exitCode": 0,
+      "durationMs": 4786
+    },
+    {
+      "threadId": "01a19cbc-ed22-7d40-a641-a4c97adddb1c",
+      "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
+      "eventId": "exec-8623569b-90ae-4d3c-a9c5-3b1843b5b567",
+      "commandInPowerShell": "'node --import tsx scripts/passive-experiment.ts --execute fault503 --exclusive-authorized'",
+      "cwd": "D:\\document\\狼人杀",
+      "exitCode": 0,
+      "durationMs": 2890
+    },
+    {
+      "threadId": "01a19cbc-ed22-7d40-a641-a4c97adddb1c",
+      "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
+      "eventId": "exec-a18b3531-d685-4cd9-82fd-562addb7b1db",
+      "commandInPowerShell": "'node --import tsx scripts/passive-experiment.ts --execute screen --exclusive-authorized'",
+      "cwd": "D:\\document\\狼人杀",
+      "exitCode": 0,
+      "durationMs": 27741
+    },
+    {
+      "threadId": "01a19cbc-ed22-7d40-a641-a4c97adddb1c",
+      "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
+      "eventId": "exec-4ab4d02d-5b33-4ad6-bf78-2beef8898e6c",
+      "commandInPowerShell": "'node --import tsx data/diagnostics/p1-20261103/client-server-check.mjs'",
+      "cwd": "D:\\document\\狼人杀",
+      "exitCode": 0,
+      "durationMs": 12600
+    },
+    {
+      "threadId": "01a19cbc-ed22-7d40-a641-a4c97adddb1c",
+      "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
+      "eventId": "exec-15f1f787-84e1-4eb1-b375-2157087c0556",
+      "commandInPowerShell": "'node data/diagnostics/p1-20261103/run-full-regression.mjs'",
+      "cwd": "D:\\document\\狼人杀",
+      "exitCode": 1,
+      "durationMs": 65726
+    },
+    {
+      "threadId": "01a19cbc-ed22-7d40-a641-a4c97adddb1c",
+      "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
+      "eventId": "exec-bb29e725-b0fe-474d-871b-ecb6a0aba7cd",
+      "commandInPowerShell": "'node data/diagnostics/p1-20261103/run-client-final.mjs'",
+      "cwd": "D:\\document\\狼人杀",
+      "exitCode": 1,
+      "durationMs": 18747
+    },
+    {
+      "threadId": "01a19cbc-ed22-7d40-a641-a4c97adddb1c",
+      "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
+      "eventId": "exec-77b9de9c-cc86-499a-907a-ae830bb570de",
+      "commandInPowerShell": "'node data/diagnostics/p1-20261103/run-client-final.mjs --only-clean'",
+      "cwd": "D:\\document\\狼人杀",
+      "exitCode": 0,
+      "durationMs": 680
+    },
+    {
+      "threadId": "01a19cbc-ed22-7d40-a641-a4c97adddb1c",
+      "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
+      "eventId": "exec-b2379f14-e262-47b0-a890-fdf0412c8f6b",
+      "commandInPowerShell": "'node data/diagnostics/p1-20261103/run-targeted-tests.mjs lifecycle-fixed packages/session/test/session.test.ts packages/session/test/room-boundaries.test.ts packages/session/test/room-disposal.test.ts packages/session/test/observability-runtime.test.ts packages/session/test/observability-http-lifecycle.test.ts packages/session/test/observability-event-loop.test.ts'",
+      "cwd": "D:\\document\\狼人杀",
+      "exitCode": 0,
+      "durationMs": 27848
+    },
+    {
+      "threadId": "01a19cbc-ed22-7d40-a641-a4c97adddb1c",
+      "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
+      "eventId": "exec-0274435d-1b15-44b6-9258-008b72b62388",
+      "commandInPowerShell": "\"node data/diagnostics/p1-20261103/run-targeted-tests.mjs http-budget-completion apps/server/test/human-http.test.ts --testNamePattern '房主可通过网页接口管理与试听|首页 TTS 库'\"",
+      "cwd": "D:\\document\\狼人杀",
+      "exitCode": 0,
+      "durationMs": 1985
+    },
+    {
+      "threadId": "01a19cbc-ed22-7d40-a641-a4c97adddb1c",
+      "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
+      "eventId": "exec-469be800-d09d-44aa-9f8f-19b9247b8b4c",
+      "commandInPowerShell": "'node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit'",
+      "cwd": "D:\\document\\狼人杀",
+      "exitCode": 0,
+      "durationMs": 1425
+    },
+    {
+      "threadId": "01a19cbc-ed22-7d40-a641-a4c97adddb1c",
+      "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
+      "eventId": "exec-da9cb68c-bfa3-48a1-9caa-9713d9e0600b",
+      "commandInPowerShell": "'node node_modules/vite/bin/vite.js build'",
+      "cwd": "D:\\document\\狼人杀\\apps\\web",
+      "exitCode": 0,
+      "durationMs": 1606
+    },
+    {
+      "threadId": "01a19cbc-ed22-7d40-a641-a4c97adddb1c",
+      "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
+      "eventId": "exec-e104c502-44c6-4f3a-939f-6ef390bcb72b",
+      "commandInPowerShell": "'node --import tsx data/diagnostics/p1-20261103/client-server-check.mjs client-server-final'",
+      "cwd": "D:\\document\\狼人杀",
+      "exitCode": 0,
+      "durationMs": 11035
+    },
+    {
+      "threadId": "01a19cbc-ed22-7d40-a641-a4c97adddb1c",
+      "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
+      "eventId": "exec-f7ee4800-69d3-4f99-a90b-c4d14911d41a",
+      "commandInPowerShell": "'node scripts/package-agent.mjs local-clients/werewolf-agent data/releases/agent-v0.1.0.zip agent-v0.1.0 --expected-tree fb442a6e96890d1df53b9257ec998e79585a46c62af66a073f179e6ffd58497f --server-commit 6325ea652731dcc9e5c99b2b170adbbe69e5659e --server-commit 8a6563ebc1678412c8a5e1bdf563cb4e59f40b3e'",
+      "cwd": "D:\\document\\狼人杀",
+      "exitCode": 0,
+      "durationMs": 736
+    },
+    {
+      "threadId": "01a19ebf-d9b4-7531-ac0a-ca8e1be9f1fe",
+      "turnId": "01a19ed7-551f-7390-b38b-e48aa20175a9",
+      "eventId": "exec-b51c19a8-25cd-4a7a-9c37-5c25a07079e8",
+      "commandInPowerShell": "'node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit'",
+      "cwd": "D:\\document\\狼人杀",
+      "exitCode": 0,
+      "durationMs": 1426
+    },
+    {
+      "threadId": "01a19ebf-d9b4-7531-ac0a-ca8e1be9f1fe",
+      "turnId": "01a19ed7-551f-7390-b38b-e48aa20175a9",
+      "eventId": "exec-0bdc672a-a983-40bd-9268-6afc29cbcc51",
+      "commandInPowerShell": "'node node_modules/vitest/vitest.mjs run passive-'",
+      "cwd": "D:\\document\\狼人杀",
+      "exitCode": 0,
+      "durationMs": 2206
+    },
+    {
+      "threadId": "01a19ebf-d9b4-7531-ac0a-ca8e1be9f1fe",
+      "turnId": "01a19ed5-cc33-7213-b79a-dd0bdb334691",
+      "eventId": "exec-7f17850b-2c07-4d53-8d1c-8b36353cdd07",
+      "commandInPowerShell": "'node --import tsx scripts/passive-experiment.ts --execute preflight --exclusive-authorized'",
+      "cwd": "D:\\document\\狼人杀",
+      "exitCode": 1,
+      "durationMs": 1573
+    },
+    {
+      "threadId": "01a19ebf-d9b4-7531-ac0a-ca8e1be9f1fe",
+      "turnId": "01a19ed2-22b0-7b21-b75e-70a661dc5e59",
+      "eventId": "exec-32b2c872-a2ab-4710-b22a-ec3872c83a90",
+      "commandInPowerShell": "'node node_modules/vitest/vitest.mjs run packages/session/test/passive-validator.test.ts'",
+      "cwd": "D:\\document\\狼人杀",
+      "exitCode": 0,
+      "durationMs": 1667
+    }
+  ],
+  "limits": [
+    "Actual account credentials and 36 historical room snapshots were not opened or rehashed.",
+    "No final single all-green full test run is claimed.",
+    "Player API regression delta 343 is inferred from the budget boundary, not independently request-by-request counted.",
+    "Three-room all-human locale integration fixtures exceeded the two-table common bound.",
+    "Existing P evidence reconciles; validator completeness and resume-summary binding remain unresolved.",
+    "OBS deleted raw ZIP was not reaudited."
+  ]
+}

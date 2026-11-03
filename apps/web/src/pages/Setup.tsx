@@ -334,7 +334,7 @@ function choiceFor(models: ModelPresetView[]) {
   return (id: string): Omit<SeatConfigInput, 'seat'> | null => {
     if (id === 'mock') return { adapter: 'mock', modelId: null };
     const preset = models.find((m) => m.id === id);
-    if (!preset) return null;
+    if (!preset || (preset.lifecycle && preset.lifecycle !== 'active')) return null;
     return {
       adapter: 'openai_compatible',
       presetId: preset.id,
@@ -388,8 +388,8 @@ function SeatsPanel({ setup, catalog, models, roomId, token, patchSeat, patch, f
           <option value="">全部 AI 座位改成…</option>
           <option value="mock">模拟玩家</option>
           {models.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}
+            <option key={m.id} value={m.id} disabled={!!m.lifecycle && m.lifecycle !== 'active'}>
+              {m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}{m.lifecycle && m.lifecycle !== 'active' ? ' · 不可选' : ''}
             </option>
           ))}
         </select>
@@ -418,7 +418,7 @@ function SeatsPanel({ setup, catalog, models, roomId, token, patchSeat, patch, f
 
 function selectedId(s: SeatConfigView, models: ModelPresetView[]): string {
   if (s.adapter !== 'openai_compatible') return 'mock';
-  if (s.modelId && models.some((m) => m.id === s.modelId)) return s.modelId;
+  if (s.modelId) return s.modelId;
   return models.find((m) => m.model === s.model && m.baseUrl === s.baseUrl && (m.apiProtocol ?? 'chat_completions') === (s.apiProtocol ?? 'chat_completions'))?.id ?? (s.model ? 'custom' : 'mock');
 }
 
@@ -429,8 +429,8 @@ function ModelOptions({ models }: { models: ModelPresetView[] }) {
       {models.length > 0 && (
         <optgroup label="项目模型库">
           {models.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}
+            <option key={m.id} value={m.id} disabled={!!m.lifecycle && m.lifecycle !== 'active'}>
+              {m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}{m.lifecycle && m.lifecycle !== 'active' ? ' · 不可选' : ''}
             </option>
           ))}
         </optgroup>
@@ -511,6 +511,7 @@ function SeatRow({
       {s.controller === 'ai' ? (
         <select className="seat-model" value={value} onChange={(e) => pick(e.target.value)}>
           {value === 'custom' && <option value="custom">{s.model || '未选择'}</option>}
+          {s.modelId && !models.some((m) => m.id === s.modelId) && <option value={s.modelId} disabled>{s.model || s.modelId} · 模型不存在</option>}
           <ModelOptions models={models} />
         </select>
       ) : (

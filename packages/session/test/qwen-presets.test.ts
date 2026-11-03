@@ -112,11 +112,10 @@ describe('Qwen Code 模型列表', () => {
       const again = new RoomManager({ store: new MemoryStore(), secrets, tickMs: 0, modelsPath });
       expect(again.modelPresets().some((p) => p.id === added.id)).toBe(true);
       again.dispose();
-      manager.deleteModel(added.id);
-      expect(manager.modelPresets().some((p) => p.id === added.id)).toBe(false);
-      manager.deleteModel(fromSettings!.id);
+      expect(() => manager.deleteModel(added.id)).toThrow('请停止服务');
+      expect(manager.modelPresets().some((p) => p.id === added.id)).toBe(true);
       expect(manager.importLegacyModels()).toBe(0);
-      expect(manager.modelPresets()).toEqual([]);
+      expect(manager.modelPresets()).toHaveLength(2);
     } finally {
       manager.dispose();
       if (prev === undefined) delete process.env.WEREWOLF_QWEN_SETTINGS;
@@ -147,8 +146,9 @@ describe('Qwen Code 模型列表', () => {
       const restored = new ModelLibrary(secrets, file);
       expect(restored.find(oldId)?.apiKey).toBe(SECRET);
       expect(restored.importLegacySettings()).toBe(0);
-      restored.remove(oldId);
-      expect(new ModelLibrary(secrets, file).list().map((model) => model.id)).toEqual(['old-added-id']);
+      restored.setLifecycle(oldId, 'archived');
+      expect(new ModelLibrary(secrets, file).find(oldId)?.lifecycle).toBe('archived');
+      expect(new ModelLibrary(secrets, file).importLegacySettings()).toBe(0);
     } finally {
       if (previous === undefined) delete process.env.WEREWOLF_QWEN_SETTINGS; else process.env.WEREWOLF_QWEN_SETTINGS = previous;
       rmSync(dir, { recursive: true, force: true });

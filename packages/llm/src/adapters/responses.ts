@@ -1,9 +1,10 @@
 import { gameText } from '@werewolf/protocol';
 import { apiUrl, isDashscopeEndpoint, thinkingParameters, toolToJsonSchema } from '@werewolf/protocol';
 import { nativeItems, protocolBinding } from '../transcript';
-import { failure, HttpError, post, runRequest } from '../transport';
+import { abortedOutcome, failure, HttpError, post, runRequest } from '../transport';
 import { jsonInstruction, parseAssistant, parseJson, tokenUsage } from '../result';
 import type { Adapter, AdapterConfig, TranscriptMessage } from '../types';
+import { observeSync } from '../observation';
 
 export function responsesInput(messages: TranscriptMessage[], config: AdapterConfig): Record<string, any>[] {
   const binding = protocolBinding({ ...config, apiProtocol: 'responses' });
@@ -22,10 +23,15 @@ export function responsesInput(messages: TranscriptMessage[], config: AdapterCon
 
 export const responsesAdapter: Adapter = {
   decide(req) {
-    return runRequest(req, async (signal, started, onDelta) => {
+    return runRequest(req, async (signal, started, onDelta, observation) => {
       const config = { ...req.config, apiProtocol: 'responses' as const };
       const url = apiUrl(config.baseUrl, 'responses', req.projection?.locale);
       const json = config.toolMode === 'json' && req.toolChoice !== 'auto';
+      const request = observation?.observer.start('http_request', observation.adapter.id, { variantIndex: 0, variantReason: 'initial', features: {
+        stream: !!req.stream, toolChoice: json ? 'none' : req.toolChoice === 'auto' || (isDashscopeEndpoint(config.baseUrl) && req.tools.length > 1) ? 'auto' : 'required', responseFormat: json,
+      } });
+      try {
+      const body = observeSync(observation?.observer, request, 'request_encode', () => {
       const messages: TranscriptMessage[] = json ? [...req.messages, { role: 'user', content: jsonInstruction(req.tools, req.projection?.locale) }] : req.messages;
       const body: Record<string, unknown> = {
         model: config.model, input: responsesInput(messages, config), store: false,
@@ -41,6 +47,8 @@ export const responsesAdapter: Adapter = {
       };
       // 推理型号不一定接受 temperature；只在未启用其原生推理参数时传递。
       if (!/^(?:gpt-[56]|o[134])(?:[.-]|$)/i.test(config.model)) body.temperature = config.temperature;
+      return body;
+      });
       let completed: any;
       const items = new Map<number, Record<string, any>>();
       req.onRequest?.({ apiProtocol: 'responses', tools: structuredClone(body.tools as unknown[] ?? []), toolChoice: body.tool_choice, ...(json ? { toolInstruction: jsonInstruction(req.tools, req.projection?.locale) } : {}) });
@@ -50,7 +58,9 @@ export const responsesAdapter: Adapter = {
         if (e.type === 'response.reasoning_summary_text.delta' || e.type === 'response.reasoning_text.delta') onDelta({ thinking: e.delta ?? '' });
         if (e.type === 'response.output_item.added' || e.type === 'response.output_item.done') items.set(e.output_index, e.item);
         if (e.type === 'response.completed' || e.type === 'response.incomplete') completed = e.response;
-      }, req.projection?.locale);
+      }, req.projection?.locale, observation && request ? { observer: observation.observer, request, protocol: 'responses' } : undefined);
+      request?.finish('success');
+      return observeSync(observation?.observer, observation?.adapter, 'parse', () => {
       const data = result ?? completed;
       if (!data || data.status === 'failed' || data.status === 'incomplete' || (data.status && data.status !== 'completed')) throw new HttpError(200, gameText(req.projection?.locale, 'Responses 回复未完成：{0}', data?.incomplete_details?.reason ?? data?.status ?? gameText(req.projection?.locale, '流式连接提前结束')));
       const output = Array.isArray(data.output) ? data.output : [...items.entries()].sort(([a], [b]) => a - b).map(([, item]) => item);
@@ -64,6 +74,8 @@ export const responsesAdapter: Adapter = {
       return { ...(json ? parseJson(started, assistant, req.tools, data, req.projection?.locale) : parseAssistant(started, assistant, req.tools, data, req.toolChoice === 'auto', req.projection?.locale)),
         reply: reply || undefined, thinking: thinking || undefined, usage: tokenUsage(data.usage, 'responses'),
       };
+      });
+      } catch (error) { request?.finish(signal.aborted ? abortedOutcome(signal) : error instanceof HttpError ? error.observationOutcome : 'network_error'); throw error; }
     });
   },
 };

@@ -2,7 +2,7 @@ import { useEffect, useId, useState } from 'react';
 import { API_PROTOCOL_LABELS, type ModelPresetView } from '@werewolf/protocol';
 import { Pagination, paginate } from './Pagination';
 
-export function ModelList({ models, onRemove }: { models: ModelPresetView[]; onRemove: (id: string) => Promise<void> }) {
+export function ModelList({ models, onRemove }: { models: ModelPresetView[]; onRemove: (id: string) => void | Promise<void> }) {
   const [expanded, setExpanded] = useState(false);
   const [page, setPage] = useState(1);
   const listId = useId();
@@ -18,9 +18,9 @@ export function ModelList({ models, onRemove }: { models: ModelPresetView[]; onR
       {expanded && (models.length ? <>
         <div className="model-list">
           {visible.items.map((m) => <div key={m.id} className="model-item">
-            <span>{m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}{m.source !== 'added' ? ' · 已迁移' : ''}{!m.hasKey ? ' · 未配置密钥' : ''}</span>
+            <span>{m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}{m.source !== 'added' ? ' · 已迁移' : ''}{!m.hasKey ? ' · 未配置密钥' : ''}{m.lifecycle === 'disabled' ? ' · 已停用' : m.lifecycle === 'archived' ? ' · 已归档' : ''}</span>
             <span className="tiny dim">{m.baseUrl}</span>
-            <button className="btn sm ghost" type="button" onClick={() => void onRemove(m.id)}>删除</button>
+            <button className="btn sm ghost" type="button" onClick={() => void onRemove(m.id)}>维护说明</button>
           </div>)}
         </div>
         <Pagination label="模型库" page={visible.page} pageCount={visible.pageCount} onChange={setPage} />

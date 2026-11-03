@@ -1,9 +1,10 @@
 import { gameText } from '@werewolf/protocol';
-import { apiUrl, thinkingParameters, toolToJsonSchema, type ToolSpec } from '@werewolf/protocol';
+import { apiUrl, thinkingParameters, toolToJsonSchema, type ToolSpec, type VariantReason } from '@werewolf/protocol';
 import { chatMessages } from './transcript';
-import { HttpError, post, runRequest, failure } from './transport';
+import { abortedOutcome, HttpError, post, runRequest, failure } from './transport';
 import { jsonInstruction, parseAssistant, parseJson, tokenUsage } from './result';
 import type { Adapter, AdapterConfig } from './types';
+import { observeSync } from './observation';
 
 export { redact } from './transport';
 export const chatUrl = (baseUrl: string, locale?: string) => apiUrl(baseUrl, 'chat_completions', locale);
@@ -14,7 +15,7 @@ const noStream = new Set<string>();
 
 export const openaiAdapter: Adapter = {
   decide(req) {
-    return runRequest(req, async (signal, started, onDelta) => {
+    return runRequest(req, async (signal, started, onDelta, observation) => {
       const { config, tools } = req;
       if (!config.baseUrl.trim() || !config.model.trim()) return failure(started, gameText(req.projection?.locale, '座位没有配置接口地址或模型名'));
       const url = chatUrl(config.baseUrl, req.projection?.locale);
@@ -32,8 +33,12 @@ export const openaiAdapter: Adapter = {
         }),
       });
       const headers: Record<string, string> = config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {};
-      const load = async (stream: boolean): Promise<any> => {
+      let variantIndex = 0;
+      const memory = noStream.has(memo) || noRequired.has(memo) || noJsonFormat.has(memo) ? 'warm' : 'cold';
+      const load = async (stream: boolean, variantReason: VariantReason): Promise<any> => {
         const useStream = stream && !!req.stream && !noStream.has(memo);
+        const request = observation?.observer.start('http_request', observation.adapter.id, { variantIndex: variantIndex++, variantReason,
+          features: { stream: useStream, toolChoice: json ? 'none' : listen || noRequired.has(memo) ? 'auto' : 'required', responseFormat: json && !noJsonFormat.has(memo), compatibilityMemory: memory } });
         const acc = { content: '', reasoning_content: '', calls: new Map<number, { id: string; name: string; arguments: string }>() };
         let usage: unknown;
         const event = (obj: any) => {
@@ -53,27 +58,31 @@ export const openaiAdapter: Adapter = {
           }
         };
         try {
-          const encoded = { ...body(), ...(useStream ? { stream: true } : {}) };
+          const encoded = observeSync(observation?.observer, request, 'request_encode', () => ({ ...body(), ...(useStream ? { stream: true } : {}) }));
           req.onRequest?.({ apiProtocol: 'chat_completions', tools: structuredClone('tools' in encoded ? encoded.tools ?? [] : []), ...('tool_choice' in encoded ? { toolChoice: encoded.tool_choice } : {}), ...(json ? { toolInstruction: jsonInstruction(tools, req.projection?.locale) } : {}) });
-          const result = await post(url, encoded, headers, signal, event, req.projection?.locale);
+          const result = await post(url, encoded, headers, signal, event, req.projection?.locale, observation && request ? { observer: observation.observer, request, protocol: 'chat_completions' } : undefined);
+          request?.finish('success');
           return result ?? { usage, choices: [{ message: { content: acc.content || null, reasoning_content: acc.reasoning_content,
             tool_calls: [...acc.calls.entries()].sort(([a], [b]) => a - b).map(([, c], i) => ({ id: c.id || `call_${i}`, type: 'function', function: { name: c.name, arguments: c.arguments } })),
           } }] };
         } catch (error) {
+          request?.finish(signal.aborted ? abortedOutcome(signal) : error instanceof HttpError ? error.observationOutcome : 'network_error');
           if (useStream && error instanceof HttpError && error.status === 400 && /stream/i.test(error.body) && !/tool_choice|response_format/i.test(error.body)) {
-            noStream.add(memo); return load(false);
+            noStream.add(memo); return load(false, 'stream_unsupported');
           }
           throw error;
         }
       };
       let data: any;
-      try { data = await load(true); } catch (error) {
+      try { data = await load(true, 'initial'); } catch (error) {
         if (!(error instanceof HttpError) || error.status !== 400) throw error;
-        if (!json && !listen && /tool_choice|grammar.*(?:compil|validation)|sandbox grammar/i.test(error.body) && !noRequired.has(memo)) noRequired.add(memo);
-        else if (json && /response_format|json_object/i.test(error.body) && !noJsonFormat.has(memo)) noJsonFormat.add(memo);
+        let reason: VariantReason;
+        if (!json && !listen && /tool_choice|grammar.*(?:compil|validation)|sandbox grammar/i.test(error.body) && !noRequired.has(memo)) { noRequired.add(memo); reason = 'tool_choice_unsupported'; }
+        else if (json && /response_format|json_object/i.test(error.body) && !noJsonFormat.has(memo)) { noJsonFormat.add(memo); reason = 'json_format_unsupported'; }
         else throw error;
-        data = await load(false);
+        data = await load(false, reason);
       }
+      return observeSync(observation?.observer, observation?.adapter, 'parse', () => {
       const msg = data?.choices?.[0]?.message;
       if (!msg || typeof msg !== 'object') return failure(started, gameText(req.projection?.locale, '返回里没有 choices[0].message'), { raw: data });
       const calls = (Array.isArray(msg.tool_calls) ? msg.tool_calls : []).map((c: any, i: number) => ({ id: c.id || `call_${i}`, name: String(c.function?.name ?? ''), arguments: String(c.function?.arguments ?? '{}') }));
@@ -82,17 +91,18 @@ export const openaiAdapter: Adapter = {
         thinking: msg.reasoning_content || msg.reasoning || msg.thinking || undefined, reply: msg.content || undefined,
         usage: tokenUsage(data.usage, 'chat_completions'),
       };
+      });
     });
   },
 };
 
 const PING: ToolSpec = { name: 'ping', title: '连通性测试', description: '仅用于接口测试；调用一次，参数填写 {"ok":true}。不产生游戏行动。', params: [{ kind: 'boolean', name: 'ok', label: '固定为 true' }] };
 
-export async function testConnection(config: AdapterConfig): Promise<{ ok: boolean; message: string; latencyMs: number }> {
+export async function testConnection(config: AdapterConfig, signal?: AbortSignal): Promise<{ ok: boolean; message: string; latencyMs: number }> {
   const { remoteAdapter } = await import('./adapters');
   const result = await remoteAdapter(config.apiProtocol).decide({ seat: 0,
     messages: [{ role: 'system', content: '这是一次接口连通性测试。' }, { role: 'user', content: '请调用 ping 工具，参数 ok 设为 true。' }],
-    tools: [PING], config: { ...config, timeoutSec: Math.min(config.timeoutSec, 30) },
+    tools: [PING], config: { ...config, timeoutSec: Math.min(config.timeoutSec, 30) }, signal,
   });
   return result.ok && result.call?.tool === 'ping' && result.call.args.ok === true
     ? { ok: true, message: '连接成功，模型返回了一次 ping 调用。', latencyMs: result.latencyMs }

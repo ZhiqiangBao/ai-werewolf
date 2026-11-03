@@ -1,14 +1,16 @@
 import { randomBytes } from 'node:crypto';
 import { actionKind, actionMenu, DEFAULT_GAME_LOCALE, gameText } from '@werewolf/protocol';
-import type { AdapterKind, AuditEntry, ControlAction, ModelRequestInfo, Projection, Seat, ToolCall, ToolSpec } from '@werewolf/protocol';
+import type { AdapterKind, AuditEntry, ControlAction, ModelRequestInfo, Projection, Seat, SeatTestResult, ToolCall, ToolSpec } from '@werewolf/protocol';
 import { abandonGame, buildRules, createGame, projectSeat, seatTools, submit, waitingSeats, type EngineResult, type SubmitInput } from '@werewolf/engine';
-import { buildMessages, feedbackMessages, getAdapter, redact, styleText, type Adapter, type AdapterConfig, type DecideResult, type TranscriptMessage } from '@werewolf/llm';
+import { buildMessages, feedbackMessages, getAdapter, redact, styleText, type Adapter, type AdapterConfig, type DecideRequest, type DecideResult, type TranscriptMessage } from '@werewolf/llm';
 import { NOT_TOOL_TURN, migrateThread, ensureCue, ownLine, readyToAct, syncThread, type ActionCue, type TurnHint, type SeatThread } from './agent';
 import { ApiFailure } from './room-failure';
 import { adapterConfig } from './room-model';
 import type { OwnedRoomFields, RoomReadRecord, RoomRuntimeRecord, RoomRuntimeState, Viewer } from './room-types';
 import type { SecretBox } from './secret';
 import type { RoomRecord } from './store';
+import { measured, missing, type ObservationSpan, type RoomObservability } from './observability/collector';
+import type { CancelReason, ObservationOutcome, ObservationRef } from '@werewolf/protocol';
 
 interface RuntimePorts {
   scheduleSave(rec: RoomReadRecord): void;
@@ -18,12 +20,30 @@ interface RuntimePorts {
   attachDeadline(rec: RoomReadRecord, seat: Seat, projection: Projection): Projection;
 }
 
+interface WorkObservation {
+  ref: ObservationRef;
+  work?: ObservationSpan;
+  segment?: ObservationSpan;
+  call?: ObservationSpan;
+  endedAt?: number;
+  firstDeltaMs?: number;
+  outcome?: ObservationOutcome;
+  adapterOutcome?: ObservationOutcome;
+  markAskedMs?: number;
+}
+
+interface SeatActionIds {
+  decisionId: string | undefined;
+  normal?: string;
+  interrupt?: string;
+}
+
 function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
-    const abort = () => reject(new Error('Request cancelled'));
-    if (signal.aborted) return abort();
+    const abort = () => { signal.removeEventListener('abort', abort); reject(new Error('Request cancelled')); };
+    if (signal.aborted) { work.catch(() => {}); return abort(); }
     signal.addEventListener('abort', abort, { once: true });
-    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+    work.then((value) => { signal.removeEventListener('abort', abort); resolve(value); }, (error) => { signal.removeEventListener('abort', abort); reject(error); });
   });
 }
 
@@ -64,7 +84,11 @@ function clampTexts(call: ToolCall, tools: ToolSpec[]): ToolCall {
 export class RoomRuntimeService {
   private readonly rooms = new Map<string, RoomRuntimeState>();
   private timer: ReturnType<typeof setInterval> | null = null;
-  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly sleep?: (ms: number) => Promise<void>;
+  private readonly cancelReasons = new WeakMap<AbortSignal, CancelReason>();
+  /** Per room and seat, retain only IDs for that seat's most recent decision. */
+  private readonly actionIds = new Map<string, Map<Seat, SeatActionIds>>();
+  private readonly connectionTests = new Map<string, Set<{ controller: AbortController; task: Promise<SeatTestResult> }>>();
 
   constructor(
     private readonly now: () => number,
@@ -72,8 +96,10 @@ export class RoomRuntimeService {
     private readonly secrets: SecretBox,
     private readonly adapters: Partial<Record<AdapterKind, Adapter>>,
     private readonly ports: RuntimePorts,
+    private readonly observability?: RoomObservability,
+    private readonly isActive: () => boolean = () => true,
   ) {
-    this.sleep = sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+    this.sleep = sleep;
   }
 
   startTimer(tickMs: number): void {
@@ -83,6 +109,7 @@ export class RoomRuntimeService {
   }
 
   register(rec: RoomRuntimeRecord, restored: boolean): void {
+    this.observability?.room(rec);
     if (restored) {
       if (rec.heardSeq === undefined) rec.heardSeq = rec.events.reduce((m, e) => Math.max(m, e.seq), 0);
       rec.threads ??= [];
@@ -96,6 +123,7 @@ export class RoomRuntimeService {
 
   /** 服务启动后继续推进进行中的对局。 */
   resumeAll(): void {
+    if (!this.isActive()) return;
     for (const live of this.rooms.values()) {
       if (live.rec.status === 'running') {
         this.armDeadlines(live, true);
@@ -106,11 +134,42 @@ export class RoomRuntimeService {
 
   stopTimer(): void {
     if (this.timer) clearInterval(this.timer);
+    this.timer = null;
   }
 
   /** 由兼容入口逐房间调用，保留取消该房间后立即落盘的退出顺序。 */
-  disposeRoom(rec: RoomRuntimeRecord): void {
-    for (const c of this.state(rec).inflight.values()) c.abort();
+  disposeRoom(rec: RoomRuntimeRecord): { pending: number; auditFailures: number } {
+    const live = this.state(rec);
+    live.gen += 1; live.again = false; live.stepBudget = 0;
+    live.disposeController.abort();
+    const tests = this.connectionTests.get(rec.id);
+    const pending = live.inflight.size + live.externalWaits + (tests?.size ?? 0);
+    let auditFailures = 0;
+    for (const call of live.pendingCalls.values()) {
+      try { this.ports.writeAudit(rec, { ...call.entry, latencyMs: Math.max(0, Math.round(performance.now() - call.startedAt)) }); }
+      catch { auditFailures++; }
+    }
+    live.pendingCalls.clear();
+    for (const c of live.inflight.values()) this.cancel(c, 'dispose');
+    for (const test of tests ?? []) test.controller.abort();
+    live.inflight.clear();
+    for (const thought of rec.thoughts ?? []) thought.live = false;
+    this.actionIds.delete(rec.id);
+    return { pending, auditFailures };
+  }
+
+  private actionId(roomId: string, seat: Seat, decisionId: string | undefined, interrupt = false): string {
+    let seats = this.actionIds.get(roomId);
+    if (!seats) { seats = new Map(); this.actionIds.set(roomId, seats); }
+    let ids = seats.get(seat);
+    if (!ids || ids.decisionId !== decisionId) { ids = { decisionId }; seats.set(seat, ids); }
+    const key = interrupt ? 'interrupt' : 'normal';
+    return ids[key] ??= this.observability!.id('action');
+  }
+
+  private cancel(controller: AbortController, reason: CancelReason): void {
+    this.cancelReasons.set(controller.signal, reason);
+    controller.abort();
   }
 
   /** 配置、候场和引擎事实变更共用既有的截止时间→取消→保存→通知顺序。 */
@@ -150,7 +209,7 @@ export class RoomRuntimeService {
       if (!rec.paused) {
         if (rec.timing) rec.deadlineRemainingMs = Object.fromEntries(Object.entries(rec.deadlines).map(([key, deadline]) => [key, Math.max(0, deadline - this.now())]));
         live.gen += 1;
-        for (const ctrl of live.inflight.values()) ctrl.abort();
+        for (const ctrl of live.inflight.values()) this.cancel(ctrl, 'pause');
         live.inflight.clear();
       }
       rec.paused = true;
@@ -211,6 +270,9 @@ export class RoomRuntimeService {
       gatePausedAt: rec.paused && rec.timing && rec.actionAvailableAt ? this.now() : undefined,
       gen: 0,
       inflight: new Map(),
+      disposeController: new AbortController(),
+      externalWaits: 0,
+      pendingCalls: new Map(),
     };
   }
 
@@ -220,7 +282,7 @@ export class RoomRuntimeService {
     live.gen += 1;
     live.again = false;
     live.stepBudget = 0;
-    for (const ctrl of live.inflight.values()) ctrl.abort();
+    for (const ctrl of live.inflight.values()) this.cancel(ctrl, 'end');
     for (const thought of rec.thoughts ?? []) thought.live = false;
     const res = abandonGame(rec.state);
     rec.state = res.state;
@@ -234,14 +296,26 @@ export class RoomRuntimeService {
     rec.status = 'ended';
   }
 
-  private apply(live: RoomRuntimeState, input: SubmitInput): EngineResult {
+  private apply(live: RoomRuntimeState, input: SubmitInput, causedBy?: ObservationRef): EngineResult {
     const rec = live.rec;
     if (rec.status !== 'running' || rec.state?.result) {
       return { state: rec.state!, events: [], error: { code: 'GAME_ENDED', reason: '对局已经结束' } };
     }
     if (rec.timing && rec.actionAvailableAt && this.now() < rec.actionAvailableAt) throw new ApiFailure(409, 'ACTION_NOT_OPEN', '推进间隔尚未结束，请稍后行动');
     const previous = rec.state?.pending;
-    const res = submit(rec.state!, input);
+    let action: ObservationSpan | undefined;
+    if (this.observability) {
+      const interrupt = projectSeat(rec.state!, rec.events, input.seat).interrupts.some((tool) => tool.name === input.call.tool);
+      const ref = { ...causedBy, ...this.observability.ref(rec, input.seat, previous?.id) };
+      const actionId = causedBy?.actionId ?? this.actionId(rec.id, input.seat, previous?.id, interrupt);
+      action = this.observability.begin('engine_action', { ...ref, actionId }, {
+        actionKind: input.auto ? 'automatic' : interrupt ? 'interrupt' : 'normal',
+        ...(causedBy?.callId ? { causedByCallId: causedBy.callId } : {}),
+      });
+    }
+    let res: EngineResult;
+    try { res = submit(rec.state!, input); }
+    catch (error) { action?.finish('local_error'); throw error; }
     rec.state = res.state;
     rec.events.push(...res.events);
     rec.actions.push(input);
@@ -255,16 +329,18 @@ export class RoomRuntimeService {
       }
     }
     this.changedState(live);
+    action?.finish(res.error ? 'rejected' : input.auto ? 'fallback' : 'accepted');
     return res;
   }
 
   private changedState(live: RoomRuntimeState): void {
     this.armDeadlines(live, false);
     const current = live.rec.state?.pending?.id;
+    if (live.rec.status !== 'running') this.actionIds.delete(live.rec.id);
     for (const [key, ctrl] of live.inflight) {
       // 旁听属于这条消息，不属于当时碰巧正在等待的行动；换下一位不能取消别人的收听。
       if (!key.includes(':hear:') && (!current || !key.startsWith(`${current}:`))) {
-        ctrl.abort();
+        this.cancel(ctrl, 'decision_changed');
         if (live.inflight.get(key) === ctrl) live.inflight.delete(key);
       }
     }
@@ -344,6 +420,7 @@ export class RoomRuntimeService {
   }
 
   tick(): void {
+    if (!this.isActive()) return;
     for (const live of this.rooms.values()) {
       const rec = live.rec;
       const d = rec.state?.pending;
@@ -367,7 +444,7 @@ export class RoomRuntimeService {
 
   /** 每房间复用一个推进任务；重复触发只安排当前任务结束后重新检查。 */
   private pump(live: RoomRuntimeState): Promise<void> {
-    if (live.rec.status === 'ended') return Promise.resolve();
+    if (!this.isActive() || live.rec.status === 'ended') return Promise.resolve();
     if (live.running) {
       live.again = true;
       return live.running;
@@ -387,7 +464,7 @@ export class RoomRuntimeService {
         this.changedState(live);
       } finally {
         live.running = null;
-        if (live.again && live.rec.status === 'running') void this.pump(live);
+        if (this.isActive() && live.again && live.rec.status === 'running') void this.pump(live);
       }
     })();
     return live.running;
@@ -398,10 +475,36 @@ export class RoomRuntimeService {
     while (live?.running) await live.running;
   }
 
+  testSeat(rec: RoomRuntimeRecord, run: (signal: AbortSignal) => Promise<SeatTestResult>): Promise<SeatTestResult> {
+    const controller = new AbortController();
+    const tests = this.connectionTests.get(rec.id) ?? new Set(); this.connectionTests.set(rec.id, tests);
+    let cancel!: () => void;
+    const cancelled = new Promise<SeatTestResult>((resolve) => { cancel = () => resolve({ ok: false, message: '服务正在关闭，连接检查已取消。', latencyMs: 0 }); controller.signal.addEventListener('abort', cancel, { once: true }); });
+    const task = Promise.race([run(controller.signal), cancelled]);
+    const entry = { controller, task }; tests.add(entry);
+    void task.then(() => { controller.signal.removeEventListener('abort', cancel); tests.delete(entry); }, () => { controller.signal.removeEventListener('abort', cancel); tests.delete(entry); });
+    return task;
+  }
+
+  async whenStopped(roomId: string): Promise<void> {
+    const live = this.rooms.get(roomId);
+    const pending: Promise<unknown>[] = [...(this.connectionTests.get(roomId) ?? [])].map((entry) => entry.task);
+    if (live?.running) pending.push(live.running);
+    await Promise.allSettled(pending);
+  }
+
   private async pumpOnce(live: RoomRuntimeState): Promise<void> {
     const rec = live.rec;
     const gen = live.gen;
     for (;;) {
+      const observed = this.observability;
+      const waveRef = observed ? { ...observed.ref(rec), waveId: observed.id('wave') } : undefined;
+      const waveSpan = waveRef ? observed!.begin('wave', waveRef, {}, waveRef.waveId) : undefined;
+      const members: ObservationSpan[] = [];
+      let outcome: ObservationOutcome = 'empty';
+      let preparedMs: number | undefined;
+      let awaitMs: number | undefined;
+      try {
       if (live.gen !== gen) return;
       if (rec.status !== 'running' && rec.status !== 'ended') return;
       const stepping = rec.paused && live.stepBudget > 0;
@@ -410,13 +513,23 @@ export class RoomRuntimeService {
         const availableAt = rec.actionAvailableAt;
         const decision = rec.state?.pending?.id;
         if (stepping && live.gatePausedAt !== undefined && (rec.actionGateRemainingMs ?? availableAt - live.gatePausedAt) > 0) return;
-        if (!stepping && availableAt > this.now()) await this.sleep(availableAt - this.now());
+        if (!stepping && availableAt > this.now()) await this.observedWait(live, 'gate_wait', availableAt - this.now(), waveRef);
         if (live.gen !== gen || rec.paused && !stepping) return;
         if (rec.state?.pending?.id !== decision) continue;
         if (rec.actionAvailableAt !== availableAt || !stepping && availableAt > this.now()) continue;
         if (rec.actionAvailableAt === availableAt) { delete rec.actionAvailableAt; this.changedState(live); }
       }
+      const prepareStarted = observed?.clock.monotonicMs();
       const wave = this.prepareWave(live);
+      if (prepareStarted !== undefined) preparedMs = observed!.clock.monotonicMs() - prepareStarted;
+      if (wave?.length && observed && waveRef) {
+        outcome = 'success';
+        for (const item of wave) {
+          const ref = { ...observed.ref(rec, item.seat, rec.state?.pending?.id), ...waveRef, seatRef: `s${item.seat}` };
+          const workId = observed.id('work');
+          members.push(observed.begin('work', { ...ref, workId }, { purpose: item.action ? 'action' : 'listen', ...observed.provider(rec.seats[item.seat - 1]) }, workId));
+        }
+      }
       if (!wave) {
         if (rec.status !== 'running' || !rec.state?.pending) return;
         if (!waitingSeats(rec.state).some((s) => !this.isHuman(rec, s))) return;
@@ -425,15 +538,34 @@ export class RoomRuntimeService {
       if (!wave.length) continue;
       if (stepping) live.stepBudget -= 1;
       const decision = rec.state?.pending?.id ?? 'end';
-      if (!rec.timing && !stepping && rec.aiPacingMs > 0) await this.sleep(rec.aiPacingMs);
+      if (!rec.timing && !stepping && rec.aiPacingMs > 0) await this.observedWait(live, 'pacing_wait', rec.aiPacingMs, waveRef);
       if (live.gen !== gen || (rec.paused && !stepping) || (rec.status !== 'running' && rec.status !== 'ended')) return;
       const actions = wave.filter((w) => w.action).map((w) => w.seat);
-      await Promise.all(wave.map((w) => (w.action ? this.runAi(live, w.seat, decision) : this.receive(live, w.seat, decision))));
+      const awaitStarted = observed?.clock.monotonicMs();
+      try {
+        await Promise.all(wave.map((w, i) => (w.action ? this.runAi(live, w.seat, decision, members[i]) : this.receive(live, w.seat, decision, members[i]))));
+      } finally { if (awaitStarted !== undefined) awaitMs = observed!.clock.monotonicMs() - awaitStarted; }
+      if (live.gen !== gen || !this.isActive()) return;
+      const waveAwaitEnded = awaitStarted === undefined || awaitMs === undefined ? undefined : awaitStarted + awaitMs;
+      if (observed && waveAwaitEnded !== undefined) for (const member of members) if (member.endedAt !== undefined) {
+        const tail = observed.begin('local_span', member.ref, { parentId: member.id, ...member.fields });
+        tail.finish('success', { memberTailWaitMs: measured(waveAwaitEnded - member.endedAt) });
+      }
       if (stepping && rec.paused && rec.timing && live.gen === gen) rec.deadlineRemainingMs = Object.fromEntries(Object.entries(rec.deadlines).map(([key, deadline]) => [key, Math.max(0, deadline - this.now())]));
       this.ports.scheduleSave(live.rec);
       if (rec.status !== 'running') continue;
       const stuck = actions.length > 0 && rec.state?.pending?.id === decision && actions.every((s) => waitingSeats(rec.state!).includes(s));
       if (stuck) throw new Error(`决策 ${decision} 没有推进`);
+      } catch (error) {
+        outcome = 'await_rejected';
+        throw error;
+      } finally {
+        // Promise.all 失败可能早于其余成员；保留它们的真实终态，不提前标成取消。
+        if (outcome !== 'await_rejected') for (const member of members) if (member.endedAt === undefined) member.finish(live.gen !== gen || rec.paused ? 'cancelled' : 'skipped');
+        waveSpan?.finish(outcome, { waveWallMs: measured(waveSpan.elapsed()),
+          ...(preparedMs === undefined ? {} : { wavePrepareMs: measured(preparedMs) }),
+          ...(awaitMs === undefined ? {} : { waveAwaitMs: measured(awaitMs) }) }, { members: members.length });
+      }
     }
   }
 
@@ -579,8 +711,142 @@ export class RoomRuntimeService {
     }
   }
 
+  private receive(live: RoomRuntimeState, seat: Seat, decision: string, work?: ObservationSpan): Promise<void> {
+    return this.observeWork(live, seat, decision, false, work);
+  }
+
+  private runAi(live: RoomRuntimeState, seat: Seat, decision: string, work?: ObservationSpan): Promise<void> {
+    return this.observeWork(live, seat, decision, true, work);
+  }
+
+  private observeWork(live: RoomRuntimeState, seat: Seat, decision: string, action: boolean, selected?: ObservationSpan): Promise<void> {
+    if (!this.observability) return action ? this.runAiWork(live, seat, decision) : this.receiveWork(live, seat, decision);
+    const ref = selected?.ref ?? this.observability.ref(live.rec, seat, decision);
+    const work = selected ?? this.observability.begin('work', ref, { purpose: action ? 'action' : 'listen', ...this.observability.provider(live.rec.seats[seat - 1]) });
+    const context: WorkObservation = { ref: { ...ref, workId: work.id }, work };
+    const gen = live.gen;
+    return (async () => {
+      try {
+        await (action ? this.runAiWork(live, seat, decision, context) : this.receiveWork(live, seat, decision, context));
+      } catch (error) {
+        context.outcome ??= 'local_error';
+        throw error;
+      } finally {
+        const outcome = context.outcome ?? (live.gen !== gen ? 'cancelled' : 'skipped');
+        this.finishCall(context, outcome);
+        context.segment?.finish(outcome, { actionSegmentMs: measured(context.segment.elapsed()),
+          ...(context.markAskedMs === undefined ? {} : { markAskedMs: measured(context.markAskedMs) }) });
+        work.finish(outcome);
+      }
+    })();
+  }
+
+  private invokeCall(live: RoomRuntimeState, adapter: Adapter, request: DecideRequest, controller: AbortController,
+    context: WorkObservation | undefined, decisionId: string): Promise<DecideResult> {
+    const gen = live.gen;
+    const valid = () => this.isActive() && live.gen === gen && !controller.signal.aborted;
+    const guarded: DecideRequest = { ...request,
+      onDelta: request.onDelta ? (delta) => { if (valid()) request.onDelta!(delta); } : undefined,
+      onRequest: request.onRequest ? (info) => { if (valid()) request.onRequest!(info); } : undefined };
+    const track = (dispatch: () => Promise<DecideResult>): Promise<DecideResult> => {
+      const cfg = live.rec.seats[request.seat - 1];
+      const item = { startedAt: performance.now(), entry: { seat: request.seat, model: cfg.adapter === 'mock' ? 'mock' : cfg.model,
+        decisionId, projectionVersion: request.projection?.version ?? 0, purpose: request.toolChoice === 'auto' ? 'listen' as const : 'action' as const,
+        apiProtocol: request.config.apiProtocol, ok: false, failureKind: 'cancelled' as const, error: 'dispose' } };
+      live.pendingCalls.set(controller, item);
+      let pending: Promise<DecideResult>;
+      try { pending = dispatch(); } catch (error) { live.pendingCalls.delete(controller); throw error; }
+      return pending.then((result) => { if (live.pendingCalls.get(controller) === item) live.pendingCalls.delete(controller); return result; }, (error) => { if (live.pendingCalls.get(controller) === item) live.pendingCalls.delete(controller); throw error; });
+    };
+    if (!context || !this.observability) return track(() => abortable(adapter.decide(guarded), controller.signal));
+    const callId = this.observability.id('call');
+    const ref: ObservationRef = { ...context.ref, callId };
+    const metadata = this.observability.provider(live.rec.seats[request.seat - 1]);
+    context.call = this.observability.begin('model_call', ref, { ...metadata, purpose: request.toolChoice === 'auto' ? 'listen' : 'action',
+      correctionAttempt: request.toolChoice === 'auto' ? undefined : context.call ? (context.call.fields.correctionAttempt ?? 0) + 1 : 1 }, callId);
+    context.endedAt = undefined;
+    context.firstDeltaMs = undefined;
+    context.adapterOutcome = undefined;
+    context.outcome = undefined;
+    const cancel = () => this.finishCall(context, 'cancelled', this.cancelReasons.get(controller.signal) ?? 'unknown');
+    controller.signal.addEventListener('abort', cancel, { once: true });
+    const call = context.call;
+    const preDispatch = context.work ? measured(call.started - context.work.started) : missing('not_applicable');
+    call.fields.metrics = { localPreDispatchMs: preDispatch };
+    let pending: Promise<DecideResult>;
+    try {
+      const port = this.observability.adapter(ref);
+      pending = track(() => abortable(adapter.decide({ ...guarded, observation: { ...port, emit: (event) => {
+        if (!valid() && !(this.isActive() && controller.signal.aborted && event.phase === 'end')) return;
+        if (event.kind === 'adapter_execution' && event.phase === 'end') context.adapterOutcome = event.outcome;
+        port.emit(event);
+      } } }), controller.signal));
+    } catch (error) {
+      controller.signal.removeEventListener('abort', cancel);
+      context.endedAt = this.observability.clock.monotonicMs();
+      this.finishCall(context, 'local_error');
+      throw error;
+    }
+    return pending.then((result) => {
+      context.endedAt = this.observability!.clock.monotonicMs();
+      controller.signal.removeEventListener('abort', cancel);
+      return result;
+    }, (error) => {
+      context.endedAt = this.observability!.clock.monotonicMs();
+      controller.signal.removeEventListener('abort', cancel);
+      this.finishCall(context, controller.signal.aborted ? 'cancelled' : 'network_error', controller.signal.aborted ? this.cancelReasons.get(controller.signal) ?? 'unknown' : undefined);
+      throw error;
+    });
+  }
+
+  private resultOutcome(result: DecideResult, error: string | undefined, context?: WorkObservation): ObservationOutcome {
+    if (!error) return 'success';
+    if (context?.adapterOutcome === 'parse_error' || context?.adapterOutcome === 'local_error') return context.adapterOutcome;
+    if (result.failureKind === 'timeout') return 'timeout';
+    if (result.failureKind === 'cancelled') return 'cancelled';
+    if (result.failureKind === 'http') return 'http_error';
+    if (result.failureKind === 'network') return 'network_error';
+    return 'invalid_tool';
+  }
+
+  private finishCall(context: WorkObservation | undefined, outcome: ObservationOutcome, cancelReason?: CancelReason): void {
+    if (!context?.call || !this.observability) return;
+    context.outcome = outcome;
+    const call = context.call;
+    const endedAt = context.endedAt ?? this.observability.clock.monotonicMs();
+    call.finish(outcome, { ...call.fields.metrics, modelCallMs: measured(endedAt - call.started), providerQueueMs: missing(),
+      legacyFirstDeltaMs: context.firstDeltaMs === undefined ? missing(outcome === 'cancelled' ? 'cancelled_before_point' : 'not_emitted') : measured(context.firstDeltaMs) },
+      cancelReason ? { cancelReason } : {}, endedAt);
+  }
+
+  private writeObservedAudit(live: RoomRuntimeState, context: WorkObservation | undefined, entry: Omit<AuditEntry, 'id' | 'at'>): void {
+    this.ports.writeAudit(live.rec, context ? { ...entry, observation: context.call?.ref ?? context.ref } : entry);
+  }
+
+  private observedWait(live: RoomRuntimeState, operation: 'gate_wait' | 'pacing_wait', plannedMs: number, ref?: ObservationRef): Promise<void> {
+    const signal = live.disposeController.signal;
+    const span = this.observability?.begin('local_span', ref ?? this.observability.ref(live.rec), { operation });
+    const gen = live.gen;
+    let wait: Promise<void>;
+    if (this.sleep) {
+      const external = this.sleep(plannedMs);
+      live.externalWaits++;
+      void external.then(() => { live.externalWaits--; }, () => { live.externalWaits--; });
+      wait = abortable(external, signal);
+    } else wait = new Promise<void>((resolve, reject) => {
+      if (signal.aborted) return reject(new Error('Request cancelled'));
+      const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve(); }, plannedMs);
+      const abort = () => { clearTimeout(timer); signal.removeEventListener('abort', abort); reject(new Error('Request cancelled')); };
+      signal.addEventListener('abort', abort, { once: true });
+    });
+    if (!span) return wait;
+    return wait.then(() => span.finish(live.gen === gen ? 'success' : 'cancelled', {
+      plannedWaitMs: measured(plannedMs), [operation === 'gate_wait' ? 'gateWaitMs' : 'pacingWaitMs']: measured(span.elapsed())
+    }), (error) => { span.finish(live.gen === gen ? 'local_error' : 'cancelled'); throw error; });
+  }
+
   /** 旁听属于消息；阶段变化不直接取消，提交打断前再次校验当前许可。 */
-  private async receive(live: RoomRuntimeState, seat: Seat, decision: string): Promise<void> {
+  private async receiveWork(live: RoomRuntimeState, seat: Seat, decision: string, context?: WorkObservation): Promise<void> {
     const rec = live.rec;
     const cfg = rec.seats[seat - 1];
     const adapter = this.adapters[cfg.adapter] ?? getAdapter(cfg.adapter, cfg.apiProtocol);
@@ -603,13 +869,14 @@ export class RoomRuntimeService {
       try {
         config = { ...adapterConfig(cfg, this.secrets), timeoutSec: aiTimeoutSec('', cfg.timeoutSec) };
       } catch {
-        this.ports.writeAudit(live.rec, { seat, model, decisionId: decision, projectionVersion: projection.version, purpose: 'listen', ok: false, error: '密钥无法解密（主密钥可能已更换）' });
+        if (context) context.outcome = 'local_error';
+        this.writeObservedAudit(live, context, { seat, model, decisionId: decision, projectionVersion: projection.version, purpose: 'listen', ok: false, error: '密钥无法解密（主密钥可能已更换）' });
         return;
       }
       if (live.gen !== gen || ctrl.signal.aborted) return;
       let result: DecideResult;
       try {
-        result = await abortable(adapter.decide({
+        result = await this.invokeCall(live, adapter, {
           seat,
           projection,
           messages,
@@ -622,10 +889,11 @@ export class RoomRuntimeService {
           onRequest: (info) => { request = info; },
           onDelta: (delta) => {
             firstDeltaMs ??= this.now() - started;
+            if (context) context.firstDeltaMs = firstDeltaMs;
             thinkingChars += delta.thinking?.length ?? 0;
             replyChars += delta.reply?.length ?? 0;
           },
-        }), ctrl.signal);
+        }, ctrl, context, decision);
       } catch (e) {
         if (live.gen !== gen || ctrl.signal.aborted) return;
         result = { ok: false, fatal: true, error: redact((e as Error).message, config.apiKey), failureKind: 'network', toolCallIds: [], latencyMs: 0 };
@@ -639,10 +907,11 @@ export class RoomRuntimeService {
         // 旁听生成的普通行动不能借用随后到来的行动许可；错误只作为本次工具反馈返回。
         error = !allowed ? gameText(rec.state!.rules.locale, NOT_TOOL_TURN)
           : rec.timing && rec.actionAvailableAt && this.now() < rec.actionAvailableAt ? gameText(rec.state!.rules.locale, '推进间隔尚未结束，请稍后行动')
-            : this.apply(live, { seat, call }).error?.reason;
+            : this.apply(live, { seat, call }, context?.call?.ref).error?.reason;
       }
+      this.finishCall(context, this.resultOutcome(result, error, context));
       this.rememberReply(thread, result, error);
-      this.ports.writeAudit(live.rec, {
+      this.writeObservedAudit(live, context, {
         seat, model, decisionId: decision, projectionVersion: projection.version, purpose: 'listen',
         ok: !error, messages, request, response: result.raw ?? result.call,
         ...(result.call ? { toolCall: result.call } : {}), ...(error ? { error: redact(error, config.apiKey) } : {}),
@@ -655,7 +924,7 @@ export class RoomRuntimeService {
     }
   }
 
-  private async runAi(live: RoomRuntimeState, seat: Seat, decision: string): Promise<void> {
+  private async runAiWork(live: RoomRuntimeState, seat: Seat, decision: string, context?: WorkObservation): Promise<void> {
     const rec = live.rec;
     const cfg = rec.seats[seat - 1];
     const adapter = this.adapters[cfg.adapter] ?? getAdapter(cfg.adapter, cfg.apiProtocol);
@@ -663,7 +932,14 @@ export class RoomRuntimeService {
     if (rec.state?.pending?.id !== decision || !readyToAct(thread, this.actionCue(rec))) return;
     ensureCue(thread, this.actionCue(rec));
     // 此刻才真正发出行动请求，排队、旁听和 AI 展示间隔均不占用行动时限。
+    if (context && this.observability) {
+      const actionId = this.actionId(rec.id, seat, decision);
+      const actionSegmentId = this.observability.id('segment');
+      context.ref = { ...context.ref, actionId, actionSegmentId };
+      context.segment = this.observability.begin('action_segment', context.ref, {}, actionSegmentId);
+    }
     this.markAsked(live, seat);
+    if (context?.segment) context.markAskedMs = context.segment.elapsed();
     this.ports.scheduleSave(live.rec);
     this.ports.notify(live.rec);
     const projection = this.ports.attachDeadline(rec, seat, projectSeat(rec.state!, rec.events, seat));
@@ -684,7 +960,8 @@ export class RoomRuntimeService {
       try {
         config = { ...adapterConfig(cfg, this.secrets), timeoutSec: limit };
       } catch {
-        this.ports.writeAudit(live.rec, { seat, model, decisionId: decision, projectionVersion: projection.version, ok: false, error: '密钥无法解密（主密钥可能已更换），已托管' });
+        if (context) context.outcome = 'local_error';
+        this.writeObservedAudit(live, context, { seat, model, decisionId: decision, projectionVersion: projection.version, ok: false, error: '密钥无法解密（主密钥可能已更换），已托管' });
         this.fallbackIfWaiting(live, seat, decision, 'request_failed');
         return;
       }
@@ -704,7 +981,7 @@ export class RoomRuntimeService {
         let result: DecideResult;
         let request: ModelRequestInfo | undefined;
         try {
-          result = await abortable(adapter.decide({
+          result = await this.invokeCall(live, adapter, {
             seat,
             projection,
             messages,
@@ -716,28 +993,31 @@ export class RoomRuntimeService {
             onRequest: (info) => { request = info; },
             onDelta: (delta) => {
               firstDeltaMs ??= this.now() - started;
+            if (context) context.firstDeltaMs = firstDeltaMs;
               thinkingChars += delta.thinking?.length ?? 0;
               replyChars += delta.reply?.length ?? 0;
               if (stillWaiting() && !ctrl.signal.aborted) this.pushThought(live, seat, decision, delta);
             },
-          }), ctrl.signal);
+          }, ctrl, context, decision);
           last = result;
         } catch (e) {
           if (live.gen !== gen || ctrl.signal.aborted || rec.status !== 'running') return;
           result = { ok: false, fatal: true, error: redact((e as Error).message, config.apiKey), failureKind: 'network', toolCallIds: [], latencyMs: 0 };
         }
         if (!stillWaiting()) {
+          this.finishCall(context, 'stale');
           if (live.gen === gen) this.rememberReply(thread, result, '决策已经结束，这次结果作废，不再执行。');
-          this.ports.writeAudit(live.rec, { seat, model, decisionId: decision, projectionVersion: projection.version, purpose: 'action', attempt, deadline, failureKind: 'cancelled', ok: false, messages, request, apiProtocol: config.apiProtocol, error: '决策已经结束，这次结果作废', latencyMs: result.latencyMs });
+          this.writeObservedAudit(live, context, { seat, model, decisionId: decision, projectionVersion: projection.version, purpose: 'action', attempt, deadline, failureKind: 'cancelled', ok: false, messages, request, apiProtocol: config.apiProtocol, error: '决策已经结束，这次结果作废', latencyMs: result.latencyMs });
           return;
         }
         let error = result.ok && result.call ? undefined : result.error ?? '没有调用工具';
         if (result.ok && result.call) {
-          const res = this.apply(live, { seat, call: clampTexts(result.call, tools), decisionId: decision });
+          const res = this.apply(live, { seat, call: clampTexts(result.call, tools), decisionId: decision }, context?.call?.ref);
           if (res.error) error = res.error.reason;
         }
+        this.finishCall(context, this.resultOutcome(result, error, context));
         this.rememberReply(thread, result, error, rec.state?.pending?.id === decision ? rec.state.pending.tools[seat] : undefined);
-        this.ports.writeAudit(live.rec, {
+        this.writeObservedAudit(live, context, {
           seat,
           model,
           decisionId: decision,
@@ -762,7 +1042,7 @@ export class RoomRuntimeService {
       }
       this.fallbackIfWaiting(live, seat, decision, 'invalid_tool');
     } finally {
-      this.finishThought(live, seat, decision, last);
+      if (live.gen === gen && this.isActive()) this.finishThought(live, seat, decision, last);
       if (live.inflight.get(key) === ctrl) live.inflight.delete(key);
     }
   }

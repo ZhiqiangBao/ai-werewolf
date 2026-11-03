@@ -378,6 +378,7 @@ export interface ModelDraft {
 
 /** 模型名单里的一条。没有密钥明文。 */
 export interface ModelPresetView {
+  lifecycle?: 'active' | 'disabled' | 'archived';
   id: string;
   label: string;
   model: string;
@@ -479,6 +480,8 @@ export interface SeatTestResult {
 
 export type ControlAction = 'pause' | 'resume' | 'step' | 'end';
 
+export type * from './observation';
+
 export interface ActResult {
   ok: boolean;
   error?: ApiError;
@@ -494,6 +497,7 @@ export interface ModelRequestInfo {
 }
 
 export interface AuditEntry {
+  observation?: import('./observation').ObservationRef;
   apiProtocol?: ApiProtocol;
   usage?: TokenUsage;
   id: number;
