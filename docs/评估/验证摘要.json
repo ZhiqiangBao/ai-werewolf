@@ -1,0 +1,101 @@
+{
+  "date": "2026-11-03",
+  "baseCommit": "c46c0121717b86897e3a5f29ab3bb1b9107aeba6",
+  "runtime": "v24.18.1",
+  "platform": "win32",
+  "arch": "x64",
+  "tests": {
+    "command": "node node_modules/vitest/vitest.mjs run [13 files listed below] --reporter=json --outputFile=data/diagnostics/four-evaluations/integration-tests.json",
+    "success": true,
+    "passed": 55,
+    "failed": 0,
+    "total": 55,
+    "files": [
+      {
+        "path": "apps/server/test/http-factory.test.ts",
+        "status": "passed",
+        "tests": 2
+      },
+      {
+        "path": "apps/server/test/human-http.test.ts",
+        "status": "passed",
+        "tests": 6
+      },
+      {
+        "path": "apps/server/test/invite-network.test.ts",
+        "status": "passed",
+        "tests": 7
+      },
+      {
+        "path": "apps/server/test/shutdown-integration.test.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "apps/server/test/shutdown.test.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "apps/web/test/speech-output.test.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "apps/web/test/speech.test.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "packages/session/test/audio-lifecycle-http.test.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "packages/session/test/audio-lifecycle.test.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "packages/session/test/event-store-prototype.test.ts",
+        "status": "passed",
+        "tests": 6
+      },
+      {
+        "path": "packages/session/test/human.test.ts",
+        "status": "passed",
+        "tests": 12
+      },
+      {
+        "path": "packages/session/test/model-quality-evaluation.test.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "packages/session/test/speech.test.ts",
+        "status": "passed",
+        "tests": 6
+      }
+    ],
+    "rawSha256": "0db0c9c7e51da5fb3adecb040c647bfaf8b76ab922ac4b17ae4b27bbc6b156c6"
+  },
+  "typecheck": {
+    "command": "node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
+    "exitCode": 0
+  },
+  "sourceSha256": {
+    "apps/server/src/main.ts": "a97a8d06e70896875da8c75e9cca6c33137e912fa5839c1c7232c4ae49cef458",
+    "apps/server/src/http-server.ts": "16b2ea7267538787fe1eae99166769fde2a28e087ba94a482f611837e4387cc5",
+    "apps/server/test/http-factory.test.ts": "0112eacec0375fac14b1a2fb57fc67ba5a72cc7f4681335f60e70980a1d31347",
+    "packages/session/scripts/audio-lifecycle-measure.ts": "3f3695d2dd5d7f5fab88533f093ad3d03570b9f9c5aee9d3967e723f3f576876",
+    "packages/session/scripts/event-store-child.ts": "eaa03b3e576893f0c4b9b39cfbc7cb56516c314f9eda136d775c99fcdb217bc5",
+    "packages/session/scripts/event-store-fixture.ts": "0b169578eaadb0e3461f825d0f0be0c3f9946c5eeb4be42e97cfeddd532a6ac9",
+    "packages/session/scripts/event-store-measure.ts": "6948f4add3bd45f98a3cf784e9dccf154c3de71bcdae465904874675458e11b8",
+    "packages/session/scripts/event-store-prototype.ts": "596a34d9ee3ce3e44e2afbba14629226d276c74f941b825ab7b47f42b49ab4d5",
+    "packages/session/scripts/model-quality-evaluation.ts": "ca7d1406cf5ca29443b715af5a4e41af57b53e0bbb5560dffa302c9e5448fd94",
+    "packages/session/test/audio-lifecycle-http.test.ts": "9b11488779093c653ea1984f21caa60b315fcd9e4d5b9f5e7dcca361069fc2d1",
+    "packages/session/test/audio-lifecycle.test.ts": "f056c0ecceee28c651698b8095bd8e07d22ac9309d0174b40d09e8473f449e48",
+    "packages/session/test/event-store-prototype.test.ts": "412e9fd4e140739f17d48a1a8871923c1d53ab5ce38f124c15e809a020ef9dda",
+    "packages/session/test/model-quality-evaluation.test.ts": "78bf19b064f3a721abd367dc64f0c36b8748c5b9ae7fbc4e6a4f5bbbf6f37840"
+  }
+}
