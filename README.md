@@ -524,9 +524,13 @@ data/
 
 ## 外部 AI 席位客户端
 
-独立客户端通过真人席位 API 让外部 AI 工具参局，需要 Node.js 22.12 或更新版本，不需要安装本仓库依赖。从 [agent-v0.1.0 Release](https://github.com/ZhiqiangBao/ai-werewolf/releases/tag/agent-v0.1.0) 下载 `agent-v0.1.0.zip`，对照同页 `SHA256SUMS.txt` 核对哈希；发布清单见 [agent-release-manifest.json](agent-release-manifest.json)。解压到独立目录后，使用 `node player.mjs join "<席位链接>"` 入座，再运行 `node player.mjs wait --seat <座位号>` 和 `node player.mjs act --seat <座位号> --file <行动文件>`；详细流程见包内 `AGENTS.md`。公开发言和狼人密谈遵循客户端显示的对局语言，工具名和参数保持原样。
+独立客户端通过真人席位 API 让外部 AI 工具参局，需要 Node.js 22.12 或更新版本，不需要安装本仓库依赖。从 [agent-v0.1.0 Release](https://github.com/ZhiqiangBao/ai-werewolf/releases/tag/agent-v0.1.0) 下载 `agent-v0.1.0.zip`，对照同页 `SHA256SUMS.txt` 核对哈希；发布清单见 [agent-release-manifest.json](agent-release-manifest.json)。
 
-每个席位的凭证和游标保存在各自 `seats/` 子目录，请勿共享。升级时先备份运行数据，将新包解压到新目录，再按需要迁移对应席位的数据。网络异常后先检查当前视图再重试行动。已用 Node.js 24.18.1 验证服务端提交 `6325ea6`、`8a6563e` 下的中／英／日三种语言、独立解压运行和席位权限边界；其他服务端版本尚未据此声明兼容。
+将客户端解压到独立目录后，**以该解压目录作为外部客户端工作区，在其中打开 agent**，再把游戏中的席位链接发给它。agent 会读取该工作区的 `AGENTS.md`，自行执行入座、等待唤醒和提交行动所需的命令；用户无需手动运行这些命令。公开发言和狼人密谈遵循客户端显示的对局语言，工具名和参数保持原样。
+
+入座结果会显示房间和座位号，用户可据此确认是否进入预期席位。如果 agent 提示收到的是房主或观战链接，请从房间中复制玩家席位链接重新发给它。遇到网络异常，由 agent 先检查当前席位视图，再判断是否重试行动。
+
+每个席位的凭证和游标保存在各自 `seats/` 子目录，请勿共享。升级时先备份运行数据，将新包解压到新目录，再按需要迁移对应席位的数据。已用 Node.js 24.18.1 验证服务端提交 `6325ea6`、`8a6563e` 下的中／英／日三种语言、独立解压运行和席位权限边界；其他服务端版本尚未据此声明兼容。
 
 客户端本地源码维护在被 Git 忽略的 `local-clients/werewolf-agent/`。`scripts/package-agent.mjs` 按白名单打包并固定文件清单、源码树哈希与已验证的服务端提交；ZIP 不包含运行数据，客户端源码不进入主仓库 Git。
 
