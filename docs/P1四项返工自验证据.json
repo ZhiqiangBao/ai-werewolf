@@ -8,7 +8,10 @@
     "branch": "codex/observability",
     "auditDocumentsCommit": "ce233f6668939b0ca95fdb3d3b1bd943d3c9cd10",
     "auditedImplementation": "a2e7a67069660c7b94dbd7b996867b2c65654938",
-    "mainAncestor": "4d8a7374df8231a8b3634723648c66130be84db8",
+    "mainAtVerification": "4d8a7374df8231a8b3634723648c66130be84db8",
+    "mainIsAncestorOfImplementation": false,
+    "mergedRefactorHeadAncestor": "19341c03eefa869780bf5e9e438310f5dcb3ca93",
+    "ancestryCorrection": "External re-audit corrected the former mainAncestor label: the merged refactor head is an ancestor, but the main merge commit is not. Validation and raw execution records are unchanged.",
     "implementationCommit": "6b9d5b42bb3abd017085e874d0a5d445b6bdb265",
     "githubRemote": "https://github.com/ZhiqiangBao/ai-werewolf.git",
     "preexistingGitignoreDiff": "retained unstaged, not part of rework"
