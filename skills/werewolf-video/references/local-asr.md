@@ -25,7 +25,7 @@ ASR 默认关闭（`off`），按需启用，不会因制作视频自动产生�
 
 成功的识别结果按音频、provider、模型和选项缓存；复用缓存不会再次请求服务。转写与原稿不一致会列为 `needs-review`，错误或不完整转写列为 `failure`。原稿不会被自动改写。默认 `off` 时跳过此阶段，状态为 `not-checked-explicitly-disabled`。
 
-Q8 的本地识别只提供转写，不提供可用于字幕的词级时间。日语显式启用 Qwen 后可用该次响应的 `--align` 词边界；若缺失或检查失败，再明确选择 `--alignment-provider=qwen-token-plan` 获取独立对齐。英语选本地或 MiMo 时，若词时间缺失或检查不通过，也须明确选择 `--alignment-provider=qwen-token-plan`；否则以 `alignment-required` 失败。额外对齐请求计入报告的 `alignmentRequests`；可复用的 Qwen 主识别响应不会重复请求。当前外部词边界导入仅支持英语、日语；中文不支持外部补对齐，若原 TTS 字时不可靠须停止并取得可靠字时，不能把 Q8 转写当作对齐。
+Q8 的本地识别只提供转写，不提供可用于字幕的词级时间。日语显式启用 Qwen 后可用该次响应的 `--align` 词边界；若缺失或检查失败，保留检查点和原响应，取得可验证且绑定原音的独立词边界后，按下文显式导入。不能添加 `--alignment-provider=qwen-token-plan` 期待它重新请求：Qwen 主识别只复用同一响应，该选项只用于本地/MiMo 核对后的英语补对齐。英语选本地或 MiMo 时，若词时间缺失或检查不通过，明确选择该选项才会额外请求 Qwen，否则以 `alignment-required` 失败。额外对齐请求计入报告的 `alignmentRequests`；可复用的 Qwen 主识别响应不会重复请求。当前外部词边界导入仅支持英语、日语；中文不支持外部补对齐，若原 TTS 字时不可靠须停止并取得可靠字时，不能把 Q8 转写当作对齐。
 
 关闭语义核对：
 
@@ -83,7 +83,7 @@ workflow 选 local 时会自动执行相当于 `asr:start` 的就绪检查。启
 
 ### 首次启用：注册已安装模型与 runtime
 
-`asr:prepare` 只读取本机现有模型与 runtime，核对固定 repo/revision、文件大小和 SHA，再在指定数据目录生成服务所需的模型清单；它不下载、不启动 ASR，也不修改 `service-settings.json`。GGUF 还会核对技能包随附的可信 runtime manifest 与其绑定/DLL 文件。不要手工抄写或修改清单/hash。
+`asr:prepare` 只读取本机现有模型与 runtime，核对固定 repo/revision、文件大小和 SHA，再在指定数据目录生成服务所需的模型清单；它不下载、不启动 ASR，也不修改 `service-settings.json`。GGUF 还会核对目标游戏仓库随附的 `scripts/asr/runtime-manifest.v0.4.1.json` 与其绑定/DLL 文件；该清单按原始字节校验，Git 配置保留其换行。工具和清单不由独立技能包安装。不要手工抄写或修改清单/hash。
 
 已验证 Windows 工作站的 Q8 GGUF 示例：
 

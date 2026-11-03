@@ -1,0 +1,2 @@
+# This trust anchor is verified byte-for-byte; preserve its verified line endings.
+scripts/asr/runtime-manifest.v0.4.1.json -text whitespace=cr-at-eol

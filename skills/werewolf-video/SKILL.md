@@ -24,7 +24,7 @@ agent 先确认以下起点，再执行命令：
 pnpm video:make --room=latest --prepare-only
 ```
 
-`latest` 只从默认 `data/rooms` 选择已结束对局，不扫描界面测试目录。指定另一数据目录用 `--data-dir=绝对路径`；指定房间用 `--room=ID`。
+`latest` 只从默认 `data/rooms` 选择已结束且有 `game.end` 的对局，按创建时间排序（缺失时用文件修改时间），不表示按结束时间排序，也不扫描界面测试目录。缺真实数据时停止并定位实际存档目录，用 `--data-dir=绝对路径` 指定；需要最近结束的特定局时确认并固定 `--room=ID`。
 
 ## 从准备材料到启动整片
 
@@ -94,7 +94,7 @@ node node_modules/tsx/dist/cli.mjs scripts/video/workflow.ts --room=ROOM_ID --re
 ## 可调选项
 
 - `--encoder=cpu`：无需独立显卡；`auto` 自动尝试 NVIDIA 编码并允许软件回退；`gpu` 要求实际使用 NVENC，失败就停，不隐瞒回退。
-- `--project-dir=绝对路径`：独立版本目录，保留旧片；不要把样品和完整视频混在同一目录。
+- `--project-dir=绝对路径`：隔离制作项目和旧片，不把样品与整片混在同一目录；导出仍写入 `--data-dir` 的 `exports`，此选项不会让源数据目录完全只读。
 - `--video-kbps=750 --max-video-kbps=1200 --audio-kbps=96`：直接限制分段和整片码率，1080p/30fps；先试做昼夜片段再据清晰度调整。
 - `--theme=campus|storybook|gufeng|fantasy|urban|future`：六套人物；更换后核对声音与人物是否相符。
 - `--video-locale=zh-CN|en|ja`：覆盖画面标签语言；也可设置环境变量 `VIDEO_LOCALE`。未覆盖时优先使用原局语言，旧记录缺失语言时使用 `zh-CN`。其他语言或方言可通过 `scripts/video/video-locale.ts` 的注册表扩展，并在制作进程中加载。
