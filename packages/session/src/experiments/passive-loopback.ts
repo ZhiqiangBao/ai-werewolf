@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as waitDelay } from 'node:timers/promises';
-import { reserveAttempt, type BudgetGroup } from './passive-budget';
+import { readBudgetWindow, reserveAttempt, type BudgetGroup } from './passive-budget';
 import { hashExpected, validateEvidence, type Evidence, type Expected, type Trace } from './passive-validator';
 import { projectionHash } from './passive-projections';
 import { anthropicInput, chatMessages, protocolBinding, responsesInput, type AdapterConfig, type TranscriptMessage } from '@werewolf/llm';
@@ -109,6 +109,11 @@ export async function runLoopbackWindow(config: WindowConfig): Promise<{ evidenc
   if (!config.run || !Number.isFinite(config.baseMs) || config.baseMs < 0 || !Number.isFinite(config.slowMs) || config.slowMs < 0 || config.rooms > 2 || config.providers > config.rooms || config.windowLimit > 512) throw new Error('invalid configuration');
   const clientTrace: Trace[] = []; const serverTruth: Trace[] = []; const { expected, plans } = planWindow(config); const segments: Array<{ name: string; wallMs: number; actionWaitMs: number[] }> = [];
   let reserved = 0; let status: Evidence['status'] = 'complete'; let firstFailure: unknown;
+  const validate = (evidence: Evidence) => {
+    let ledgerReserved = NaN;
+    try { ledgerReserved = readBudgetWindow(config.budgetPath, config.run, config.budgetGroup); } catch { /* Keep the failed evidence for archival. */ }
+    return validateEvidence(evidence, config.sourceHash, { config, frames: config.projections, ledgerReserved });
+  };
   const localAbort = new AbortController(); const signal = config.signal ? AbortSignal.any([config.signal, localAbort.signal]) : localAbort.signal;
   const providerFor = (seat: string) => config.providers === 1 ? 'shared' : `provider-${seat.split(':')[0]}`;
   const serverLimits = new Map<string, Slots>();
@@ -139,7 +144,7 @@ export async function runLoopbackWindow(config: WindowConfig): Promise<{ evidenc
   catch (error) {
     server.closeAllConnections(); await closeWithTimeout(server, 1000).catch(() => {});
     const evidence: Evidence = { run: config.run, sourceHash: config.sourceHash, expectedHash: hashExpected(expected), expected, trace: [], budgetLimit: config.windowLimit, reserved, status: config.signal?.aborted ? 'cancelled' : 'failed' };
-    return { evidence, clientTrace, serverTruth, errors: validateEvidence(evidence, config.sourceHash), segments, failure: safeFailure(error) };
+    return { evidence, clientTrace, serverTruth, errors: validate(evidence), segments, failure: safeFailure(error) };
   }
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('loopback address');
   const url = `http://127.0.0.1:${address.port}/model`; const localLimits = new Map<string, Slots>();
@@ -200,5 +205,5 @@ export async function runLoopbackWindow(config: WindowConfig): Promise<{ evidenc
     signal.removeEventListener('abort', abortConnections);
   }
   const evidence: Evidence = { run: config.run, sourceHash: config.sourceHash, expectedHash: hashExpected(expected), expected, trace: [...clientTrace, ...serverTruth], budgetLimit: config.windowLimit, reserved, status };
-  return { evidence, clientTrace, serverTruth, errors: validateEvidence(evidence, config.sourceHash), segments, failure: firstFailure === undefined ? null : safeFailure(firstFailure) };
+  return { evidence, clientTrace, serverTruth, errors: validate(evidence), segments, failure: firstFailure === undefined ? null : safeFailure(firstFailure) };
 }

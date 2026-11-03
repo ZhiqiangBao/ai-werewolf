@@ -1,11 +1,12 @@
 import { closeSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { acquireDataLease } from '../src/data-lease';
 import { ModelLibrary } from '../src/model-library';
 import { ModelMaintenance, type ModelAliasEvidence } from '../src/model-maintenance';
-import { classifyEvidence, classifyEvidenceSet, type RetirementEvidence } from '../src/model-retirement';
+import { classifyEvidence, classifyEvidenceSet, type EvidenceScopeBinding, type RetirementEvidence } from '../src/model-retirement';
 import { SecretBox } from '../src/secret';
 import { RoomManager } from '../src/manager';
 import { MemoryStore } from '../src/store';
@@ -19,8 +20,108 @@ function fixture() {
   const model = library.add('model-a', 'https://example.com/v1', 'secret');
   return { dir, secrets, library, model, maintenance: new ModelMaintenance(dir, secrets) };
 }
-const evidence: RetirementEvidence = { kind: 'official_retirement', providerId: 'p', model: 'm', protocol: 'chat', checkedAt: '2025-01-01T00:00:00Z', effectiveAt: '2025-01-01T00:00:00Z', expiresAt: '2999-01-01T00:00:00Z', sourceUrl: 'https://example.com', sourceDigest: 'a'.repeat(64), reasonCode: 'documented', summary: '官方公告确认此范围停供', scope: { routeId: 'r' } };
+const globalScope: EvidenceScopeBinding = { version: 1, accountScope: { kind: 'global' }, region: { kind: 'global' } };
+const specificScope: EvidenceScopeBinding = { version: 1, accountScope: { kind: 'specific', id: 'a1111111-1111-4111-8111-111111111111' }, region: { kind: 'specific', id: 'b1111111-1111-4111-8111-111111111111' } };
+const evidence: RetirementEvidence = { kind: 'official_retirement', providerId: 'p', model: 'm', protocol: 'chat', checkedAt: '2025-01-01T00:00:00Z', effectiveAt: '2025-01-01T00:00:00Z', expiresAt: '2999-01-01T00:00:00Z', sourceUrl: 'https://example.com', sourceDigest: 'a'.repeat(64), reasonCode: 'documented', summary: '官方公告确认此范围停供', scope: { routeId: 'r', ...globalScope } };
 describe('模型维护', () => {
+  it('独立绑定账号／套餐与区域，匹配才分类；未知和不同范围不能判停供', () => {
+    const { model, maintenance } = fixture();
+    let impact = maintenance.preview(model.id);
+    expect(impact.evidenceTarget.scope).toMatchObject({ version: 1, accountScope: { kind: 'unknown' }, region: { kind: 'unknown' } });
+    maintenance.setScope(model.id, specificScope, impact.revision);
+    expect(() => maintenance.setScope(model.id, globalScope, impact.revision)).toThrow('MODEL_PREVIEW_STALE');
+    impact = maintenance.preview(model.id);
+    const scoped: RetirementEvidence = { ...evidence, ...impact.evidenceTarget, kind: 'authorization' };
+    maintenance.recordEvidence(model.id, scoped, impact.revision);
+    expect(maintenance.preview(model.id).evidenceStatus).toBe('access_denied');
+    for (const scope of [
+      { ...specificScope, accountScope: { kind: 'specific', id: 'c1111111-1111-4111-8111-111111111111' } },
+      { ...specificScope, region: { kind: 'specific', id: 'c1111111-1111-4111-8111-111111111111' } },
+      { ...specificScope, accountScope: { kind: 'unknown' } },
+      { ...specificScope, region: { kind: 'unknown' } },
+    ] as EvidenceScopeBinding[]) {
+      const entry: RetirementEvidence = { ...evidence, ...impact.evidenceTarget, scope: { routeId: impact.evidenceTarget.scope.routeId, ...scope } };
+      expect(classifyEvidence(entry, impact.evidenceTarget)).toBe('unknown');
+      const current = maintenance.preview(model.id);
+      maintenance.recordEvidence(model.id, entry, current.revision);
+    }
+    expect(maintenance.preview(model.id).evidenceStatus).toBe('unknown');
+  });
+  it('显式全局覆盖具体或未知目标；省略、unknown 相等及旧 global 字符串不能冒充全局', () => {
+    for (const scope of [specificScope, { version: 1, accountScope: { kind: 'unknown' }, region: { kind: 'unknown' } }] as EvidenceScopeBinding[]) {
+      const target = { ...evidence, scope: { routeId: 'r', ...scope } };
+      expect(classifyEvidence(evidence, target)).toBe('retired_confirmed');
+      expect(classifyEvidence({ ...evidence, scope: { routeId: 'r', version: 1, accountScope: { kind: 'unknown' }, region: { kind: 'unknown' } } }, target)).toBe('unknown');
+      for (const legacy of [{ routeId: 'r' }, { routeId: 'r', accountScope: 'global', region: 'global' }]) expect(classifyEvidence({ ...evidence, scope: legacy }, target)).toBe('unknown');
+    }
+    expect(classifyEvidence({ ...evidence, scope: { routeId: 'r', ...specificScope } }, evidence)).toBe('unknown');
+  });
+  it('新入口拒绝省略字段、原始标识和额外敏感字段，但保留明确 unknown 的待复核证据', () => {
+    const { model, maintenance } = fixture();
+    const impact = maintenance.preview(model.id), entry = { ...evidence, ...impact.evidenceTarget };
+    for (const scope of [
+      { routeId: impact.evidenceTarget.scope.routeId },
+      { routeId: impact.evidenceTarget.scope.routeId, ...specificScope, accountScope: 'account@example.com' },
+      { routeId: impact.evidenceTarget.scope.routeId, ...specificScope, accountScope: { kind: 'specific', id: 'sk-private-credential' } },
+      { routeId: impact.evidenceTarget.scope.routeId, ...specificScope, accountScope: { kind: 'unknown', secret: 'hidden' } },
+      { routeId: impact.evidenceTarget.scope.routeId, ...specificScope, rawAccount: 'hidden' },
+    ]) expect(() => maintenance.recordEvidence(model.id, { ...entry, scope } as RetirementEvidence, impact.revision)).toThrow('MODEL_EVIDENCE_INVALID');
+    expect(() => maintenance.recordEvidence(model.id, { ...entry, rawAccount: 'private' } as RetirementEvidence, impact.revision)).toThrow('MODEL_EVIDENCE_INVALID');
+    expect(() => maintenance.recordEvidence(model.id, { ...entry, reasonCode: 'account@example.com' }, impact.revision)).toThrow('MODEL_EVIDENCE_INVALID');
+    expect(() => maintenance.setScope(model.id, { ...specificScope, region: { kind: 'specific', id: 'cn-beijing' } }, impact.revision)).toThrow('MODEL_SCOPE_INVALID');
+    maintenance.recordEvidence(model.id, entry, impact.revision);
+    expect(maintenance.preview(model.id).evidenceStatus).toBe('unknown');
+  });
+  it('旧证据只读兼容且不自动补全范围，归档、密钥及旧房间保持可恢复', () => {
+    const { dir, secrets, model, maintenance } = fixture(), file = join(dir, 'models.json');
+    const saved = JSON.parse(readFileSync(file, 'utf8'));
+    const legacy = { ...evidence, ...maintenance.preview(model.id).evidenceTarget, scope: { routeId: maintenance.preview(model.id).evidenceTarget.scope.routeId }, kind: 'authorization' };
+    saved.models[0].evidence = [legacy]; saved.models[0].lifecycle = 'archived'; saved.legacyImported = true;
+    writeFileSync(file, JSON.stringify(saved));
+    mkdirSync(join(dir, 'rooms')); const roomFile = join(dir, 'rooms', 'ended.json');
+    const room = JSON.stringify({ id: 'ended', status: 'ended', paused: false, seats: [{ seat: 1, controller: 'ai', adapter: 'mock', modelId: model.id }] }); writeFileSync(roomFile, room);
+    const before = readFileSync(file, 'utf8');
+    const impact = maintenance.preview(model.id); expect(impact.evidenceStatus).toBe('unknown');
+    expect(readFileSync(file, 'utf8')).toBe(before);
+    maintenance.setScope(model.id, specificScope, impact.revision);
+    const bound = maintenance.preview(model.id); expect(bound.evidenceStatus).toBe('unknown'); expect(bound.evidence).toEqual([legacy]);
+    const rebound = JSON.parse(readFileSync(file, 'utf8'));
+    expect(rebound.legacyImported).toBe(true); expect(rebound.models[0]).toEqual({ ...saved.models[0], maintenanceScope: specificScope });
+    expect(new ModelLibrary(secrets, file).findRaw(model.id)?.apiKey).toBe('secret'); expect(readFileSync(roomFile, 'utf8')).toBe(room);
+    expect(maintenance.apply({ modelId: model.id, operation: 'restore', expectedRevision: bound.revision, expectedInventoryDigest: bound.inventoryDigest }).lifecycle).toBe('disabled');
+  });
+  it('修改绑定不重解释原证据，失败写入不覆盖既存库', () => {
+    const { dir, model, maintenance } = fixture();
+    let impact = maintenance.preview(model.id); maintenance.setScope(model.id, specificScope, impact.revision);
+    impact = maintenance.preview(model.id); maintenance.recordEvidence(model.id, { ...evidence, ...impact.evidenceTarget }, impact.revision);
+    impact = maintenance.preview(model.id); expect(impact.evidenceStatus).toBe('retired_confirmed');
+    maintenance.setScope(model.id, { ...specificScope, accountScope: { kind: 'specific', id: 'c1111111-1111-4111-8111-111111111111' } }, impact.revision);
+    impact = maintenance.preview(model.id); expect(impact.evidenceStatus).toBe('unknown');
+    const file = join(dir, 'models.json'), before = readFileSync(file, 'utf8'); mkdirSync(`${file}.tmp`);
+    expect(() => maintenance.setScope(model.id, globalScope, impact.revision)).toThrow();
+    expect(readFileSync(file, 'utf8')).toBe(before); expect(maintenance.preview(model.id).evidence).toEqual(impact.evidence);
+  });
+  it('本机命令可独立绑定范围并录入证据，旧字段省略命令非零退出且不写库', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ww-maintenance-cli-')); dirs.push(dir);
+    const key = Buffer.alloc(32, 83); writeFileSync(join(dir, 'secret.key'), key.toString('base64'));
+    const library = new ModelLibrary(new SecretBox(key), join(dir, 'models.json'));
+    const model = library.add('scoped', 'https://example.com/v1', 'synthetic-key');
+    const maintenance = new ModelMaintenance(dir, new SecretBox(key)), scopeFile = join(dir, 'scope.json');
+    writeFileSync(scopeFile, JSON.stringify(specificScope));
+    const cli = (...args: string[]) => spawnSync(process.execPath, ['--import', 'tsx', resolve('scripts/model-maintenance.ts'), ...args, '--old-server-stopped'], { encoding: 'utf8', env: { ...process.env, WEREWOLF_DATA: dir, WEREWOLF_SECRET: '' }, timeout: 10000, windowsHide: true });
+    const id = cli('scope-id'); expect(id.status).toBe(0); expect(id.stdout.trim()).toMatch(/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/);
+    let impact = maintenance.preview(model.id);
+    const bound = cli('scope', model.id, impact.revision, scopeFile); expect(bound.status, bound.stderr).toBe(0);
+    expect(JSON.parse(bound.stdout).evidenceTarget.scope).toMatchObject(specificScope);
+    impact = maintenance.preview(model.id);
+    const evidenceFile = join(dir, 'evidence.json'); writeFileSync(evidenceFile, JSON.stringify({ ...evidence, ...impact.evidenceTarget, kind: 'authorization' }));
+    const recorded = cli('record', model.id, impact.revision, evidenceFile); expect(recorded.status, recorded.stderr).toBe(0);
+    expect(JSON.parse(recorded.stdout).evidenceStatus).toBe('access_denied');
+    impact = maintenance.preview(model.id); const before = readFileSync(join(dir, 'models.json'), 'utf8');
+    writeFileSync(evidenceFile, JSON.stringify({ ...evidence, ...impact.evidenceTarget, scope: { routeId: impact.evidenceTarget.scope.routeId } }));
+    expect(cli('record', model.id, impact.revision, evidenceFile).status).toBe(1);
+    expect(readFileSync(join(dir, 'models.json'), 'utf8')).toBe(before); expect(existsSync(join(dir, '.writer-lease'))).toBe(false);
+  });
   it('分类七类证据，范围、未来日期及无归因证据不能判成停供', () => {
     const expected = { official_retirement: 'retired_confirmed', verified_available: 'available', authentication: 'credential_invalid', authorization: 'access_denied', transport: 'network_error', temporary: 'temporary_unavailable', unattributed: 'unknown' } as const;
     for (const [kind, status] of Object.entries(expected)) expect(classifyEvidence({ ...evidence, kind: kind as RetirementEvidence['kind'] }, evidence)).toBe(status);
@@ -105,7 +206,7 @@ describe('模型维护', () => {
     expect(impact.credentialDependencies).toHaveLength(1);
     expect(impact.canArchive).toBe(true);
     expect(() => maintenance.recordEvidence(model.id, { ...evidence, model: model.model, protocol: 'chat_completions' }, impact.revision)).toThrow('MODEL_EVIDENCE_INVALID');
-    maintenance.recordEvidence(model.id, { ...evidence, ...impact.evidenceTarget }, impact.revision);
+    maintenance.recordEvidence(model.id, { ...evidence, ...impact.evidenceTarget, scope: { routeId: impact.evidenceTarget.scope.routeId, ...globalScope } }, impact.revision);
     expect(new ModelLibrary(secrets, join(dir, 'models.json')).find(model.id)?.evidence).toHaveLength(1);
     expect(() => maintenance.apply({ modelId: model.id, operation: 'disable', expectedRevision: impact.revision, expectedInventoryDigest: impact.inventoryDigest })).toThrow('MODEL_PREVIEW_STALE');
     const checked = maintenance.preview(model.id); expect(checked.evidenceStatus).toBe('retired_confirmed');
@@ -191,6 +292,7 @@ describe('模型维护', () => {
   it('有官方映射的别名可归并，旧房间 ID 解析到规范项并保留原快照及密钥', () => {
     const { dir, secrets, library, model: target, maintenance } = fixture();
     const source = library.add('old-preview', target.baseUrl, 'secret');
+    maintenance.setScope(source.id, specificScope, maintenance.preview(source.id).revision);
     const store = new MemoryStore(); let manager = new RoomManager({ store, secrets, modelsPath: join(dir, 'models.json'), tickMs: 0 });
     const { roomId, hostToken } = manager.createRoom();
     manager.updateSetup(roomId, hostToken, { seats: [{ seat: 1, presetId: source.id }] }); manager.dispose();
@@ -203,6 +305,8 @@ describe('模型维护', () => {
     maintenance.merge(source.id, target.id, impact.revision, impact.inventoryDigest, mapping);
     const loaded = new ModelLibrary(secrets, join(dir, 'models.json'));
     expect(loaded.findRaw(source.id)?.apiKey).toBe('secret'); expect(loaded.find(source.id)?.id).toBe(target.id);
+    expect(loaded.findRaw(source.id)?.maintenanceScope).toEqual(specificScope);
+    expect(maintenance.preview(target.id).evidenceTarget.scope).toMatchObject({ accountScope: { kind: 'unknown' }, region: { kind: 'unknown' } });
     expect(loaded.views().some((m) => m.id === source.id)).toBe(false);
     expect(store.rooms.get(roomId)!.seats[0]).toEqual(original);
     mkdirSync(join(dir, 'rooms'));

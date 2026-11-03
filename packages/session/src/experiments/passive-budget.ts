@@ -1,4 +1,4 @@
-import { closeSync, fsyncSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, fsyncSync, lstatSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 
 export type BudgetGroup = 'preflight' | 'screen' | 'fault' | 'formal';
 export interface Budget {
@@ -8,6 +8,22 @@ export interface Budget {
 }
 const caps: Record<BudgetGroup, number> = { preflight: 48, screen: 13824, fault: 4000, formal: 92160 };
 const safe = (n: number) => Number.isSafeInteger(n) && n >= 0;
+
+/** Read and validate the shared ledger without changing it or granting a reservation. */
+export function readBudget(path: string): Budget {
+  const info = lstatSync(path);
+  if (!info.isFile() || info.isSymbolicLink() || info.size > 1024 * 1024) throw new Error('unsafe budget');
+  const value: Budget = JSON.parse(readFileSync(path, 'utf8'));
+  if (!value || value.version !== 1 || value.totalLimit !== 150000 || value.externalActual !== 6 || value.allocations?.S?.reserved !== 360 || value.allocations?.integration?.reserved !== 3000 || !safe(value.allocations.S.actual) || value.allocations.S.actual > 360 || !safe(value.allocations.integration.actual) || value.allocations.integration.actual > 3000 || !safe(value.pActual) || !value.groups || !value.windows || !value.windowGroups || typeof value.windows !== 'object' || Array.isArray(value.windows) || typeof value.windowGroups !== 'object' || Array.isArray(value.windowGroups) || Object.keys(value.windowGroups).length !== Object.keys(value.windows).length || Object.entries(value.windows).some(([window, n]) => !safe(n) || !Object.hasOwn(caps, value.windowGroups[window])) || Object.values(value.windows).reduce((a, b) => a + b, 0) !== value.pActual || (Object.keys(caps) as BudgetGroup[]).some(group => !safe(value.groups[group]) || value.groups[group] > caps[group] || Object.entries(value.windows).filter(([window]) => value.windowGroups[window] === group).reduce((n, [, count]) => n + count, 0) !== value.groups[group]) || value.externalActual + 360 + 3000 + value.pActual > value.totalLimit) throw new Error('corrupt budget');
+  return value;
+}
+
+export function readBudgetWindow(path: string, window: string, group: BudgetGroup): number {
+  const value = readBudget(path);
+  if (!Object.hasOwn(value.windows, window)) return 0;
+  if (value.windowGroups[window] !== group) throw new Error('window group mismatch');
+  return value.windows[window];
+}
 
 /** Create once with exclusive creation. Existing or interrupted ledgers must never reset. */
 export function initializeBudget(path: string): Budget {
@@ -19,8 +35,7 @@ export function initializeBudget(path: string): Budget {
 function update(path: string, fn: (value: Budget) => void): Budget {
   const lock = `${path}.lock`; const lockFd = openSync(lock, 'wx');
   try {
-    const value: Budget = JSON.parse(readFileSync(path, 'utf8'));
-    if (value.version !== 1 || value.totalLimit !== 150000 || value.externalActual !== 6 || value.allocations?.S?.reserved !== 360 || value.allocations?.integration?.reserved !== 3000 || !safe(value.allocations.S.actual) || value.allocations.S.actual > 360 || !safe(value.allocations.integration.actual) || value.allocations.integration.actual > 3000 || !safe(value.pActual) || !value.groups || !value.windows || !value.windowGroups || typeof value.windows !== 'object' || Object.keys(value.windowGroups).length !== Object.keys(value.windows).length || Object.entries(value.windows).some(([window, n]) => !safe(n) || !Object.hasOwn(caps, value.windowGroups[window])) || Object.values(value.windows).reduce((a, b) => a + b, 0) !== value.pActual || (Object.keys(caps) as BudgetGroup[]).some(group => !safe(value.groups[group]) || value.groups[group] > caps[group] || Object.entries(value.windows).filter(([window]) => value.windowGroups[window] === group).reduce((n, [, count]) => n + count, 0) !== value.groups[group]) || value.externalActual + 360 + 3000 + value.pActual > value.totalLimit) throw new Error('corrupt budget');
+    const value = readBudget(path);
     fn(value);
     const fd = openSync(path, 'w'); try { writeFileSync(fd, JSON.stringify(value)); fsyncSync(fd); } finally { closeSync(fd); } return value;
   } finally { closeSync(lockFd); unlinkSync(lock); }

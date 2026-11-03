@@ -4,11 +4,12 @@ import { dirname } from 'node:path';
 import { apiBase, apiUrl, type ApiProtocol, type ModelPresetView } from '@werewolf/protocol';
 import { loadQwenPresets } from './qwen-presets';
 import type { SecretBox } from './secret';
-import type { RetirementEvidence } from './model-retirement';
+import { isScopeBinding, type EvidenceScopeBinding, type RetirementEvidence } from './model-retirement';
 
 interface SavedModel {
   lifecycle?: ModelLifecycle;
   evidence?: RetirementEvidence[];
+  maintenanceScope?: EvidenceScopeBinding;
   mergedInto?: string;
   mergeEvidence?: unknown;
   apiProtocol?: ApiProtocol;
@@ -29,6 +30,7 @@ export function sameModelRoute(a: string, b: string, protocol: ApiProtocol): boo
 export interface ResolvedModel {
   lifecycle: ModelLifecycle;
   evidence: RetirementEvidence[];
+  maintenanceScope?: EvidenceScopeBinding;
   mergedInto?: string;
   apiProtocol: ApiProtocol;
   id: string;
@@ -52,6 +54,7 @@ export class ModelLibrary {
     const parsed = JSON.parse(readFileSync(file, 'utf8')) as { version?: number; legacyImported?: boolean; models?: SavedModel[] };
     if ((parsed.version !== undefined && parsed.version !== 2) || !Array.isArray(parsed.models) || parsed.models.some((m) => !m || !m.id || !m.name || !m.baseUrl || (m.apiKeyEnc !== null && typeof m.apiKeyEnc !== 'string') || (m.lifecycle !== undefined && !['active', 'disabled', 'archived'].includes(m.lifecycle)))) throw Error('项目模型库格式无效，请检查 models.json；原文件未被覆盖');
     const models = parsed.models;
+    if (models.some((m) => m.maintenanceScope !== undefined && (!isScopeBinding(m.maintenanceScope) || 'routeId' in m.maintenanceScope))) throw Error('项目模型库维护作用域无效；原文件未被覆盖');
     const ids = new Set(models.map((m) => m.id));
     if (ids.size !== models.length || models.some((m) => m.mergedInto !== undefined && (typeof m.mergedInto !== 'string' || m.mergedInto === m.id || !ids.has(m.mergedInto) || models.find((target) => target.id === m.mergedInto)?.mergedInto !== undefined))) throw Error('项目模型库别名关系无效；原文件未被覆盖');
     this.added = models;
@@ -84,6 +87,7 @@ export class ModelLibrary {
       source: m.source ?? 'added',
       lifecycle: m.lifecycle ?? 'active',
       evidence: m.evidence ?? [],
+      ...(m.maintenanceScope ? { maintenanceScope: structuredClone(m.maintenanceScope) } : {}),
       ...(m.mergedInto ? { mergedInto: m.mergedInto } : {}),
     }));
   }
@@ -173,6 +177,15 @@ export class ModelLibrary {
     if (index < 0) throw new Error('MODEL_NOT_FOUND');
     const previous = this.added;
     this.added = previous.map((m, i) => i === index ? { ...m, evidence: [...(m.evidence ?? []), evidence] } : m);
+    try { this.persist(); } catch (error) { this.added = previous; throw error; }
+  }
+
+  setMaintenanceScope(id: string, scope: EvidenceScopeBinding): void {
+    if (!isScopeBinding(scope) || 'routeId' in scope) throw new Error('MODEL_SCOPE_INVALID');
+    const index = this.added.findIndex((m) => m.id === id);
+    if (index < 0) throw new Error('MODEL_NOT_FOUND');
+    const previous = this.added;
+    this.added = previous.map((m, i) => i === index ? { ...m, maintenanceScope: structuredClone(scope) } : m);
     try { this.persist(); } catch (error) { this.added = previous; throw error; }
   }
 

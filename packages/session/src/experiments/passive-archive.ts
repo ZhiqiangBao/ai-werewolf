@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { createReadStream, createWriteStream } from 'node:fs';
+import { createReadStream, createWriteStream, lstatSync } from 'node:fs';
 import { Readable, Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createGunzip, createGzip } from 'node:zlib';
@@ -31,10 +31,33 @@ export async function archiveEvidence(path: string, evidence: unknown, usage: St
   return { logicalBytes, compressedBytes, sha256, compressedSha256 };
 }
 
-export async function verifyEvidenceArchive(path: string, proof: ArchiveProof, signal?: AbortSignal): Promise<void> {
-  const raw = createHash('sha256'); let logicalBytes = 0;
-  await pipeline(createReadStream(path), createGunzip(), new Writable({ write(chunk: Buffer, _encoding, callback) { logicalBytes += chunk.length; raw.update(chunk); callback(); } }), { signal });
-  const compressed = createHash('sha256'); let compressedBytes = 0;
-  await pipeline(createReadStream(path), new Writable({ write(chunk: Buffer, _encoding, callback) { compressedBytes += chunk.length; compressed.update(chunk); callback(); } }), { signal });
+const maxArchiveBytes = 128 * 1024 ** 2;
+
+async function inspectArchive(path: string, proof: ArchiveProof, collect: boolean, signal?: AbortSignal): Promise<Buffer | undefined> {
+  if (!proof || !Number.isSafeInteger(proof.logicalBytes) || proof.logicalBytes < 1 || proof.logicalBytes > maxArchiveBytes || !Number.isSafeInteger(proof.compressedBytes) || proof.compressedBytes < 1 || proof.compressedBytes > maxArchiveBytes || !/^[a-f0-9]{64}$/.test(proof.sha256) || !/^[a-f0-9]{64}$/.test(proof.compressedSha256)) throw new Error('invalid archive proof or size');
+  const info = lstatSync(path);
+  if (!info.isFile() || info.isSymbolicLink() || info.size !== proof.compressedBytes) throw new Error('unsafe archive or compressed size');
+  const raw = createHash('sha256'); const compressed = createHash('sha256');
+  let logicalBytes = 0; let compressedBytes = 0; const chunks: Buffer[] = [];
+  await pipeline(createReadStream(path, { highWaterMark: 64 * 1024 }), new Transform({ transform(chunk: Buffer, _encoding, callback) {
+    compressedBytes += chunk.length; compressed.update(chunk);
+    callback(compressedBytes > proof.compressedBytes ? new Error('compressed size limit') : null, chunk);
+  } }), createGunzip(), new Writable({ write(chunk: Buffer, _encoding, callback) {
+    logicalBytes += chunk.length;
+    if (logicalBytes > proof.logicalBytes) { callback(new Error('logical size limit')); return; }
+    raw.update(chunk); if (collect) chunks.push(Buffer.from(chunk)); callback();
+  } }), { signal });
   if (logicalBytes !== proof.logicalBytes || compressedBytes !== proof.compressedBytes || raw.digest('hex') !== proof.sha256 || compressed.digest('hex') !== proof.compressedSha256) throw new Error('archive verification failed');
+  return collect ? Buffer.concat(chunks, logicalBytes) : undefined;
+}
+
+export async function verifyEvidenceArchive(path: string, proof: ArchiveProof, signal?: AbortSignal): Promise<void> {
+  await inspectArchive(path, proof, false, signal);
+}
+
+/** Verify first, then bound and re-verify the bytes read for JSON parsing. */
+export async function readVerifiedEvidenceArchive(path: string, proof: ArchiveProof, signal?: AbortSignal): Promise<unknown> {
+  await verifyEvidenceArchive(path, proof, signal);
+  const bytes = await inspectArchive(path, proof, true, signal);
+  return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
 }

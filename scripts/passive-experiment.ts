@@ -3,11 +3,12 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, statfsSync, writeFileSync } from 'node:fs';
 import { cpus, freemem, loadavg, platform, release, totalmem } from 'node:os';
 import { join } from 'node:path';
-import { archiveEvidence, verifyEvidenceArchive, type ArchiveProof, type StorageUsage } from '../packages/session/src/experiments/passive-archive';
+import { archiveEvidence, type StorageUsage } from '../packages/session/src/experiments/passive-archive';
 import { runLoopbackWindow, type Candidate, type Protocol } from '../packages/session/src/experiments/passive-loopback';
 import { fixedProjections } from '../packages/session/src/experiments/passive-projections';
 import { sourceRunId, sourceSnapshot } from '../packages/session/src/experiments/passive-source';
 import { compareScreen } from '../packages/session/src/experiments/passive-screen';
+import { readBoundedJson, validateArchivedWindow, type PassiveManifest } from '../packages/session/src/experiments/passive-revalidation';
 
 const protocols: Protocol[] = ['chat-completions', 'responses', 'anthropic-messages'];
 const topologies = ['S01', 'S02', 'S03'] as const; const candidates: Candidate[] = ['A', 'B', 'A+D'];
@@ -37,7 +38,7 @@ if (args.join(' ') === '--dry-run') {
   const env = { node: process.version, pnpmVersion: null, os: `${platform()} ${release()}`, cpu: cpus()[0]?.model, cpus: cpus().length, totalMemoryBytes: totalmem(), freeMemoryBytes: freemem(), loadAverage: platform() === 'win32' ? null : loadavg(), powerCondition: null, sourceCommit, sourceHash: initial.sha256, command: process.argv.slice(1), seed };
   const files = readdirSync(directory); if (files.some(name => lstatSync(join(directory, name)).isSymbolicLink())) throw new Error('diagnostics symlink');
   if (files.some(name => name.endsWith('.gz') && !files.includes(name.replace(/\.gz$/, '.manifest.json')))) throw new Error('unindexed archive; inspect previous incomplete run');
-  const manifests = files.filter(name => name.endsWith('.manifest.json')).map(name => JSON.parse(readFileSync(join(directory, name), 'utf8')) as { sourceHash: string; logicalBytes: number; compressedBytes: number });
+  const manifests = files.filter(name => name.endsWith('.manifest.json')).map(name => readBoundedJson(join(directory, name)) as { sourceHash: string; logicalBytes: number; compressedBytes: number });
   if (manifests.some(m => m.sourceHash !== initial.sha256 || !Number.isSafeInteger(m.logicalBytes) || !Number.isSafeInteger(m.compressedBytes))) throw new Error('source changed or invalid manifest; do not mix runs');
   const usage: StorageUsage = { logical: manifests.reduce((n, m) => n + m.logicalBytes, 0), compressed: manifests.reduce((n, m) => n + m.compressedBytes, 0), compact: files.filter(name => name.endsWith('.json')).reduce((n, name) => n + lstatSync(join(directory, name)).size, 0), peak: files.reduce((n, name) => n + lstatSync(join(directory, name)).size, 0) };
   const frames = fixedProjections(seed); const inputHash = createHash('sha256').update(JSON.stringify(frames)).digest('hex');
@@ -52,9 +53,7 @@ if (args.join(' ') === '--dry-run') {
     const output = join(directory, `${run}.gz`); const manifestPath = join(directory, `${run}.manifest.json`);
     if (existsSync(output) || existsSync(manifestPath)) {
       if (!existsSync(output) || !existsSync(manifestPath) || lstatSync(output).isSymbolicLink() || lstatSync(manifestPath).isSymbolicLink()) throw new Error(`incomplete or unsafe prior run: ${run}`);
-      const prior = JSON.parse(readFileSync(manifestPath, 'utf8')) as ArchiveProof & { run: string; protocol: Protocol; topology: string; candidate: Candidate; slots: number; sourceHash: string; inputHash: string; status: string; errors: string[]; segments: Array<{ name: string; wallMs: number; actionWaitMs: number[] }> };
-      if (prior.run !== runId || prior.protocol !== protocol || prior.topology !== topology || prior.candidate !== candidate || prior.slots !== slots || prior.sourceHash !== initial.sha256 || prior.inputHash !== inputHash || prior.status !== 'complete' || !Array.isArray(prior.errors) || prior.errors.length) throw new Error(`incompatible prior run: ${run}`);
-      await verifyEvidenceArchive(output, prior, AbortSignal.timeout(remainingMs - 200)); return prior;
+      return validateArchivedWindow(output, readBoundedJson(manifestPath), { runName: run, sourceHash: initial.sha256, inputHash, slots }, budget, AbortSignal.timeout(remainingMs - 200));
     }
     const config = { run: runId, protocol, candidate, rooms: (topology === 'S01' ? 1 : 2) as 1 | 2, providers: (topology === 'S03' ? 2 : 1) as 1 | 2, baseMs: 80, slowMs: 400, slots, ...(fault ? { serverSlots: 4 as const, faultStatus: (mode === 'fault503' ? 503 : 429) as 429 | 503 } : {}), sourceHash: initial.sha256, budgetPath: budget, budgetGroup: (mode === 'preflight' ? 'preflight' : fault ? 'fault' : 'screen') as 'preflight' | 'fault' | 'screen', totalLimit: 150000, windowLimit: mode === 'preflight' ? 48 : 512, projections: frames, signal: AbortSignal.timeout(remainingMs - 3000) };
     const result = await runLoopbackWindow(config);
@@ -66,7 +65,7 @@ if (args.join(' ') === '--dry-run') {
     const encoded = JSON.stringify(compact); if (usage.compact + Buffer.byteLength(encoded) >= 128 * 1024 ** 2 * .9 || usage.peak + Buffer.byteLength(encoded) >= 1.25 * 1024 ** 3 * .9) throw new Error('compact stop threshold');
     writeFileSync(manifestPath, encoded, { flag: 'wx' }); usage.compact += Buffer.byteLength(encoded); usage.peak += Buffer.byteLength(encoded);
     if (result.errors.length || result.evidence.status !== 'complete') throw new Error(`incomplete window: ${run}`);
-    return compact;
+    return validateArchivedWindow(output, compact, { runName: run, sourceHash: initial.sha256, inputHash, slots }, budget, AbortSignal.timeout(archiveRemainingMs));
   };
   if (mode === 'preflight') await runOne('preflight', 'chat-completions', 'S01', 'A', 4, false);
   else if (mode === 'd4' || mode === 'd8' || mode === 'fault503') {
@@ -81,7 +80,7 @@ if (args.join(' ') === '--dry-run') {
     if (required.some(m => m.status !== 'complete' || m.errors.length || m.sourceHash !== initial.sha256)) throw new Error('preflight/fault selection incomplete');
     const d4 = required[2].segments.reduce((n, s) => n + s.wallMs, 0); const d8 = required[4].segments.reduce((n, s) => n + s.wallMs, 0);
     const slots = d4 <= d8 ? 4 : 8; // Provisional screening choice, not a claim of controlled benefit.
-    const completed = [];
+    const completed: PassiveManifest[] = [];
     for (const w of windows) completed.push(await runOne(`screen-${w.protocol}-${w.topology}-${w.candidate === 'A+D' ? 'AD' : w.candidate}`, w.protocol, w.topology, w.candidate, slots, false));
     const comparisons = protocols.flatMap(protocol => topologies.map(topology => {
       const baseline = completed.find(m => m.protocol === protocol && m.topology === topology && m.candidate === 'A')!;

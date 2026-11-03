@@ -4,7 +4,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { ModelLibrary, sameModelRoute, type ModelLifecycle, type ResolvedModel } from './model-library';
 import type { SecretBox } from './secret';
-import { classifyEvidenceSet, type EvidenceStatus, type RetirementEvidence } from './model-retirement';
+import { classifyEvidenceSet, isScopeBinding, type EvidenceScopeBinding, type EvidenceStatus, type RetirementEvidence } from './model-retirement';
 import { acquireDataLease } from './data-lease';
 
 export interface ReferenceSummary { roomId: string; status: 'setup' | 'running' | 'ended'; paused: boolean; seat: number }
@@ -25,11 +25,11 @@ export interface MergeImpact {
   source: ModelImpact; target: ModelImpact; equivalence: 'identical_model' | 'official_alias'; alreadyMerged: boolean;
 }
 
-/** 不包含密钥、查询参数或完整地址；账号和区域未知时只能记录覆盖全局范围的证据。 */
+/** 账号／套餐和区域由本机维护显式绑定随机标识；从不根据密钥猜测作用域。 */
 function evidenceTarget(model: ResolvedModel): ModelImpact['evidenceTarget'] {
   const url = new URL(model.baseUrl);
   if (url.username || url.password || url.search || url.hash) throw new Error('MODEL_INVENTORY_INVALID');
-  return { providerId: url.hostname.toLowerCase(), model: model.model, protocol: model.apiProtocol, scope: { routeId: createHash('sha256').update(url.origin.toLowerCase() + url.pathname).digest('hex') } };
+  return { providerId: url.hostname.toLowerCase(), model: model.model, protocol: model.apiProtocol, scope: { routeId: createHash('sha256').update(url.origin.toLowerCase() + url.pathname).digest('hex'), ...(model.maintenanceScope ?? { version: 1, accountScope: { kind: 'unknown' }, region: { kind: 'unknown' } }) } };
 }
 
 /** 调用方必须在完整生命周期内持有数据目录租约。 */
@@ -85,13 +85,21 @@ export class ModelMaintenance {
     if (!model) throw new Error('MODEL_NOT_FOUND');
     if (library.revision() !== expectedRevision) throw new Error('MODEL_PREVIEW_STALE');
     const target = evidenceTarget(model);
-    if (!evidence || evidence.model !== target.model || evidence.protocol !== target.protocol || evidence.providerId !== target.providerId || evidence.scope?.routeId !== target.scope.routeId || evidence.scope.accountScope !== undefined || evidence.scope.region !== undefined || !/^[a-f0-9]{64}$/i.test(evidence.sourceDigest) || !Number.isFinite(Date.parse(evidence.checkedAt)) || !evidence.reasonCode || !evidence.summary || evidence.summary.length > 500 || /(?:sk-[\w-]{8,}|bearer\s+\S+|https?:\/\/\S+)/i.test(evidence.summary) || !['official_retirement', 'documented_retirement', 'verified_available', 'authentication', 'authorization', 'transport', 'temporary', 'unattributed'].includes(evidence.kind)) throw new Error('MODEL_EVIDENCE_INVALID');
+    const fields = ['kind', 'providerId', 'model', 'protocol', 'checkedAt', 'effectiveAt', 'sourceUrl', 'sourceDigest', 'reasonCode', 'summary', 'scope', 'expiresAt'];
+    if (!evidence || typeof evidence !== 'object' || Object.keys(evidence).some((key) => !fields.includes(key)) || evidence.model !== target.model || evidence.protocol !== target.protocol || evidence.providerId !== target.providerId || evidence.scope?.routeId !== target.scope.routeId || !isScopeBinding(evidence.scope) || !/^[a-f0-9]{64}$/i.test(evidence.sourceDigest) || !Number.isFinite(Date.parse(evidence.checkedAt)) || typeof evidence.reasonCode !== 'string' || !/^[A-Za-z][A-Za-z0-9_.-]{0,79}$/.test(evidence.reasonCode) || typeof evidence.summary !== 'string' || !evidence.summary || evidence.summary.length > 500 || /(?:sk-[\w-]{8,}|bearer\s+\S+|https?:\/\/\S+)/i.test(evidence.summary) || !['official_retirement', 'documented_retirement', 'verified_available', 'authentication', 'authorization', 'transport', 'temporary', 'unattributed'].includes(evidence.kind)) throw new Error('MODEL_EVIDENCE_INVALID');
     if (evidence.sourceUrl) {
       let url: URL;
       try { url = new URL(evidence.sourceUrl); } catch { throw new Error('MODEL_EVIDENCE_INVALID'); }
       if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw new Error('MODEL_EVIDENCE_INVALID');
     }
     library.addEvidence(modelId, evidence);
+  }
+
+  /** 只补充当前维护目标的范围，不迁移旧证据、不改变生命周期／密钥／房间。 */
+  setScope(modelId: string, scope: EvidenceScopeBinding, expectedRevision: string): void {
+    const library = new ModelLibrary(this.secrets, join(this.directory, 'models.json'));
+    if (library.revision() !== expectedRevision) throw new Error('MODEL_PREVIEW_STALE');
+    library.setMaintenanceScope(modelId, scope);
   }
 
   previewMerge(sourceId: string, targetId: string, evidence?: ModelAliasEvidence): MergeImpact {
