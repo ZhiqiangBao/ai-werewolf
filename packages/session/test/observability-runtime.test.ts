@@ -54,6 +54,29 @@ const assertOneEndPerCall = (events: ObservationEvent[]) => {
 };
 
 describe('room runtime observation', () => {
+  it('暂停时保留已取消调用的数值终态，dispose 后丢弃迟到诊断事件', async () => {
+    const rec = fixedRecord(); const events: ObservationEvent[] = [];
+    const requests: DecideRequest[] = [];
+    const adapter: Adapter = { decide(req) {
+      requests.push(req);
+      if (req.observation) {
+        const port = req.observation, id = `${port.callId}:attempt`;
+        port.emit({ kind: 'http_attempt', phase: 'start', id, httpAttemptId: id, parentId: port.callId, atMs: port.clock.monotonicMs() });
+        req.signal!.addEventListener('abort', () => port.emit({ kind: 'http_attempt', phase: 'end', id, httpAttemptId: id, parentId: port.callId, atMs: port.clock.monotonicMs(), outcome: 'cancelled' }));
+      }
+      return new Promise(() => {});
+    } };
+    const { manager } = managerFor([rec], adapter, { emit: (event) => events.push(event) });
+    manager.control(rec.id, rec.hostToken, 'resume'); await settle(() => requests.length > 0);
+    const before = requests.length, call = requests[0].observation!.callId;
+    manager.control(rec.id, rec.hostToken, 'pause'); await manager.whenIdle(rec.id);
+    expect(events.some((event) => event.kind === 'http_attempt' && event.phase === 'end' && event.callId === call && event.outcome === 'cancelled')).toBe(true);
+    manager.control(rec.id, rec.hostToken, 'resume'); await settle(() => requests.length > before);
+    const late = requests.at(-1)!.observation!;
+    manager.dispose(); await manager.whenDisposed(); const count = events.length;
+    late.emit({ kind: 'http_attempt', phase: 'end', id: `${late.callId}:attempt`, httpAttemptId: `${late.callId}:attempt`, parentId: late.callId, atMs: late.clock.monotonicMs(), outcome: 'cancelled' });
+    expect(events).toHaveLength(count);
+  });
   it('observation on and off preserve fixed game, audit and request sequences', async () => {
     const rec = fixedRecord();
     async function run(enabled: boolean, throwing = false) {

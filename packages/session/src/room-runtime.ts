@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { actionKind, actionMenu, DEFAULT_GAME_LOCALE, gameText } from '@werewolf/protocol';
-import type { AdapterKind, AuditEntry, ControlAction, ModelRequestInfo, Projection, Seat, ToolCall, ToolSpec } from '@werewolf/protocol';
+import type { AdapterKind, AuditEntry, ControlAction, ModelRequestInfo, Projection, Seat, SeatTestResult, ToolCall, ToolSpec } from '@werewolf/protocol';
 import { abandonGame, buildRules, createGame, projectSeat, seatTools, submit, waitingSeats, type EngineResult, type SubmitInput } from '@werewolf/engine';
 import { buildMessages, feedbackMessages, getAdapter, redact, styleText, type Adapter, type AdapterConfig, type DecideRequest, type DecideResult, type TranscriptMessage } from '@werewolf/llm';
 import { NOT_TOOL_TURN, migrateThread, ensureCue, ownLine, readyToAct, syncThread, type ActionCue, type TurnHint, type SeatThread } from './agent';
@@ -88,6 +88,7 @@ export class RoomRuntimeService {
   private readonly cancelReasons = new WeakMap<AbortSignal, CancelReason>();
   /** Per room and seat, retain only IDs for that seat's most recent decision. */
   private readonly actionIds = new Map<string, Map<Seat, SeatActionIds>>();
+  private readonly connectionTests = new Map<string, Set<{ controller: AbortController; task: Promise<SeatTestResult> }>>();
 
   constructor(
     private readonly now: () => number,
@@ -141,7 +142,8 @@ export class RoomRuntimeService {
     const live = this.state(rec);
     live.gen += 1; live.again = false; live.stepBudget = 0;
     live.disposeController.abort();
-    const pending = live.inflight.size + live.externalWaits;
+    const tests = this.connectionTests.get(rec.id);
+    const pending = live.inflight.size + live.externalWaits + (tests?.size ?? 0);
     let auditFailures = 0;
     for (const call of live.pendingCalls.values()) {
       try { this.ports.writeAudit(rec, { ...call.entry, latencyMs: Math.max(0, Math.round(performance.now() - call.startedAt)) }); }
@@ -149,6 +151,7 @@ export class RoomRuntimeService {
     }
     live.pendingCalls.clear();
     for (const c of live.inflight.values()) this.cancel(c, 'dispose');
+    for (const test of tests ?? []) test.controller.abort();
     live.inflight.clear();
     for (const thought of rec.thoughts ?? []) thought.live = false;
     this.actionIds.delete(rec.id);
@@ -472,6 +475,24 @@ export class RoomRuntimeService {
     while (live?.running) await live.running;
   }
 
+  testSeat(rec: RoomRuntimeRecord, run: (signal: AbortSignal) => Promise<SeatTestResult>): Promise<SeatTestResult> {
+    const controller = new AbortController();
+    const tests = this.connectionTests.get(rec.id) ?? new Set(); this.connectionTests.set(rec.id, tests);
+    let cancel!: () => void;
+    const cancelled = new Promise<SeatTestResult>((resolve) => { cancel = () => resolve({ ok: false, message: '服务正在关闭，连接检查已取消。', latencyMs: 0 }); controller.signal.addEventListener('abort', cancel, { once: true }); });
+    const task = Promise.race([run(controller.signal), cancelled]);
+    const entry = { controller, task }; tests.add(entry);
+    void task.then(() => { controller.signal.removeEventListener('abort', cancel); tests.delete(entry); }, () => { controller.signal.removeEventListener('abort', cancel); tests.delete(entry); });
+    return task;
+  }
+
+  async whenStopped(roomId: string): Promise<void> {
+    const live = this.rooms.get(roomId);
+    const pending: Promise<unknown>[] = [...(this.connectionTests.get(roomId) ?? [])].map((entry) => entry.task);
+    if (live?.running) pending.push(live.running);
+    await Promise.allSettled(pending);
+  }
+
   private async pumpOnce(live: RoomRuntimeState): Promise<void> {
     const rec = live.rec;
     const gen = live.gen;
@@ -756,7 +777,7 @@ export class RoomRuntimeService {
     try {
       const port = this.observability.adapter(ref);
       pending = track(() => abortable(adapter.decide({ ...guarded, observation: { ...port, emit: (event) => {
-        if (!valid()) return;
+        if (!valid() && !(this.isActive() && controller.signal.aborted && event.phase === 'end')) return;
         if (event.kind === 'adapter_execution' && event.phase === 'end') context.adapterOutcome = event.outcome;
         port.emit(event);
       } } }), controller.signal));

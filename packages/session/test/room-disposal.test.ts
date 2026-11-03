@@ -154,6 +154,26 @@ it('在途连接检查取消且不等待不合作的传输，新检查直接拒�
   } finally { manager.dispose(); vi.unstubAllGlobals(); }
 });
 
+it('在途连接检查按房间分别取消并保存，活动 whenIdle 不等待连接检查', async () => {
+  class OrderedStore extends MemoryStore {
+    log: string[] = [];
+    override save(room: Parameters<MemoryStore['save']>[0]): void { this.log.push(`save:${room.id}`); super.save(room); }
+  }
+  const store = new OrderedStore(); let issued = 0;
+  vi.stubGlobal('fetch', (_url: unknown, options: RequestInit) => { const n = ++issued; options.signal!.addEventListener('abort', () => store.log.push(`abort:${n}`)); return new Promise(() => {}); });
+  const manager = new RoomManager({ store, secrets: SecretBox.ephemeral(), tickMs: 0 });
+  try {
+    const a = manager.createRoom(), b = manager.createRoom();
+    for (const room of [a, b]) manager.updateSetup(room.roomId, room.hostToken, { seats: [{ seat: 1, adapter: 'openai_compatible', model: 'fixture', baseUrl: 'https://example.invalid/v1', apiKey: 'fixture' }] });
+    const first = manager.testSeat(a.roomId, a.hostToken, 1), second = manager.testSeat(b.roomId, b.hostToken, 1);
+    for (let i = 0; i < 100 && issued < 2; i++) await Promise.resolve();
+    expect(issued).toBe(2); await manager.whenIdle(a.roomId);
+    store.log = []; manager.dispose();
+    expect((await first).ok).toBe(false); expect((await second).ok).toBe(false); await manager.whenDisposed();
+    expect(store.log).toEqual(['abort:1', `save:${a.roomId}`, 'abort:2', `save:${b.roomId}`]);
+  } finally { manager.dispose(); vi.unstubAllGlobals(); }
+});
+
 it.each([false, true])('退出同步记录每个在途模型调用一次取消，观测开启=%s', async (observed) => {
   const dir = mkdtempSync(join(process.cwd(), '.test-dispose-'));
   const pending: { resolve: (v: any) => void; reject: (e: Error) => void }[] = [];

@@ -622,22 +622,25 @@ describe('模型调度', () => {
     expect(b.tokens.seats[0].token).not.toBe(a.tokens.seats[0].token);
   });
 
-  it('思考强度自动保存，复制后保留；换到不支持的模型会回到默认', () => {
-    const { m, store, roomId, hostToken } = setup();
+  it('思考强度自动保存，复制后保留；换到不支持的模型会回到默认', async () => {
+    const secrets = SecretBox.ephemeral();
+    const { m, store, roomId, hostToken } = setup({ secrets });
     const baseUrl = 'https://token-plan.maas.qianwenaiapi.com/v1';
     for (const thinkingMode of ['low', 'medium', 'high'] as const) {
       const view = m.updateSetup(roomId, hostToken, { seats: [{ seat: 1, model: 'qwen3.8-flash', baseUrl, thinkingMode }] });
       expect(view.seats[0].thinkingMode).toBe(thinkingMode);
     }
     m.dispose();
+    await m.whenDisposed();
     expect(store.loadAll()[0].seats[0].thinkingMode).toBe('high');
-    const clone = m.cloneRoom(roomId, hostToken);
-    expect(m.getSetup(clone.roomId, clone.hostToken).seats[0].thinkingMode).toBe('high');
-    m.updateSetup(roomId, hostToken, { seats: [{ seat: 1, thinkingMode: 'low' }] });
-    const changed = m.updateSetup(roomId, hostToken, { seats: [{ seat: 1, model: 'deepseek-v4-pro' }] });
+    const restored = new RoomManager({ store, secrets, tickMs: 0 }); managers.push(restored);
+    const clone = restored.cloneRoom(roomId, hostToken);
+    expect(restored.getSetup(clone.roomId, clone.hostToken).seats[0].thinkingMode).toBe('high');
+    restored.updateSetup(roomId, hostToken, { seats: [{ seat: 1, thinkingMode: 'low' }] });
+    const changed = restored.updateSetup(roomId, hostToken, { seats: [{ seat: 1, model: 'deepseek-v4-pro' }] });
     expect(changed.seats[0].thinkingMode).toBe('default');
-    expect(() => m.updateSetup(roomId, hostToken, { seats: [{ seat: 1, thinkingMode: 'low' }] })).toThrow('没有独立的轻度档');
-    expect(m.getSetup(roomId, hostToken).seats[0].thinkingMode).toBe('default');
+    expect(() => restored.updateSetup(roomId, hostToken, { seats: [{ seat: 1, thinkingMode: 'low' }] })).toThrow('没有独立的轻度档');
+    expect(restored.getSetup(roomId, hostToken).seats[0].thinkingMode).toBe('default');
   });
 });
 

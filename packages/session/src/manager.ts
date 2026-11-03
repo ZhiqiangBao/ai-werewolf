@@ -31,8 +31,6 @@ export class RoomManager {
   private readonly persistence: RoomPersistence;
   private readonly observability?: RoomObservability;
   private lifecycle: 'active' | 'disposing' | 'disposed' = 'active';
-  private readonly testControllers = new Set<AbortController>();
-  private readonly testPending = new Set<Promise<unknown>>();
   private resolveDisposed!: (report: DisposeReport) => void;
   private readonly disposedPromise = new Promise<DisposeReport>((resolve) => { this.resolveDisposed = resolve; });
 
@@ -74,8 +72,7 @@ export class RoomManager {
     this.lifecycle = 'disposing';
     this.runtime.stopTimer();
     const rooms: DisposeReport['rooms'] = [], errors: string[] = [];
-    let externalUnconfirmed = this.testControllers.size;
-    for (const ctrl of this.testControllers) ctrl.abort();
+    let externalUnconfirmed = 0;
     for (const rec of this.rooms.values()) {
       try {
         const result = this.runtime.disposeRoom(rec); externalUnconfirmed += result.pending;
@@ -84,8 +81,7 @@ export class RoomManager {
       try { this.views.dispose(rec); } catch { errors.push('ROOM_VIEW_RELEASE_FAILED'); }
       try { rooms.push(this.persistence.finish(rec)); } catch { rooms.push({ roomId: rec.id, saved: false, errorCode: 'ROOM_SAVE_FAILED' }); }
     }
-    const pending = [...this.rooms.keys()].map((id) => this.runtime.whenIdle(id));
-    pending.push(...[...this.testPending].map((p) => p.then(() => {}, () => {})));
+    const pending = [...this.rooms.keys()].map((id) => this.runtime.whenStopped(id));
     void Promise.allSettled(pending).then(() => {
       try { this.observability?.finish(); } catch { errors.push('OBSERVABILITY_RELEASE_FAILED'); }
       this.lifecycle = 'disposed';
@@ -160,16 +156,7 @@ export class RoomManager {
   async testSeat(roomId: string, tok: string, seat: Seat): Promise<SeatTestResult> {
     const rec = this.lobby.host(this.rooms.get(roomId), tok);
     this.assertActive();
-    const controller = new AbortController(); this.testControllers.add(controller);
-    const task = (async () => {
-      let cancel!: () => void;
-      const cancelled = new Promise<SeatTestResult>((resolve) => { cancel = () => resolve({ ok: false, message: '服务正在关闭，连接检查已取消。', latencyMs: 0 }); controller.signal.addEventListener('abort', cancel, { once: true }); });
-      try { return await Promise.race([this.lobby.testSeat(rec, seat, controller.signal), cancelled]); }
-      finally { controller.signal.removeEventListener('abort', cancel); this.testControllers.delete(controller); }
-    })();
-    this.testPending.add(task);
-    void task.then(() => this.testPending.delete(task), () => this.testPending.delete(task));
-    return task;
+    return this.runtime.testSeat(rec, (signal) => this.lobby.testSeat(rec, seat, signal));
   }
 
   start(roomId: string, tok: string): RoomSetupView {

@@ -270,6 +270,7 @@ export async function runSyntheticBaseline(options: { scenario: RunnableSyntheti
     stopSampler();
     restoreFixture?.();
     manager?.dispose();
+    await manager?.whenDisposed();
     const internal = (manager as unknown as { observability?: { stats: { callbackErrors: number; lateEvents: number; activeSpans: number } } } | undefined)?.observability;
     globalThis.fetch = originalFetch;
     await buffered.close();

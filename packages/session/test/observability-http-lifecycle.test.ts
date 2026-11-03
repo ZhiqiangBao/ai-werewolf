@@ -105,10 +105,11 @@ describe('real loopback HTTP cancellation lifecycle', () => {
           expect(attempts[1].metrics?.firstStreamContentMs).toEqual({ valueMs: expect.any(Number), source: 'client' });
         }
         if (operation === 'dispose') {
+          await manager.whenDisposed();
           const count = events.length;
           await new Promise((resolve) => setTimeout(resolve, 20));
           expect(events).toHaveLength(count);
-          manager.control(rec.id, rec.hostToken, 'end');
+          expect(() => manager.control(rec.id, rec.hostToken, 'end')).toThrow('服务正在关闭');
         }
         await manager.whenIdle(rec.id);
       } finally {
