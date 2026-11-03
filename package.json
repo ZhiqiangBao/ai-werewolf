@@ -1,6 +1,7 @@
 {
   "name": "ai-werewolf",
   "private": true,
+  "packageManager": "pnpm@11.21.0",
   "type": "module",
   "scripts": {
     "i18n:check": "tsx scripts/check-locales.ts",
@@ -9,7 +10,10 @@
     "observability:accept": "tsx packages/session/scripts/observability-accept.ts",
     "dev": "tsx apps/server/src/main.ts --dev",
     "build": "pnpm --filter @werewolf/web exec vite build",
-    "start": "tsx apps/server/src/main.ts",
+    "start": "node scripts/service.mjs start",
+    "restart": "node scripts/service.mjs restart",
+    "stop": "node scripts/service.mjs stop",
+    "status": "node scripts/service.mjs status",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "simulate": "tsx packages/engine/scripts/simulate.ts",
