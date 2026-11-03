@@ -31,15 +31,10 @@ export function ModelLibrary() {
       setBusy(false);
     }
   };
-  const remove = async (id: string) => {
+  const remove = (id: string) => {
     setError(null);
-    setNotice(null);
-    try {
-      await api.deleteModel(id);
-      onChange();
-    } catch (e) {
-      setError((e as Error).message);
-    }
+    const model = models.find((item) => item.id === id);
+    setNotice(`「${model?.label ?? id}」的停用、归档、恢复和别名归并需先停止服务，再按 README 的本机维护说明操作。维护会先检查房间引用，归档保留密钥和历史对局。`);
   };
   return (
     <div className="panel">
@@ -74,7 +69,7 @@ export function ModelLibrary() {
       {notice && <div className="small muted model-notice" role="status">{notice}</div>}
       <ModelList models={models} onRemove={remove} />
       <div className="tiny dim" style={{ marginTop: 8 }}>
-        模型与密钥由当前项目管理，不再实时读取 Qwen Code 的全局配置。
+        模型与密钥由当前项目管理，不再实时读取 Qwen Code 的全局配置。清理模型前请停止服务并按 README 执行本机维护。
       </div>
     </div>
   );

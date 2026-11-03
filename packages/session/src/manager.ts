@@ -86,11 +86,8 @@ export class RoomManager {
   }
 
   deleteModel(id: string): void {
-    try {
-      this.models.remove(id);
-    } catch (e) {
-      throw new ApiFailure(400, 'BAD_REQUEST', (e as Error).message);
-    }
+    void id;
+    throw new ApiFailure(409, 'MODEL_MAINTENANCE_REQUIRED', '请停止服务后使用本机模型维护命令。');
   }
 
   createRoom(input: Pick<RoomSetupInput, 'avatarStyle' | 'locale'> = {}): CreateRoomResult {
@@ -103,6 +100,7 @@ export class RoomManager {
   /** 用同样的配置（含加密密钥）开一个新房间，凭证全部重新生成。 */
   cloneRoom(roomId: string, tok: string): CreateRoomResult {
     const src = this.lobby.host(this.rooms.get(roomId), tok);
+    this.lobby.assertModelsAvailable(src);
     const created = this.createRoom();
     const rec = this.rooms.get(created.roomId)!;
     this.lobby.cloneSetup(src, rec);

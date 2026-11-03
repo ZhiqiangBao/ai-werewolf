@@ -378,6 +378,7 @@ export interface ModelDraft {
 
 /** 模型名单里的一条。没有密钥明文。 */
 export interface ModelPresetView {
+  lifecycle?: 'active' | 'disabled' | 'archived';
   id: string;
   label: string;
   model: string;

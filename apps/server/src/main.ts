@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ControlAction } from '@werewolf/protocol';
-import { ApiFailure, FileStore, RoomManager, SecretBox, SpeechConnections, SpeechService } from '@werewolf/session';
+import { acquireDataLease, ApiFailure, FileStore, RoomManager, SecretBox, SpeechConnections, SpeechService } from '@werewolf/session';
 import { DEFAULT_HOST, inviteNetwork } from './invite-network';
 
 const ROOT = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
@@ -14,6 +14,8 @@ const DEV = process.argv.includes('--dev');
 const PORT = Number(process.env.PORT ?? 5173);
 const HOST = process.env.HOST ?? DEFAULT_HOST;
 
+const releaseLease = acquireDataLease(DATA);
+process.once('exit', () => { try { releaseLease(); } catch { /* 留下锁供人工核查。 */ } });
 const secrets = SecretBox.fromEnvOrFile(DATA);
 const manager = new RoomManager({ store: new FileStore(DATA), secrets, modelsPath: join(DATA, 'models.json') });
 const speech = SpeechService.configured(join(DATA, 'speech'), process.env.WEREWOLF_SPEECH_CONFIG);
