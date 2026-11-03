@@ -155,6 +155,8 @@ export interface RuleSet {
   toolsetVersion?: 1 | 2;
   /** 缺省／1 保留历史先公告再续投；2 为警上优先；新局 3 另增加普通竞选的发言后退水与最终确认。 */
   electionVersion?: 1 | 2 | 3;
+  /** 缺省／1 先处理死亡技能再判胜负；新局 2 在死亡后先判胜负，终局不再发动技能。 */
+  deathResolutionVersion?: 1 | 2;
   presetId: string;
   /** 新版型的项目规则版本；旧房间缺省不补写历史。 */
   presetVersion?: number;

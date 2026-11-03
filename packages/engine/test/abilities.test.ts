@@ -193,6 +193,32 @@ describe('通用能力实例的引擎调度', () => {
     expect(g.state.players[10].alive).toBe(false);
     expect(g.state.players[11].alive).toBe(false);
   });
+
+  it.each(['good', 'wolf'] as const)('第一枪已产生 %s 胜利时取消排队的第二个复制猎枪职责', (winner) => {
+    const g = game();
+    grant(g, 9, 'hunter', 'h1'); grant(g, 9, 'hunter', 'h2');
+    if (winner === 'good') g.removeSeats(2, 3, 4);
+    else g.removeSeats(10, 12);
+    g.night({ kill: 9, inspect: 1 });
+    expect(g.hasTool('hunter_shoot')).toBe(true);
+    g.ok(9, 'hunter_shoot', { target: winner === 'good' ? 1 : 11 });
+    expect(g.state.result?.winner).toBe(winner);
+    expect(g.pending).toBeNull();
+    expect(g.events.filter(e => e.type === 'hunter.shot')).toHaveLength(1);
+    expect(g.state.players[4].alive).toBe(true);
+    expect(g.act(9, 'hunter_shoot', { target: 5 })?.code).toBe('GAME_ENDED');
+  });
+
+  it('复制猎人的持有者死亡已导致平民全灭时不生成猎枪职责', () => {
+    const g = game();
+    grant(g, 9, 'hunter', 'h1');
+    g.removeSeats(10, 11, 12);
+    g.night({ kill: 9, inspect: 1 });
+    expect(g.state.result?.winner).toBe('wolf');
+    expect(g.hasTool('hunter_shoot')).toBe(false);
+    expect(g.events.some(e => e.type === 'hunter.shot')).toBe(false);
+    expect(abilityState(instance(g, 9, 'h1'), 'hunter').spent).toBe(false);
+  });
 });
 
 describe('双觉醒隐狼的原夜间阶段', () => {

@@ -16,6 +16,18 @@ import {
 import { TestGame } from './harness';
 
 describe('版型与规则', () => {
+  it('新局默认死亡后先判胜负，并拒绝未知死亡结算版本', () => {
+    const rules = buildRules('classic9');
+    expect(rules.deathResolutionVersion).toBe(2);
+    expect(buildRuleCard(rules)).toContain('胜负已分立即结束，不再发动猎人开枪等出局技能');
+    expect(buildRuleCard(rules)).toContain('死亡后若胜负已分，不能开枪。');
+    const legacy = { ...rules, deathResolutionVersion: undefined };
+    expect(validateRules(legacy)).toEqual([]);
+    expect(buildRuleCard(legacy)).toContain('先处理同批次出局技能');
+    expect(buildRuleCard(legacy)).not.toContain('死亡后若胜负已分，不能开枪。');
+    expect(validateRules({ ...rules, deathResolutionVersion: 3 as 2 })).toContain('死亡结算版本只支持 1 或 2');
+  });
+
   it('内置版型都能通过校验并开局（SYS-05 / MOD-04）', () => {
     for (const p of allPresets()) {
       const rules = buildRules(p.id);

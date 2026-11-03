@@ -34,6 +34,8 @@ async function scenario(Manager: typeof RoomManager, modern: boolean) {
   const rec = store.loadAll()[0];
   store.rooms.clear();
   const rules = buildRules('standard12');
+  // 该基线来自死亡流程版本出现前的房间，恢复时不套用新局的结算规则。
+  delete rules.deathResolutionVersion;
   const { state, events } = createGame({ id: 'fixed-room', rules, seed: 'fixed-seed' });
   Object.assign(rec, {
     id: 'fixed-room', hostToken: 'host', spectatorToken: 'spectator',
@@ -119,6 +121,7 @@ async function aiScenario(Manager: typeof RoomManager, modern: boolean) {
   const rec = store.loadAll()[0];
   store.rooms.clear();
   const rules = buildRules('standard12');
+  delete rules.deathResolutionVersion;
   const { state, events } = createGame({ id: 'fixed-ai-room', rules, seed: 'fixed-ai-seed' });
   Object.assign(rec, {
     id: 'fixed-ai-room', hostToken: 'host', spectatorToken: 'spectator',

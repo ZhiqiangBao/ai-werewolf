@@ -1,5 +1,8 @@
 /** [中文源模板, English, 日本語]；模板参数与中文保持一致，参数内容不参与翻译。 */
 export const translations: readonly (readonly [string, string, string])[] = [
+  ["· 每批死亡后先判定胜负；胜负已分立即结束，不再发动猎人开枪等出局技能。胜负未分才处理出局技能，每项技能前重新检查；若双方获胜条件同时满足，优先判定好人阵营获胜。","· Check victory after each batch of deaths. If the game is decided, end immediately without Hunter shots or other death abilities. Otherwise resolve death abilities, checking again before each one. If both teams meet their victory conditions simultaneously, the good team wins.","· 各死亡バッチの後に先に勝敗を判定する。勝敗が決まれば直ちに終了し、猟師の射撃などの死亡時能力は使わない。未決着の場合だけ死亡時能力を処理し、各能力の前に再判定する。両陣営が同時に勝利条件を満たす場合は善良陣営の勝利とする。"],
+  ["死亡后若胜负已分，不能开枪。","If victory is already decided after the death, you cannot shoot.","死亡後に勝敗が決まっている場合は射撃できません。"],
+  ["死亡结算版本只支持 1 或 2","Death resolution version must be 1 or 2","死亡処理のバージョンは1または2のみ対応しています"],
   ["在法官许可的发言和行动中，尽力帮助真实阵营{0}获胜；公布出局后按规则完成获准职责，随后旁观。","In speech and actions permitted by the moderator, do your best to help your true faction, {0}, win. Once your elimination is announced, complete authorized duties under the rules, then observe.","司会が許可する発言と行動で、真の陣営{0}の勝利を目指す。脱落が公表されたら、規則に従い許可された役目を果たし、その後は観戦する。"],
   ["· 警长投票：{0}，每人 1 票","· Sheriff vote: {0}, one vote each","· 警長投票：{0}、各1票"],
   ["{0}；平票者 PK 发言后，除仍在平票台上的玩家外，其余存活玩家再投一次，再平则本局没有警长。","{0}; tied candidates make PK speeches, then other living players vote again, excluding those still tied. Another tie leaves no Sheriff.","{0}。同票者がPK発言後、引き続き同票の者を除く生存者が再投票し、再同票なら警長なし。"],

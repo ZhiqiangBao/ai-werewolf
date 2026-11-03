@@ -36,6 +36,7 @@ export interface BuildRulesOptions {
   locale?: string;
   toolsetVersion?: 1 | 2;
   electionVersion?: 1 | 2 | 3;
+  deathResolutionVersion?: 1 | 2;
   /** 允许改动开局页不可改的选项（测试与自定义版型用）。 */
   allowFixed?: boolean;
   /** 自定义身份列表，覆盖版型自带的身份。 */
@@ -63,6 +64,7 @@ export function buildRules(
     locale,
     toolsetVersion: opts.toolsetVersion ?? 2,
     electionVersion: opts.electionVersion ?? 3,
+    deathResolutionVersion: opts.deathResolutionVersion ?? 2,
     presetId: preset.id,
     ...(preset.version ? { presetVersion: preset.version } : {}),
     presetName: opts.name ?? gameText(locale, preset.name),
@@ -79,6 +81,7 @@ export function validateRules(rules: RuleSet): string[] {
   if (rules.locale !== undefined && !isGameLocale(rules.locale)) errors.push('Unsupported game language');
   if (rules.toolsetVersion !== undefined && rules.toolsetVersion !== 1 && rules.toolsetVersion !== 2) errors.push('工具版本只支持 1 或 2');
   if (rules.electionVersion !== undefined && ![1, 2, 3].includes(rules.electionVersion)) errors.push('竞选流程版本只支持 1、2 或 3');
+  if (rules.deathResolutionVersion !== undefined && ![1, 2].includes(rules.deathResolutionVersion)) errors.push(gameText(isGameLocale(rules.locale) ? rules.locale : DEFAULT_GAME_LOCALE, '死亡结算版本只支持 1 或 2'));
   if (rules.roles.length !== rules.playerCount) errors.push(`人数 ${rules.playerCount} 与身份数量 ${rules.roles.length} 不一致`);
   if (rules.playerCount < 4 || rules.playerCount > 20) errors.push('人数需要在 4 到 20 之间');
   const counts = new Map<string, number>();

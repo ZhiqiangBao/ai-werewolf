@@ -41,11 +41,13 @@ export const hunter: RoleModule = {
     return [
       gameText(rules.locale, "猎人：{0}出局时可以开枪带走一名存活玩家，也可以放弃。", can.join('、')) +
         (v['hunter.shootOnPoison'] ? '' : gameText(rules.locale, "死因里包含毒药时不能开枪。")) +
-        gameText(rules.locale, "符合发动条件时，法官私下询问本人；开枪结果和猎人表现公开。{0}", v['hunter.declineReveals'] ? gameText(rules.locale, "放弃开枪也会公开身份。") : gameText(rules.locale, "放弃开枪不公开身份。")),
+        gameText(rules.locale, "符合发动条件时，法官私下询问本人；开枪结果和猎人表现公开。{0}", v['hunter.declineReveals'] ? gameText(rules.locale, "放弃开枪也会公开身份。") : gameText(rules.locale, "放弃开枪不公开身份。")) +
+        (rules.deathResolutionVersion === 2 ? gameText(rules.locale, "死亡后若胜负已分，不能开枪。") : ''),
     ];
   },
 
-  appendix: (ctx) => [gameText(ctx.rules.locale, "你出局时如果死因不含毒药，法官会私下询问你是否开枪。开枪会公开你的身份。")],
+  appendix: (ctx) => [gameText(ctx.rules.locale, "你出局时如果死因不含毒药，法官会私下询问你是否开枪。开枪会公开你的身份。") +
+    (ctx.rules.deathResolutionVersion === 2 ? gameText(ctx.rules.locale, "死亡后若胜负已分，不能开枪。") : '')],
 
   onDeath(ctx, death: DeathRecord) {
     return canHunterShoot(ctx.rules, death) ? [{ type: 'hunter.shoot', seat: death.seat, batch: death.batch }] : [];
