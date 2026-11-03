@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { GodProjection, Projection, RoomBrief, RoomSetupView, ToolCall, ViewResponse } from '@werewolf/protocol';
 import { gameText } from '@werewolf/protocol';
-import { useI18n } from '../i18n';
+import { UiLanguagePicker, useI18n } from '../i18n';
 import { api, exportUrl, rememberRoom } from '../api';
 import { go, useCatalog, useView } from '../hooks';
 import { AuditPanel } from '../components/AuditPanel';
@@ -51,9 +51,12 @@ function TopBar({ room, projection, who, children }: { room: RoomBrief; projecti
       )}
       {room.paused && room.status === 'running' && <span className="tag gold">{t('已暂停')}</span>}
       <span className="spacer" />
-      {avatarName && <span className="tag">{t(avatarName)}</span>}
-      {children}
-      <span className="tag">{who}</span>
+      <div className="room-toolbar">
+        <UiLanguagePicker />
+        {avatarName && <span className="tag">{t(avatarName)}</span>}
+        {children}
+        <span className="tag">{who}</span>
+      </div>
     </div>
   );
 }
