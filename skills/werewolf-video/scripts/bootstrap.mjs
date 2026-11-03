@@ -18,6 +18,8 @@ const required = [
   ['packages/session/src/asr.ts', /export\s+async\s+function\s+ensureLocalAsrReady\s*\(/],
   ['scripts/asr/service.mjs', /server\.py/],
   ['scripts/asr/server.py', /class\s+PythonSocketGuard\b/],
+  ['scripts/asr/register.py', /def\s+register\s*\(/],
+  ['scripts/asr/runtime-manifest.v0.4.1.json', /"release"\s*:\s*"v0\.4\.1"/],
 ];
 for (const [file, marker] of required) {
   let source;
@@ -48,7 +50,7 @@ for (const file of await readdir(artSource, { withFileTypes: true })) {
 }
 let packageUpdated = false;
 pkg.scripts ??= {}; pkg.devDependencies ??= {};
-for (const [name, script] of Object.entries({ 'video:make': 'tsx scripts/video/workflow.ts', 'video:compress': 'tsx scripts/video/compress.ts', 'video:audit-audio': 'tsx scripts/video/audit-audio.ts', 'video:review-audio': 'tsx scripts/video/review-audio.ts', 'video:import-alignment': 'tsx scripts/video/import-audio-alignment.ts', 'video:repair-audio': 'tsx scripts/video/repair-audio.ts', 'video:publish-copy': 'tsx scripts/video/publish-copy.ts', 'asr:start': 'node scripts/asr/service.mjs start', 'asr:status': 'node scripts/asr/service.mjs status', 'asr:restart': 'node scripts/asr/service.mjs restart', 'asr:stop': 'node scripts/asr/service.mjs stop' })) {
+for (const [name, script] of Object.entries({ 'video:make': 'tsx scripts/video/workflow.ts', 'video:compress': 'tsx scripts/video/compress.ts', 'video:audit-audio': 'tsx scripts/video/audit-audio.ts', 'video:review-audio': 'tsx scripts/video/review-audio.ts', 'video:import-alignment': 'tsx scripts/video/import-audio-alignment.ts', 'video:repair-audio': 'tsx scripts/video/repair-audio.ts', 'video:publish-copy': 'tsx scripts/video/publish-copy.ts', 'asr:prepare': 'python scripts/asr/register.py', 'asr:start': 'node scripts/asr/service.mjs start', 'asr:status': 'node scripts/asr/service.mjs status', 'asr:restart': 'node scripts/asr/service.mjs restart', 'asr:stop': 'node scripts/asr/service.mjs stop' })) {
   if (!pkg.scripts[name]) { pkg.scripts[name] = script; packageUpdated = true; }
 }
 if (!pkg.devDependencies['@napi-rs/canvas'] && !pkg.dependencies?.['@napi-rs/canvas']) { pkg.devDependencies['@napi-rs/canvas'] = '0.1.100'; packageUpdated = true; }

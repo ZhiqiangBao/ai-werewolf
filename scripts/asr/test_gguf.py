@@ -47,7 +47,7 @@ class FakeSession:
 class FakeModel:
     def __init__(self, path, *, backend, device):
         self.path, self.backend, self.device = path, backend, device
-        self.arch, self.variant = "qwen3asr", "1.7B Q5_K_M"
+        self.arch, self.variant = "qwen3asr", "1.7B Q8_0"
         self.calls, self.failure = [], None
 
     def session(self):
@@ -73,6 +73,9 @@ class GgufContract(unittest.TestCase):
     def test_selects_discrete_gpu_and_uses_fresh_unprompted_sessions(self):
         backend = server.GgufBackend(Path("/data"), "gpu")
         self.assertIs(backend.model.device, self.gpu)
+        self.assertEqual(backend.dtype, "Q8_0")
+        self.assertEqual(backend.model_info["file"], "Qwen3-ASR-1.7B-Q8_0.gguf")
+        self.assertEqual(backend.model_info["sha256"], "9a0d81792dfea2d5f278b8a63deb3ea6e02139ce42c2301f32ea19c4f77526b7")
         audio = np.zeros(16000, dtype=np.float32)
         first = backend.transcribe(audio, "auto")
         second = backend.transcribe(audio, "ja")

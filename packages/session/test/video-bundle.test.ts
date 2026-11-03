@@ -39,6 +39,8 @@ describe('video skill bundle bootstrap', () => {
       ['packages/session/src/asr.ts', 'export async function transcribeAudio() {} export async function ensureLocalAsrReady() {}'],
       ['scripts/asr/service.mjs', '// server.py'],
       ['scripts/asr/server.py', 'class PythonSocketGuard: pass'],
+      ['scripts/asr/register.py', 'def register(): pass'],
+      ['scripts/asr/runtime-manifest.v0.4.1.json', '{"release":"v0.4.1"}'],
       ['scripts/video/voices.json', '{"custom":"preserved"}'],
     ]) await put(dir, file, text);
     const result = invoke(dir);

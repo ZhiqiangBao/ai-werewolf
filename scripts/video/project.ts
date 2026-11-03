@@ -69,7 +69,7 @@ export function clipVoiceProfile(voices: VoiceCatalog, clip: Pick<Clip, 'voiceKe
         (cue?.instruction ? cue.instruction === legacySeerCue : instruction === legacyVoiceInstructions[clip.voiceKey])) {
       instruction = language === 'en'
         ? 'Speak naturally and clearly in English. Preserve the provided text exactly; do not add words.'
-        : '日本語で自然にはっきり読み、指定された文章を変えず、言葉を追加しないでください。';
+        : '';
     }
     const languageHints = profile.locale === sourceLocale && profile.languageHints?.length
       ? profile.languageHints : [language === 'yue' ? 'zh' : language];

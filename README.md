@@ -293,7 +293,7 @@ node --import tsx packages/session/scripts/export-video.ts --room=ROOM_ID
 
 制作流程采用 **游戏记录 → 分角色配音 → 波形与独立原话核对 → 字幕对齐 → 重建画面 → 离线合成**，不依赖实时录屏。支持上帝视角和指定席位的单玩家视角；单玩家导出只包含该席位有权看到的事件，出局后仍能保留后续公开事实。制作步骤见 [视频制作技能](skills/werewolf-video/SKILL.md) 与 [单玩家视角制作](skills/werewolf-video/references/player-view.md)。
 
-音频核对默认中文、英语使用已配置的本地 Qwen3-ASR，日语仅使用在线 Qwen Token Plan；可显式选择本地、Qwen、小米或关闭核对，日语不允许选择本地或小米。视频工作流按需启动已安装的本地模型，并在转写差异或字时不可靠时保留检查点。配置、选项及恢复步骤见 [音频核对操作指南](skills/werewolf-video/references/local-asr.md)，本机与在线的样本分数见 [ASR 对比记录](docs/本地音频核对与ASR对比.md)。
+视频默认检查原稿、TTS 字词标签、波形和字幕时间，ASR 按需显式启用，不重复转写每段音频。需要独立核对时，中文、英语使用本地 Qwen3-ASR 1.7B Q8，日语仅在线 Qwen；也保留明确的其他在线选项，日语不允许本地或小米。字时不可靠仍会保留检查点，关闭 ASR 不会放宽时间门禁。操作和恢复步骤见 [音频核对指南](skills/werewolf-video/references/local-asr.md)，30 段实测见 [Q5/Q8 对比](docs/评估/Qwen3-ASR-1.7B量化对比.md)，首次 agent 模拟流程见 [技能走查](docs/视频制作Skill流程走查.md)。
 
 画面标签默认使用原局语言，旧记录未指定时使用 `zh-CN`；可用 `--video-locale=en` 或环境变量 `VIDEO_LOCALE` 指定 `zh-CN`、`en`、`ja`。覆盖只改变画面标签，不翻译历史玩家原话、音频或本局规则正文；正文语言与画面不同时会在画面标明。此次产品国际化仅保持这些既有视频接口兼容，不承诺视频字幕、配音和历史正文全量本地化。
 

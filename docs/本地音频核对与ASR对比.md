@@ -1,13 +1,13 @@
 # 本地音频核对与 ASR 对比
 
-更新：2026-11-03。本文记录冻结样本上的方案对比，不代表人工金标准准确率，也不改变逐段复核责任。
+更新：2026-11-03。本文保留首轮 0.6B/Q5 与在线接口的冻结样本对比；扩大为三语各 10 段的 Q5/Q8 数据见[量化对比记录](评估/Qwen3-ASR-1.7B量化对比.md)。当前本地选项改为 Q8，Q5 仅保留历史测试数据。差异不代表人工金标准准确率，也不改变逐段复核责任。
 
 ## 生产路由与自动工作流
 
 - 当前视频 TTS 使用既有在线 Qwen Token Plan；本轮没有部署新的本地 TTS。TTS provider 与 ASR provider 是分开的配置。
-- workflow 参数为 `--asr-provider=auto|local|qwen-token-plan|mimo-token-plan|off`、`--asr-aliases=FILE` 和可选 `--alignment-provider=qwen-token-plan`。默认 `auto` 对中文、英语选择本地服务，对日语选择 Qwen Token Plan 在线识别；显式 `local` 或 MiMo 日语请求会失败，不会静默改路由。
-- 工作流先生成音频并做 waveform 检查，然后运行独立 ASR 复核，再完成完整音频/字幕时间审计，最后进入 timeline。英语、日语的 Qwen 同一次真实响应词边界通过逐字内容、时间、音频与稿件绑定检查时，自动复用该响应建立 sidecar，不多发识别请求。英语若选本地或 MiMo 且词时间不可用或不可靠，必须明确指定 `--alignment-provider=qwen-token-plan`，否则以 `alignment-required` 失败。中文暂不支持外部词边界导入，原 TTS 字时不可靠时在额外云请求前停止，不发送无效补对齐请求。
-- ASR 成功结果缓存按输入音频、provider、模型和设置绑定。差异报告为 `needs-review`；workflow 不自动改写原稿。显式 `off` 会在状态报告中记为 `not-checked-explicitly-disabled`，跳过语义核对但仍执行完整时间审计，不能声称 ASR 通过。
+- workflow 参数为 `--asr-provider=auto|local|qwen-token-plan|mimo-token-plan|off`、`--asr-aliases=FILE` 和可选 `--alignment-provider=qwen-token-plan`。默认 `off`，先核对原稿与 TTS 标签；显式 `auto` 才对中文、英语选择本地 Q8，对日语选择 Qwen Token Plan 在线识别。显式 `local` 或 MiMo 日语请求会失败，不会静默改路由。
+- 工作流先生成音频并做 waveform 检查，在明确启用时运行独立 ASR 复核，再完成完整音频/字幕时间审计，最后进入 timeline。英语、日语的 Qwen 同一次真实响应词边界通过逐字内容、时间、音频与稿件绑定检查时，自动复用该响应建立 sidecar，不多发识别请求。英语若选本地或 MiMo 且词时间不可用或不可靠，必须明确指定 `--alignment-provider=qwen-token-plan`，否则以 `alignment-required` 失败。中文暂不支持外部词边界导入，原 TTS 字时不可靠时在额外云请求前停止，不发送无效补对齐请求。
+- ASR 成功结果缓存按输入音频、provider、模型和设置绑定。差异报告为 `needs-review`；workflow 不自动改写原稿。默认或显式 `off` 会在状态报告中记为 `not-checked-explicitly-disabled`，跳过语义核对但仍执行完整时间审计，不能声称 ASR 通过。
 - `--prepare-only` 与 `--check-only` 分别停在 plan 与 preflight，不会启动本地 ASR daemon。选择本地路由后，daemon 仅在 workflow 到达 review-audio 阶段时按需启动。完整操作命令见 [本地 ASR 操作指南](../skills/werewolf-video/references/local-asr.md)。
 
 ## 冻结样本
@@ -53,7 +53,7 @@
 
 通用模型 manifest 位于 `D:/QWEN`；详细操作、缓存和 sidecar 导入见 [本地 ASR 操作指南](../skills/werewolf-video/references/local-asr.md)。每次 workflow 的实际 provider、识别/对齐请求数、失败片段及语义状态以该次生成的 `workflow-status.json` 和 ASR report 为准。
 
-## 实现验证记录
+## 首轮实现验证记录（提交 a93910a）
 
 2026-11-03，隔离工作区最终单 worker 回归共 125 文件、979 项全部通过，TypeScript 检查和网页生产构建通过。最初默认并发耗尽 Windows 内存，第二次低并发仍有一处测试配置断言与 CPU 编码内存失败；修正测试中 Python 配置覆盖并按单 worker 完整重跑后通过，没有通过延长超时或放宽门禁掩盖失败。
 

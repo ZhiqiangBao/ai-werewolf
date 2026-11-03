@@ -11,7 +11,7 @@ import { auditAudio } from '../../../scripts/video/audit-audio';
 const digest = (s: string | Buffer) => createHash('sha256').update(s).digest('hex');
 function localResult(input: Buffer, text = 'Player one.', truncated: boolean | null = false, backend: LocalAsrBackend = 'transformers'): AsrResult {
   const model = backend === 'gguf' ? LOCAL_GGUF_MODEL : LOCAL_ASR_MODEL, revision = backend === 'gguf' ? LOCAL_GGUF_REVISION : LOCAL_ASR_REVISION;
-  const runtime = { device: backend === 'gguf' ? 'vulkan' : 'cuda:0', dtype: backend === 'gguf' ? 'Q5_K_M' : 'float16', versions: { python: '3.11', runtime: backend, ...(backend === 'gguf' ? { transcribe_cpp: '0.4.1', native: 'fixture' } : { torch: '2', transformers: '4' }) } };
+  const runtime = { device: backend === 'gguf' ? 'vulkan' : 'cuda:0', dtype: backend === 'gguf' ? 'Q8_0' : 'float16', versions: { python: '3.11', runtime: backend, ...(backend === 'gguf' ? { transcribe_cpp: '0.4.1', native: 'fixture' } : { torch: '2', transformers: '4' }) } };
   const rawResult = { transcription: text, audioSha256: asrAudioSha256(input), requestedLanguage: 'auto', truncated,
     model: { repo: model, revision, backend, ...(backend === 'gguf' ? { file: LOCAL_GGUF_FILE, sha256: LOCAL_GGUF_SHA256 } : {}) }, runtime };
   return { provider: 'local', inputAudioSha256: asrAudioSha256(input), model, revision, backend, runtime, text, rawResult, truncated, elapsedMs: 1, options: { language: 'auto' } };
@@ -38,6 +38,25 @@ async function fixture() {
 }
 
 describe('批量独立音频核对', () => {
+  it('只处理明确选择的片段，未知片段在调用服务前拒绝', async () => {
+    const f = await fixture();
+    for (const name of ['source.json', 'script.json']) {
+      const file = join(f.directory, name), script = JSON.parse(await readFile(file, 'utf8'));
+      script.chapters[0].entries.push({ ...script.chapters[0].entries[0], sourceSeq: 2 });
+      await writeFile(file, JSON.stringify(script));
+    }
+    const file = join(f.directory, 'clips.json'), clips = JSON.parse(await readFile(file, 'utf8'));
+    clips.push({ ...clips[0], sourceSeq: 2, id: '002-1', audioFile: join(f.directory, 'audio', '002-1.wav') });
+    await writeFile(file, JSON.stringify(clips));
+    const transcribe = vi.fn(async (input: Buffer): Promise<AsrResult> => localResult(input));
+    const options = { directory: f.directory, asrDataDir: f.directory };
+    await expect(reviewVideoAudio({ ...options, clipIds: ['missing'] }, transcribe)).rejects.toThrow('Unknown ASR clip');
+    expect(transcribe).not.toHaveBeenCalled();
+    const report = await reviewVideoAudio({ ...options, clipIds: ['001-1'] }, transcribe);
+    expect(report.items).toMatchObject([{ clipId: '001-1', status: 'matching' }]);
+    expect(report.items).toHaveLength(1);
+    expect(transcribe).toHaveBeenCalledTimes(1);
+  });
   it('波形预检和修复后检标明字时待审核，完整检查仍拒绝缺失字时', async () => {
     const f = await fixture();
     const waveform = await auditAudio(f.directory, join(f.directory, 'output/waveform.json'), false, true);
@@ -106,6 +125,23 @@ describe('批量独立音频核对', () => {
     expect(transcribe).toHaveBeenCalledTimes(3);
     expect(third.items[0].settingsSha256).not.toBe(second.items[0].settingsSha256);
     expect((await readdir(join(f.directory, 'output', 'asr-review', 'cache'))).length).toBe(3);
+  });
+  it('Q5 的旧 GGUF 缓存不会被当作 Q8 结果复用', async () => {
+    const f = await fixture();
+    await writeFile(join(f.directory, 'local-asr', 'service-state.json'), JSON.stringify({ endpoint: 'http://127.0.0.1:5291', nonce: 'q8', pid: 42, backend: 'gguf' }));
+    await writeFile(join(f.directory, 'local-asr', 'service-control.json'), JSON.stringify({ nonce: 'q8', token: 'fixture' }));
+    const transcribe = vi.fn(async (input: Buffer): Promise<AsrResult> => localResult(input, 'Player one.', false, 'gguf'));
+    const options = { directory: f.directory, asrDataDir: f.directory };
+    const first = await reviewVideoAudio(options, transcribe);
+    expect(first.items[0]).toMatchObject({ cached: false, status: 'matching' });
+    const cache = join(f.directory, 'output', 'asr-review', 'cache');
+    const [name] = await readdir(cache), file = join(cache, name), stale = JSON.parse(await readFile(file, 'utf8'));
+    stale.rawResult.model.file = 'Qwen3-ASR-1.7B-Q5_K_M.gguf';
+    stale.rawResult.model.sha256 = '034c557fe92ff8fcd9a9c041cbdaad347be0a86a58d3a348f63cf3f0180879d0';
+    await writeFile(file, JSON.stringify(stale));
+    const second = await reviewVideoAudio(options, transcribe);
+    expect(second.items[0]).toMatchObject({ cached: false, status: 'matching' });
+    expect(transcribe).toHaveBeenCalledTimes(2);
   });
   it('识别期间原稿改变时保留独立转写但拒绝用旧稿判定', async () => {
     const f = await fixture();

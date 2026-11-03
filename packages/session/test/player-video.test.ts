@@ -134,7 +134,7 @@ describe('玩家视角视频权限', () => {
     const narration = JSON.parse(await readFile(join(dir, 'narration.json'), 'utf8'));
     narration.review = { status: 'reviewed', method: '合成测试核对', factsChecked: true, playerQuotesUntouched: true, futureResultsNotUsedInProcessCommentary: true };
     await writeFile(join(dir, 'narration.json'), JSON.stringify(narration));
-    run('scripts/video/workflow.ts', ['--room=synthetic', `--player-seat=${own}`, `--data-dir=${data}`, '--encoder=cpu', '--resume', '--asr-provider=off', '--tts-provider=synthetic-test', `--tts-adapter=${resolve(root, 'packages/session/test/fixtures/synthetic-video-tts.ts')}`], {});
+    run('scripts/video/workflow.ts', ['--room=synthetic', `--player-seat=${own}`, `--data-dir=${data}`, '--encoder=cpu', '--resume', '--tts-provider=synthetic-test', `--tts-adapter=${resolve(root, 'packages/session/test/fixtures/synthetic-video-tts.ts')}`], {});
     const workflowStatus = JSON.parse(await readFile(join(dir, 'workflow-status.json'), 'utf8'));
     expect(workflowStatus).toMatchObject({ status: 'complete', asr: { requestedProvider: 'off', audioSemanticReview: 'not-checked-explicitly-disabled' } });
     expect(workflowStatus.completed).toContain('review-audio');

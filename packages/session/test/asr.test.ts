@@ -102,18 +102,22 @@ describe('独立 ASR 提供方契约', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(String(fetch.mock.calls[0][0])).toContain('/health');
   });
-  it('接受已知 Q5 GGUF 的空转写和未知截断状态，拒绝错误文件摘要', async () => {
+  it('接受已知 Q8 GGUF 的空转写和未知截断状态，拒绝错误文件摘要', async () => {
     const base = resolve('data/asr-client-tests'); await mkdir(base, { recursive: true });
     const directory = await mkdtemp(join(base, 'case-')); await mkdir(join(directory, 'local-asr'));
     await writeFile(join(directory, 'local-asr', 'service-state.json'), JSON.stringify({ endpoint: 'http://127.0.0.1:5291', nonce: 'n', pid: 42, backend: 'gguf' }));
     await writeFile(join(directory, 'local-asr', 'service-control.json'), JSON.stringify({ token: 'fixture', nonce: 'n' }));
     const model = { repo: LOCAL_GGUF_MODEL, revision: LOCAL_GGUF_REVISION, backend: 'gguf', file: LOCAL_GGUF_FILE, sha256: LOCAL_GGUF_SHA256 };
-    const runtime = { device: 'vulkan', dtype: 'Q5_K_M', versions: { python: '3.11', transcribe_cpp: '0.4.1', native: 'fixture', nativeCommit: null } };
-    let badHash = false;
-    const fetch = vi.fn<typeof globalThis.fetch>(async (url) => String(url).endsWith('/health') ? json({ status: 'ready', nonce: 'n', pid: 42, backend: 'gguf' }) : json({ transcription: '', audioSha256: asrAudioSha256(audio), requestedLanguage: 'auto', truncated: null, model: { ...model, sha256: badHash ? 'wrong' : model.sha256 }, runtime }));
+    const runtime = { device: 'vulkan', dtype: 'Q8_0', versions: { python: '3.11', transcribe_cpp: '0.4.1', native: 'fixture', nativeCommit: null } };
+    expect(LOCAL_GGUF_FILE).toBe('Qwen3-ASR-1.7B-Q8_0.gguf');
+    expect(LOCAL_GGUF_SHA256).toBe('9a0d81792dfea2d5f278b8a63deb3ea6e02139ce42c2301f32ea19c4f77526b7');
+    let badHash = false, badDtype = false;
+    const fetch = vi.fn<typeof globalThis.fetch>(async (url) => String(url).endsWith('/health') ? json({ status: 'ready', nonce: 'n', pid: 42, backend: 'gguf' }) : json({ transcription: '', audioSha256: asrAudioSha256(audio), requestedLanguage: 'auto', truncated: null, model: { ...model, sha256: badHash ? '034c557fe92ff8fcd9a9c041cbdaad347be0a86a58d3a348f63cf3f0180879d0' : model.sha256 }, runtime: { ...runtime, dtype: badDtype ? 'Q5_K_M' : runtime.dtype } }));
     vi.stubGlobal('fetch', fetch);
     expect(await transcribeAudio(audio, { dataDir: directory, locale: 'en' })).toMatchObject({ model: LOCAL_GGUF_MODEL, revision: LOCAL_GGUF_REVISION, backend: 'gguf', runtime, text: '', truncated: null });
     badHash = true;
+    await expect(transcribeAudio(audio, { dataDir: directory, locale: 'en' })).rejects.toThrow(/binding is invalid/);
+    badHash = false; badDtype = true;
     await expect(transcribeAudio(audio, { dataDir: directory, locale: 'en' })).rejects.toThrow(/binding is invalid/);
   });
   it('未知本地后端在发送音频前拒绝', async () => {

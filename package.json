@@ -14,6 +14,7 @@
     "restart": "node scripts/service.mjs restart",
     "stop": "node scripts/service.mjs stop",
     "status": "node scripts/service.mjs status",
+    "asr:prepare": "python scripts/asr/register.py",
     "asr:start": "node scripts/asr/service.mjs start",
     "asr:stop": "node scripts/asr/service.mjs stop",
     "asr:restart": "node scripts/asr/service.mjs restart",

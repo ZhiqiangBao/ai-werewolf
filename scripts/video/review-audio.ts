@@ -190,11 +190,11 @@ export async function reviewVideoAudio(options: BatchReviewOptions = {}, transcr
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const { values } = parseArgs({ strict: true, allowPositionals: false, options: { provider: { type: 'string' }, aliases: { type: 'string' }, align: { type: 'boolean' }, 'alignment-provider': { type: 'string' }, help: { type: 'boolean' } } });
-  if (values.help) { console.log('VIDEO_PROJECT_DIR=DIR node --import tsx scripts/video/review-audio.ts [--provider=auto|local|qwen-token-plan|mimo-token-plan] [--aliases=JSON_FILE] [--align] [--alignment-provider=qwen-token-plan]'); process.exit(0); }
+  const { values } = parseArgs({ strict: true, allowPositionals: false, options: { provider: { type: 'string' }, clip: { type: 'string', multiple: true }, aliases: { type: 'string' }, align: { type: 'boolean' }, 'alignment-provider': { type: 'string' }, help: { type: 'boolean' } } });
+  if (values.help) { console.log('VIDEO_PROJECT_DIR=DIR node --import tsx scripts/video/review-audio.ts [--provider=auto|local|qwen-token-plan|mimo-token-plan] [--clip=ID ...] [--aliases=JSON_FILE] [--align] [--alignment-provider=qwen-token-plan]'); process.exit(0); }
   const provider = (values.provider ?? 'auto') as AsrProvider | 'auto';
   const aliases = values.aliases ? JSON.parse(await readFile(resolve(values.aliases), 'utf8')) as AliasMap : undefined;
-  const report = await reviewVideoAudio({ provider, aliases, align: values.align, alignmentProvider: values['alignment-provider'] as 'qwen-token-plan' | undefined });
+  const report = await reviewVideoAudio({ provider, aliases, align: values.align, clipIds: values.clip, alignmentProvider: values['alignment-provider'] as 'qwen-token-plan' | undefined });
   console.log(JSON.stringify({ roomId: report.roomId, provider: report.provider, matching: report.items.filter((item) => item.status === 'matching').length,
     needsReview: report.items.filter((item) => item.status === 'needs-review').length, failures: report.items.filter((item) => item.status === 'failure').length }));
   if (report.items.some((item) => item.status !== 'matching')) process.exitCode = 1;

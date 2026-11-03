@@ -24,8 +24,9 @@ REVISION = "7f1569a48a89f3e3f4dc3a5c9d28bddd903bc76c"
 REPO = "Qwen/Qwen3-ASR-0.6B-hf"
 GGUF_REPO = "handy-computer/Qwen3-ASR-1.7B-gguf"
 GGUF_REVISION = "0e0a596e3959c3f3f2ab7d443a5b6f0f4a4bba6f"
-GGUF_FILE = "Qwen3-ASR-1.7B-Q5_K_M.gguf"
-GGUF_SHA = "034c557fe92ff8fcd9a9c041cbdaad347be0a86a58d3a348f63cf3f0180879d0"
+GGUF_FILE = "Qwen3-ASR-1.7B-Q8_0.gguf"
+GGUF_SIZE = 2185030624
+GGUF_SHA = "9a0d81792dfea2d5f278b8a63deb3ea6e02139ce42c2301f32ea19c4f77526b7"
 RUNTIME_MANIFEST_SHA = "a97d3724c83f815cdab6b6992fba92c6836fa01d158feb7ccfb2e3a6a49468f8"
 LIMIT = 16 * 1024 * 1024
 MAX_SECONDS = 120
@@ -146,10 +147,10 @@ def verify_model(data, backend="transformers"):
     manifest = json.loads((base / manifest_name).read_text(encoding="utf-8"))
     repo = GGUF_REPO if backend == "gguf" else REPO
     revision = GGUF_REVISION if backend == "gguf" else REVISION
-    expected = {GGUF_FILE: (1517290464, GGUF_SHA)} if backend == "gguf" else EXPECTED
+    expected = {GGUF_FILE: (GGUF_SIZE, GGUF_SHA)} if backend == "gguf" else EXPECTED
     configured = os.environ.get("WEREWOLF_ASR_MODEL_DIR")
     if not configured and os.name == "nt":
-        configured = "D:/QWEN/Qwen3-ASR-1.7B-Q5_K_M" if backend == "gguf" else "D:/QWEN/Qwen3-ASR-0.6B-hf"
+        configured = "D:/QWEN/Qwen3-ASR-1.7B-Q8_0" if backend == "gguf" else "D:/QWEN/Qwen3-ASR-0.6B-hf"
     if not configured or not Path(configured).is_absolute():
         raise ValueError("WEREWOLF_ASR_MODEL_DIR must be an absolute model directory")
     model = Path(configured).resolve()
@@ -291,7 +292,7 @@ class GgufBackend:
             if not backend_matches or not wanted(selected) or not same_device:
                 raise RuntimeError(f"GGUF selected-device mismatch (backend={reported_backend}, kind={selected.kind}, type={selected.device_type}, name={selected.name}, description={selected.description})")
             self.device = kind
-            self.dtype = "Q5_K_M"
+            self.dtype = "Q8_0"
             self.versions = {"python": sys.version.split()[0], "transcribe_cpp": tc.__version__, "native": tc.native_version(), "nativeCommit": tc.native_commit()}
             self.model_info = {"repo": GGUF_REPO, "revision": GGUF_REVISION, "backend": "gguf", "file": GGUF_FILE,
                                "sha256": GGUF_SHA, "arch": self.model.arch, "variant": self.model.variant}

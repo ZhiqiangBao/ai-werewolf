@@ -12,11 +12,32 @@
 | --- | --- | --- |
 | `plan.json`、`editorial-context.json` | 房间、身份、规则、事实与发言索引 | 阅读材料，引用发言时补读完整原文 |
 | `narration.json` | 可编辑模板，不代表已完成本局解说 | 上帝视角按 [上帝解说写作](commentary.md) 写开场、点评、收尾；玩家视角保留空 `edits` 并按 [单玩家视角制作](player-view.md) 核对授权原话 |
-| `voices.json` | 默认声音配置与对应座位标签 | 逐席核对角色、音色、指令与语速，法官和上帝分开 |
+| `voices.json` | 按主题匹配的默认声音配置与座位标签，已有文件保留 | 按[立绘与声线](character-voices.md)核对角色、音色、指令与语速并试听；原始立绘提示词随技能附带，法官和上帝分开 |
 | TTS 配置 | 沿用显式选择的适配器和模型 | 确认服务可用、凭据已配置、外发已授权；接入方法见 [批量 TTS](tts-batch.md) |
 | 主题与样品选择 | 已有美术；样品需另选节点 | 使用已确认画面，需样品时备好独立选择表 |
 
 封面和最终发布文案可在成片制作期间准备，在最终交付前补齐。`--check-only` 只检查配音启动材料，不宣称封面、试听或文案已经完成。
+
+首次制作或更换工作站时，在仓库根目录先确认 Node.js、pnpm、FFmpeg 与 FFprobe 可用：
+
+```powershell
+node --version
+pnpm --version
+ffmpeg -version
+ffprobe -version
+```
+
+按项目 `AGENTS.md`／`package.json` 的版本要求安装 Node.js 与 pnpm；当前仓库要求 Node.js 22.12 或更新版本。依赖未安装时运行 `pnpm install`。FFmpeg 与 FFprobe 必须能从 `PATH` 调用；如果已有可执行文件但不在 `PATH`，在同一 PowerShell 会话设置 `$env:FFMPEG_PATH` 和 `$env:FFPROBE_PATH` 为对应绝对路径。缺失工具时先停止并请用户提供安装或可用路径，不要等整局配音后才发现。`--check-only` 不检查这些程序、TTS 凭据或本地 ASR 模型是否就绪。
+
+安装／bootstrap 后、配音前检查美术资源是否已复制到 `apps/web/public/art/moon-village/`：至少要有昼夜背景、昼夜桌面和当前主题头像图集。默认主题为 `campus`，替换 `--theme` 时应核对对应的 `avatars-<theme>-v1.webp`。缺项可按[程序启动与bootstrap](automation.md#运行环境)及技能入口执行 bootstrap，再检查是否出现；不要用缺图开始整局配音。Windows 画面会尝试注册 `C:/Windows/Fonts/msyh.ttc` 与 `msyhbd.ttc`；其他系统按[硬件说明](hardware.md)选择并注册实际中文字体。若字体不存在，先解决字体回退并用短画面检查文字，不能把程序退出成功当成中文字体正确。
+
+准备出本局 `source.json` 后、任何真实 TTS 前，再按本局语言检查工作流实际会使用的工具和凭据。以下只输出可用性布尔值，不显示密钥；使用自定义 `--data-dir` 时，先把 `$env:VIDEO_DATA_DIR` 和 `$env:WEREWOLF_DATA` 设为同一绝对目录：
+
+```powershell
+node --import tsx --input-type=module -e "import { execFileSync } from 'node:child_process'; import { ffmpeg, ffprobe } from './scripts/video/project.ts'; import { projectQwenTokenPlanKey } from './packages/session/src/project-models.ts'; await import('@napi-rs/canvas'); for (const bin of [ffmpeg, ffprobe]) execFileSync(bin, ['-version'], { stdio: 'ignore' }); const key = projectQwenTokenPlanKey(); console.log(JSON.stringify({ ffmpeg: true, ffprobe: true, canvas: true, qwenTtsCredential: Boolean((process.env.WEREWOLF_TTS_API_KEY || '').startsWith('sk-sp-') || key), qwenAsrCredential: Boolean(key) }));"
+```
+
+`ffmpeg`、`ffprobe` 或 `canvas` 导入失败时，先按上方处理本机依赖。无 TTS 凭据时不要启动会产生外部合成请求的命令；Qwen TTS 可使用 `WEREWOLF_TTS_API_KEY` 或可解密的项目模型库条目。日语 `auto` 或任一语言显式选 Qwen ASR 时，`qwenAsrCredential` 必须为 `true`；ASR 不读取单独的 `WEREWOLF_TTS_API_KEY`。如本局为中文/英语且采用 `auto`，按[音频核对操作指南](local-asr.md)先注册本机模型并确认服务就绪；`--check-only` 不会代替这项检查。缺少服务、凭据或必要授权时先停止，请用户配置或明确授权可用路线，不要暗中换 provider。
 
 ## 第一阶段：只运行轻量准备，确认素材
 
@@ -38,6 +59,7 @@ pnpm video:make --room=latest --prepare-only
 | `editorial-context.json` | `prepare.ts` 自动生成 | 了解转折、确定点评锚点；不能拿终局信息提前写到过程里 |
 | `voices.json` | 默认音色表 + `plan.json` 人设 | 核对每个角色与音色，写好对应表达指令，保持跨昼夜一致 |
 | `narration.json` | 自动模板/旧编辑稿 | **亲自润色开场、关键转折和收尾**，按下面的方法写回 |
+| ASR 路由 | `source.json` 的局内语言与[音频核对操作指南](local-asr.md) | 默认 `off`，按需启用；显式 `auto` 才是 `zh`/`en` 本地 Q8、`ja` 在线 Qwen。若本次要核对，在 TTS 前确认对应模型服务或项目 Qwen ASR 凭据可用；`off` 会跳过语义核对，不得标作通过 |
 | 公共规则卡 | 游戏规则对象生成的 `ruleCard` | 画面摘录实际规则，不因模型一次误解而新增“纠错规则” |
 | 样品选段文件（需要样品时） | 模型选择的真实 `sourceSeq` 和分段 | 覆盖待检查的流程与画面，明确节选而不冒充完整对局 |
 | 封面素材与短标题 | 本局事实、`plan.cast`、当前人物图集与画面抽帧 | 选取真实冲突和对应人物，按 [封面制作](cover.md) 写好可复制提示词，使用 AI 生图工具生成并保存到 `output` |
@@ -232,4 +254,14 @@ pnpm video:make --room=ROOM_ID --project-dir=独立制作目录 --narration=本�
 
 完整上帝视角的最终发布标题与简介写入同一制作目录下的 `output/publish-copy.md`，用 `# 标题`、`# 简介` 分开，交付时提供成片、封面和文案文件的链接。用户在聊天中调整用词后同步落盘，保留已经确认的措辞；备选标题不放进这份定稿。强调真人参局时按存档的座位控制方式核对，区分真人／AI操作与后期AI配音。单玩家视角不生成或复用此全桌发布文案。
 
-完整上帝视角简介固定附上每席的座位、昵称、存档模型标识或“真人”，以及本局完整规则卡，不能只写板型名称或规则摘要。`plan.cast` 提供安全的控制方式／模型字段；真人优先于闲置的模型配置，未知模型明确标“未记录”，不猜版本。写好标题和介绍后运行 `pnpm video:publish-copy`（沿用本局 `VIDEO_ROOM`／`VIDEO_PROJECT_DIR`）。工具只更新有标记的座位表和规则卡段落，保留其他人工文案；规则来自 `script.ruleCard`，不拼接密钥、端点或整份座位配置。准备和整片验证阶段会同步已有文案；不会用占位标题冒充完成的发布稿。单玩家视角不运行此工具，也不输出其他席位名单、模型或规则卡。
+完整上帝视角简介固定附上每席的座位、昵称、存档模型标识或“真人”，以及本局完整规则卡，不能只写板型名称或规则摘要。`plan.cast` 提供安全的控制方式／模型字段；真人优先于闲置的模型配置，未知模型明确标“未记录”，不猜版本。先在同一制作目录的 `output/publish-copy.md` 写好最终标题与简介，再同步本局座位表和规则卡。新 PowerShell 会话不会继承 `video:make --room=...` 子进程中的房间环境；运行 `video:publish-copy` 前显式设回本次的房间、数据目录和制作目录：
+
+```powershell
+$env:VIDEO_ROOM = 'ROOM_ID'
+$env:VIDEO_DATA_DIR = (Resolve-Path 'data').Path # 使用 --data-dir 时改成相同的数据目录
+$env:WEREWOLF_DATA = $env:VIDEO_DATA_DIR
+$env:VIDEO_PROJECT_DIR = (Resolve-Path 'data/video/ROOM_ID').Path # 使用 --project-dir 时改成相同目录
+pnpm video:publish-copy
+```
+
+输出中的 `roomId` 必须等于本次制作的房间 ID，`publicationUpdated` 应为 `true`；不匹配时停止，先纠正三个路径变量再运行，不能交付错房间文案。若提示缺少记录规则卡，重新导出并检查 `script.ruleCard`，不要凭印象补写。工具只更新有标记的座位表和规则卡段落，保留其他人工文案；规则来自 `script.ruleCard`，不拼接密钥、端点或整份座位配置。准备和整片验证阶段会同步已有文案；不会用占位标题冒充完成的发布稿。单玩家视角不运行此工具，也不输出其他席位名单、模型或规则卡。

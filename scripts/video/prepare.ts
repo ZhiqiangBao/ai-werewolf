@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { projectDir, loadScript, loadVoices, dataDir } from './project';
 import { draftNarration } from './narration';
 import { syncPublishCopy } from './publish-copy';
+import { applyCharacterVoices } from './character-voices';
 const script = await loadScript(); await mkdir(projectDir, { recursive: true });
 const narrationFile = process.env.VIDEO_NARRATION_FILE || `${projectDir}/narration.json`;
 const voiceFile = process.env.VIDEO_VOICES_FILE || `${projectDir}/voices.json`;
@@ -12,11 +13,7 @@ if (!existsSync(narrationFile)) {
   await writeFile(narrationFile, JSON.stringify(narration, null, 2));
 }
 if (!existsSync(voiceFile)) {
-  const voices = await loadVoices();
-  for (const c of script.cast) {
-    if (!voices.profiles[c.voiceKey]) throw Error(`A voice profile is required for ${c.voiceKey}`);
-    voices.profiles[c.voiceKey].label = `${c.seat}号 ${c.name}`;
-  }
+  const voices = applyCharacterVoices(await loadVoices(), script.cast, process.env.VIDEO_AVATAR_STYLE || 'campus');
   await writeFile(voiceFile, JSON.stringify(voices, null, 2));
 }
 const narration = JSON.parse(await readFile(narrationFile, 'utf8'));

@@ -17,8 +17,8 @@ export const LOCAL_ASR_MODEL = 'Qwen/Qwen3-ASR-0.6B-hf';
 export const LOCAL_ASR_REVISION = '7f1569a48a89f3e3f4dc3a5c9d28bddd903bc76c';
 export const LOCAL_GGUF_MODEL = 'handy-computer/Qwen3-ASR-1.7B-gguf';
 export const LOCAL_GGUF_REVISION = '0e0a596e3959c3f3f2ab7d443a5b6f0f4a4bba6f';
-export const LOCAL_GGUF_FILE = 'Qwen3-ASR-1.7B-Q5_K_M.gguf';
-export const LOCAL_GGUF_SHA256 = '034c557fe92ff8fcd9a9c041cbdaad347be0a86a58d3a348f63cf3f0180879d0';
+export const LOCAL_GGUF_FILE = 'Qwen3-ASR-1.7B-Q8_0.gguf';
+export const LOCAL_GGUF_SHA256 = '9a0d81792dfea2d5f278b8a63deb3ea6e02139ce42c2301f32ea19c4f77526b7';
 export function localModelIdentity(backend: unknown) {
   if (backend === 'transformers') return { backend, model: LOCAL_ASR_MODEL, revision: LOCAL_ASR_REVISION } as const;
   if (backend === 'gguf') return { backend, model: LOCAL_GGUF_MODEL, revision: LOCAL_GGUF_REVISION } as const;
@@ -28,6 +28,7 @@ export function validLocalRuntime(value: unknown, backend?: LocalAsrBackend): va
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const runtime = value as Record<string, unknown>, versions = runtime.versions;
   if (typeof runtime.device !== 'string' || !runtime.device || typeof runtime.dtype !== 'string' || !runtime.dtype || !versions || typeof versions !== 'object' || Array.isArray(versions)) return false;
+  if (backend === 'gguf' && runtime.dtype !== 'Q8_0') return false;
   const values = versions as Record<string, unknown>;
   const required = backend === 'gguf' ? ['python', 'transcribe_cpp', 'native'] : backend === 'transformers' ? ['python', 'torch', 'transformers'] : ['python'];
   return required.every((key) => typeof values[key] === 'string' && !!values[key]) && Object.values(values).every((v) => v === null || typeof v === 'string');

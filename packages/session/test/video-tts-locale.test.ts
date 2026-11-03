@@ -26,15 +26,15 @@ it('合成配置使用原局语言，旧默认指令安全适配并保留用户�
   expect(en).toMatchObject({ voice: voices.profiles['seat-1'].voice, locale: 'en', languageHints: ['en'] });
   expect(en.instruction).toContain('English');
   const ja = clipVoiceProfile(voices, clip, 'ja');
-  expect(ja).toMatchObject({ locale: 'ja', languageHints: ['ja'] });
-  expect(ja.instruction).toContain('日本語');
+  expect(ja).toMatchObject({ voice: voices.profiles['seat-1'].voice, rate: voices.profiles['seat-1'].rate, locale: 'ja', languageHints: ['ja'] });
+  expect(ja.instruction).toBe('');
   const zh = clipVoiceProfile(voices, clip, 'zh-CN');
   expect(zh.instruction).toBe(voices.profiles['seat-1'].instruction);
   expect(zh.languageHints).toEqual(['zh']);
   const custom = { ...voices, profiles: { ...voices.profiles, 'seat-1': { ...voices.profiles['seat-1'], voice: 'custom', instruction: '用户自定义普通话说明。' } } };
   expect(clipVoiceProfile(custom, clip, 'en')).toMatchObject({ voice: 'custom', instruction: '用户自定义普通话说明。', locale: 'en', languageHints: ['en'] });
   const cue = { voiceKey: 'judge', data: { presentationOnly: true, presentationKey: 'seer-open' } };
-  expect(clipVoiceProfile(voices, cue, 'ja').instruction).toContain('日本語');
+  expect(clipVoiceProfile(voices, cue, 'ja').instruction).toBe('');
   const customCue = { ...voices, judgeCues: { 'seer-open': { instruction: '自定义提示' } } };
   expect(clipVoiceProfile(customCue, cue, 'ja').instruction).toBe('自定义提示');
   const dialect = { ...custom, profiles: { ...custom.profiles, 'seat-1': { ...custom.profiles['seat-1'], locale: 'yue-HK', languageHints: ['zh'] } } };

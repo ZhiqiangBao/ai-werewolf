@@ -1,0 +1,160 @@
+{
+  "repo": "handy-computer/transcribe.cpp",
+  "release": "v0.4.1",
+  "assets": [
+    {
+      "file": "transcribe-native-0.4.1-windows-x86_64-cpu-vulkan.tar.gz",
+      "bytes": 18052295,
+      "sha256": "272eb97795048ccb557c85bb9dd44c9e530e1c928443114c39816a8a5f76269d",
+      "url": "https://github.com/handy-computer/transcribe.cpp/releases/download/v0.4.1/transcribe-native-0.4.1-windows-x86_64-cpu-vulkan.tar.gz"
+    },
+    {
+      "file": "transcribe_cpp-0.4.1-py3-none-any.whl",
+      "bytes": 47639,
+      "sha256": "f373b6e20a4d897ed0dcaa2fe7fae183379777432b3a76641c42506c77b442ad",
+      "url": "https://github.com/handy-computer/transcribe.cpp/releases/download/v0.4.1/transcribe_cpp-0.4.1-py3-none-any.whl"
+    }
+  ],
+  "files": [
+    {
+      "file": "native/transcribe-native-windows-x86_64-cpu-vulkan/contract.json",
+      "bytes": 125,
+      "sha256": "83669009a6eeb805ec735ee841ba59ef8b85c1f46949963fc4391418cc4965ae"
+    },
+    {
+      "file": "native/transcribe-native-windows-x86_64-cpu-vulkan/ggml-base.dll",
+      "bytes": 675328,
+      "sha256": "71050124f5ff1a7f023b5fa723c121acadfd54fd1301664c1077116313f9ce56"
+    },
+    {
+      "file": "native/transcribe-native-windows-x86_64-cpu-vulkan/ggml-cpu-alderlake.dll",
+      "bytes": 1103360,
+      "sha256": "62a689a925f8bac57d5caf59a396346f02059a130ae9bad05602439ce5c8d147"
+    },
+    {
+      "file": "native/transcribe-native-windows-x86_64-cpu-vulkan/ggml-cpu-cannonlake.dll",
+      "bytes": 1205760,
+      "sha256": "8f317c7ff706599a7a42de3686804996bd0441e8d84af461597c4f5753584231"
+    },
+    {
+      "file": "native/transcribe-native-windows-x86_64-cpu-vulkan/ggml-cpu-cascadelake.dll",
+      "bytes": 1205760,
+      "sha256": "8fb65624661e642123fe828d1d0db42a322cf7f23c2025bff5c2f5252130a00f"
+    },
+    {
+      "file": "native/transcribe-native-windows-x86_64-cpu-vulkan/ggml-cpu-haswell.dll",
+      "bytes": 1104896,
+      "sha256": "f9710a339d994501f7c87e3e7e10a8e982efd5e9f4cf33640bdcc5de912f830c"
+    },
+    {
+      "file": "native/transcribe-native-windows-x86_64-cpu-vulkan/ggml-cpu-icelake.dll",
+      "bytes": 1205760,
+      "sha256": "1f3a9560c7171f23a793c183e39267a8f493ab515e1720b848f21af25f91e090"
+    },
+    {
+      "file": "native/transcribe-native-windows-x86_64-cpu-vulkan/ggml-cpu-sandybridge.dll",
+      "bytes": 1075712,
+      "sha256": "79aaea87231ee1b1963835428d0b4fcdeca5b26d3aec37f4802a55a3fb4502f6"
+    },
+    {
+      "file": "native/transcribe-native-windows-x86_64-cpu-vulkan/ggml-cpu-skylakex.dll",
+      "bytes": 1205760,
+      "sha256": "c9531b4cf9981d4ecc7618d65dd55bdf20d53629b612a4028d39e0009a851957"
+    },
+    {
+      "file": "native/transcribe-native-windows-x86_64-cpu-vulkan/ggml-cpu-sse42.dll",
+      "bytes": 842240,
+      "sha256": "fac884a6903670eded6654e868226232139d37ec23ba8a7d7230be93ef3ff550"
+    },
+    {
+      "file": "native/transcribe-native-windows-x86_64-cpu-vulkan/ggml-cpu-x64.dll",
+      "bytes": 842752,
+      "sha256": "b6854388df7645e728a1273b69beeede414aa67fb5b7175cb96d580c397cf5c7"
+    },
+    {
+      "file": "native/transcribe-native-windows-x86_64-cpu-vulkan/ggml-vulkan.dll",
+      "bytes": 43652608,
+      "sha256": "d4ef14886f4fd5a0850acc81ed4daf77e6c80f39db1bb7e8936ba95930b7e68d"
+    },
+    {
+      "file": "native/transcribe-native-windows-x86_64-cpu-vulkan/ggml.dll",
+      "bytes": 61952,
+      "sha256": "7f4312af8bf5728c72f342702f5674d4a40cc3964f01d67e8b01db7559a2b530"
+    },
+    {
+      "file": "native/transcribe-native-windows-x86_64-cpu-vulkan/licenses/ggml/LICENSE",
+      "bytes": 1099,
+      "sha256": "bcd8ec749126d45cb06737d0690295d73df4b6e7e194205bcf91190368f27285"
+    },
+    {
+      "file": "native/transcribe-native-windows-x86_64-cpu-vulkan/licenses/LICENSE",
+      "bytes": 1104,
+      "sha256": "acef7d1711847656cdeb0007784dbe19bd7fd069767b0b38bd62714c6a8f3159"
+    },
+    {
+      "file": "native/transcribe-native-windows-x86_64-cpu-vulkan/licenses/src/third_party/miniz/LICENSE",
+      "bytes": 1184,
+      "sha256": "0115478d567121238cf6cc1c0c361926cf07a49d9e4c9e66da97fac6a01646b3"
+    },
+    {
+      "file": "native/transcribe-native-windows-x86_64-cpu-vulkan/licenses/src/third_party/silero_vad/LICENSE",
+      "bytes": 1095,
+      "sha256": "9cb98d261a9f2dfd347ee43b314343c68fe063ecc7f31514e24b248b1be727c6"
+    },
+    {
+      "file": "native/transcribe-native-windows-x86_64-cpu-vulkan/transcribe.dll",
+      "bytes": 2052096,
+      "sha256": "c00cbe50a845003f986d3ed0ee149c08f576d0f3cc54c5346033608185a000d5"
+    },
+    {
+      "file": "python/transcribe_cpp/__init__.py",
+      "bytes": 98497,
+      "sha256": "7f4a2aeaf2ff133da7bb82075931bba93c00549786ba2c02a417b85ba0c32b45"
+    },
+    {
+      "file": "python/transcribe_cpp/_abi.py",
+      "bytes": 3236,
+      "sha256": "8f98f6015353b6851d5b6003fe3a57925ee9b1a393ca488552d945254d03c8b0"
+    },
+    {
+      "file": "python/transcribe_cpp/_generated.py",
+      "bytes": 41977,
+      "sha256": "7f2ebbff71b644f4ee4e0186ff93ae3594764643c96f206b47874068333dbf6e"
+    },
+    {
+      "file": "python/transcribe_cpp/_library.py",
+      "bytes": 15629,
+      "sha256": "cce7021c4cd3c2a27fdf9625646d2e0db9ac2f6442a8ac5722f97a94d1d3e7b1"
+    },
+    {
+      "file": "python/transcribe_cpp/errors.py",
+      "bytes": 6594,
+      "sha256": "32d11b3e9b5846bd8c108aff09edc4ac64018d89e62d326a939fe229a87358fc"
+    },
+    {
+      "file": "python/transcribe_cpp/py.typed",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "python/transcribe_cpp-0.4.1.dist-info/licenses/LICENSE",
+      "bytes": 1083,
+      "sha256": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6"
+    },
+    {
+      "file": "python/transcribe_cpp-0.4.1.dist-info/METADATA",
+      "bytes": 9388,
+      "sha256": "d8c688d5934d5c55b40dddcc319b56cfc7dd94b666ffe69ddb8ac2be52e9ac7f"
+    },
+    {
+      "file": "python/transcribe_cpp-0.4.1.dist-info/RECORD",
+      "bytes": 822,
+      "sha256": "05c5c5c62cb0823ddb13cca3a66c2eba7ee98bb471991c6282a1e59b5f14217a"
+    },
+    {
+      "file": "python/transcribe_cpp-0.4.1.dist-info/WHEEL",
+      "bytes": 87,
+      "sha256": "5b77e4a649bbfb07fdbc123967eeecd1e5a478cfaca6eefc23c35e6fdf037848"
+    }
+  ]
+}
