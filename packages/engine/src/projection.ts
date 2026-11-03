@@ -7,6 +7,7 @@ import { categoryName, factionName } from './text';
 import type { GameState } from './types';
 import { migrateGameState, UnsupportedRoleDataVersion } from './role-data';
 import { getAbility } from './abilities';
+import { seatTasksComplete } from './participation';
 
 const visibleTo = (seat: Seat) => (e: GameEvent) =>
   e.audience === 'public' || (Array.isArray(e.audience) && e.audience.includes(seat));
@@ -93,6 +94,7 @@ export function projectSeat(state: GameState, events: GameEvent[], seat: Seat): 
     faction: mod.faction,
     factionName: factionName(mod.faction, state.rules.locale),
     alive: p.alive,
+    ...(dataReadable ? { canStop: seatTasksComplete(state, seat) } : {}),
     ...(teammates ? { teammates } : {}),
     knownIdentities: [
       ...(teammates ?? []).map((teammate) => ({ seat: teammate, kind: 'alignment' as const, alignment: 'wolf' as const, source: 'teammate' as const })),

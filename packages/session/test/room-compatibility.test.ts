@@ -12,11 +12,12 @@ const golden: Record<string, string> = {
   modern: 'eff9be2a42273b58095cfd08452624bfb046eb1b5505a282866381d9222f5ee4',
 };
 
-// New metadata is excluded explicitly; all pre-existing facts and timing fields remain in the golden.
+// New data-version and client-completion metadata is excluded explicitly;
+// all pre-existing facts, model messages and timing fields remain in the golden.
 function normalize(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(normalize);
   if (!v || typeof v !== 'object') return v;
-  return Object.fromEntries(Object.entries(v).filter(([key]) => key !== 'dataVersion')
+  return Object.fromEntries(Object.entries(v).filter(([key]) => key !== 'dataVersion' && key !== 'canStop')
     .sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => [key,
       normalize(key === 'agenda' && Array.isArray(value) ? value.filter((step) => step.type !== 'night:abilities') : value)]));
 }

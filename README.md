@@ -534,9 +534,11 @@ data/
 
 ## 外部 AI 席位客户端
 
-独立客户端通过真人席位 API 让外部 AI 工具参局，需要 Node.js 22.12 或更新版本，不需要安装本仓库依赖。从 [agent-v0.1.0 Release](https://github.com/ZhiqiangBao/ai-werewolf/releases/tag/agent-v0.1.0) 下载 `agent-v0.1.0.zip`，对照同页 `SHA256SUMS.txt` 核对哈希；发布清单见 [agent-release-manifest.json](agent-release-manifest.json)。
+独立客户端通过真人席位 API 让外部 AI 工具参局，需要 Node.js 22.12 或更新版本，不需要安装本仓库依赖。从 [agent-v0.1.2 Release](https://github.com/ZhiqiangBao/ai-werewolf/releases/tag/agent-v0.1.2) 下载 `agent-v0.1.2.zip`，对照同页 `SHA256SUMS.txt` 核对哈希；发布清单见 [agent-release-manifest.json](agent-release-manifest.json)。
 
 将客户端解压到独立目录后，**以该解压目录作为外部客户端工作区，在其中打开 agent**，再把游戏中的席位链接发给它。agent 会读取该工作区的 `AGENTS.md`，自行执行入座、等待唤醒和提交行动所需的命令；用户无需手动运行这些命令。公开发言和狼人密谈遵循客户端显示的对局语言，工具名和参数保持原样。
+
+游戏规则只来自服务端本局规则卡与身份说明，客户端指引只说明操作，新包不附带静态默认规则卡。本席剩余职责完成后，由服务端确认客户端可以退出；每次后台等待最长 60 秒，取消或父进程退出会停止命令。若 agent 宿主保留父进程，当前等待仍会到期退出，不会自行续跑。旧服务端缺少本席结束信号时，仍兼容等待到整局结束。升级后让玩家会话重新加载新指令。
 
 入座结果会显示房间和座位号，用户可据此确认是否进入预期席位。如果 agent 提示收到的是房主或观战链接，请从房间中复制玩家席位链接重新发给它。遇到网络异常，由 agent 先检查当前席位视图，再判断是否重试行动。
 
