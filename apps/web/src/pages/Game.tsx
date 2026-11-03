@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { GodProjection, Projection, RoomBrief, RoomSetupView, ToolCall, ViewResponse } from '@werewolf/protocol';
 import { gameText } from '@werewolf/protocol';
-import { useI18n } from '../i18n';
+import { UiLanguagePicker, useI18n } from '../i18n';
 import { api, exportUrl, rememberRoom } from '../api';
 import { go, useCatalog, useView } from '../hooks';
 import { AuditPanel } from '../components/AuditPanel';
@@ -51,9 +51,12 @@ function TopBar({ room, projection, who, children }: { room: RoomBrief; projecti
       )}
       {room.paused && room.status === 'running' && <span className="tag gold">{t('已暂停')}</span>}
       <span className="spacer" />
-      {avatarName && <span className="tag">{t(avatarName)}</span>}
-      {children}
-      <span className="tag">{who}</span>
+      <div className="room-toolbar">
+        <UiLanguagePicker />
+        {avatarName && <span className="tag">{t(avatarName)}</span>}
+        {children}
+        <span className="tag">{who}</span>
+      </div>
     </div>
   );
 }
@@ -74,6 +77,11 @@ function Loading({ error }: { error: string | null }) {
       )}
     </div>
   );
+}
+
+/** 不显示凭证；仅作为动画游标的内存隔离范围。 */
+function animationScope(roomId: string, token: string, p: Projection): string {
+  return JSON.stringify([roomId, token, p.gameId, p.viewer.kind, p.viewer.kind === 'seat' ? p.viewer.seat : null]);
 }
 
 // ---------------------------------------------------------------------------
@@ -178,7 +186,7 @@ function HostGame({ roomId, token, room, projection: p, presentation, refresh }:
             {p.result && <ResultBanner result={p.result} locale={p.locale ?? room.locale} />}
             <HumanStatus participants={room.participants ?? []} seats={room.seats} />
             <div className="panel">
-              <SeatRing projection={p} room={room} catalog={catalog} roles={p.god.roles} deaths={presentation?.deaths} />
+              <SeatRing projection={p} room={room} catalog={catalog} roles={p.god.roles} deaths={presentation?.deaths} effectScope={animationScope(roomId, token, p)} />
             </div>
             <div className="panel">
               <div className="tabs">
@@ -282,7 +290,7 @@ export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
           <div className="game-left">
             {p.result && <ResultBanner result={p.result} locale={p.locale ?? room.locale} />}
             <div className="panel">
-              <SeatRing projection={p} room={room} catalog={catalog} deaths={data.presentation?.deaths} />
+              <SeatRing projection={p} room={room} catalog={catalog} deaths={data.presentation?.deaths} effectScope={animationScope(roomId, token, p)} />
             </div>
             <TaskPanel projection={p} locale={p.locale ?? room.locale} human={human} paused={room.paused} availableAt={data.presentation?.actionAvailableAt} onAct={act} />
             {p.me && <IdentityCard me={p.me} catalog={catalog} locale={p.locale ?? room.locale} />}
@@ -332,7 +340,7 @@ export function WatchPage({ roomId, token }: { roomId: string; token: string }) 
           <div className="game-left">
             {p.result && <ResultBanner result={p.result} locale={p.locale ?? room.locale} />}
             <div className="panel">
-              <SeatRing projection={p} room={room} catalog={catalog} deaths={data.presentation?.deaths} />
+              <SeatRing projection={p} room={room} catalog={catalog} deaths={data.presentation?.deaths} effectScope={animationScope(roomId, token, p)} />
             </div>
             <div className="note-box small">{t('观战只能看到公开信息：发言、投票、公布的出局和翻开的身份。')}</div>
             <RuleCard text={p.ruleCard} locale={p.locale ?? room.locale} />

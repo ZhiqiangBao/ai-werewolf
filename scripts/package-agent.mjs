@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { resolve, dirname } from 'node:path';
 
 // Deliberately fixed: runtime data and unreviewed additions never enter the archive.
-const files = ['.cursor/rules/player.mdc', '.github/copilot-instructions.md', '.gitignore', 'AGENTS.md', 'CLAUDE.md', 'GEMINI.md', 'QWEN.md', 'README.md', 'player.mjs', 'rules/classic9.md', 'rules/idiot12.md', 'rules/mirror12.md', 'rules/standard12.md'].sort();
+const files = ['.cursor/rules/player.mdc', '.github/copilot-instructions.md', '.gitignore', 'AGENTS.md', 'CLAUDE.md', 'GEMINI.md', 'QWEN.md', 'README.md', 'player.mjs'].sort();
 const [sourceArg, outputArg, version, ...options] = process.argv.slice(2);
 if (!sourceArg || !outputArg?.endsWith('.zip') || !/^agent-v\d+\.\d+\.\d+$/.test(version ?? '')) throw Error('Usage: node scripts/package-agent.mjs <source> <output.zip> <agent-vX.Y.Z> [--expected-tree <sha256>] [--server-commit <full-sha>]');
 let expectedTree;

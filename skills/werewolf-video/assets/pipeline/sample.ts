@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { buildRuleCard } from '../../packages/engine/src/index';
@@ -8,13 +8,17 @@ import { buildClips, loadScript, dataDir, projectDir, roomId, type Clip, type Sc
 
 const selectionFile = process.argv.find((a) => a.startsWith('--selection='))?.slice(12);
 if (!selectionFile) throw Error('Provide --selection=FILE with explicit source events and optional part numbers');
-const originalDir = resolve(dataDir, 'video', roomId);
+const playerSeat = process.env.VIDEO_PLAYER_SEAT;
+const originalDir = resolve(dataDir, 'video', playerSeat ? `${roomId}-player-${playerSeat}` : roomId);
 assert.notEqual(projectDir, originalDir, 'Set VIDEO_PROJECT_DIR to a separate sample directory; preserve the complete film');
+if (playerSeat && existsSync(projectDir) && (await readdir(projectDir)).length) throw Error('Player samples require a new empty project directory');
 const selection = JSON.parse(await readFile(selectionFile, 'utf8')) as {
   description: string; sections: { title: string; sourceSeqs: number[]; parts?: Record<string, number[]> }[];
 };
-const source = existsSync(`${originalDir}/source.json`) ? JSON.parse(await readFile(`${originalDir}/source.json`, 'utf8')) as Script : await loadScript();
-if (!source.ruleCard) {
+const canonical = await loadScript();
+const source = existsSync(`${originalDir}/source.json`) ? JSON.parse(await readFile(`${originalDir}/source.json`, 'utf8')) as Script : canonical;
+if (playerSeat) assert.deepEqual(source, canonical, 'Player sample cannot reuse another view or stale source');
+if (!source.ruleCard && !playerSeat) {
   const record = JSON.parse(await readFile(`${dataDir}/rooms/${roomId}.json`, 'utf8'));
   source.ruleCard = buildRuleCard(record.rules);
 }
@@ -25,7 +29,7 @@ const clips: Clip[] = selection.sections.flatMap((section) => full.filter((c) =>
 assert(clips.length > 0);
 assert.equal(new Set(clips.map((c) => c.id)).size, clips.length, 'Duplicate sample selection');
 for (let i = 1; i < clips.length; i++) assert(clips[i].sourceSeq >= clips[i - 1].sourceSeq, 'Sample must preserve the match chronology');
-const cached = existsSync(`${originalDir}/timeline.json`) ? JSON.parse(await readFile(`${originalDir}/timeline.json`, 'utf8')) as { clips: TimedClip[] } : { clips: [] as TimedClip[] };
+const cached = !playerSeat && existsSync(`${originalDir}/timeline.json`) ? JSON.parse(await readFile(`${originalDir}/timeline.json`, 'utf8')) as { clips: TimedClip[] } : { clips: [] as TimedClip[] };
 await mkdir(`${projectDir}/audio`, { recursive: true });
 let reused = 0;
 for (const c of clips) {
@@ -39,6 +43,7 @@ await writeFile(`${projectDir}/source.json`, JSON.stringify(source, null, 2));
 await writeFile(`${projectDir}/script.json`, JSON.stringify(script, null, 2));
 await writeFile(`${projectDir}/clips.json`, JSON.stringify(clips, null, 2));
 await copyFile(`${originalDir}/voices.json`, `${projectDir}/voices.json`);
+if (playerSeat) await copyFile(`${originalDir}/narration.json`, `${projectDir}/narration.json`);
 await writeFile(`${projectDir}/sample-selection.json`, JSON.stringify({ ...selection, roomId, reusedAudio: reused,
   clips: clips.map((c) => ({ id: c.id, sourceSeq: c.sourceSeq, part: c.part, type: c.type, presentationOnly: !!c.data.presentationOnly, text: c.text })) }, null, 2));
 console.log(JSON.stringify({ projectDir, clips: clips.length, reusedAudio: reused, newAudio: clips.length - reused }));

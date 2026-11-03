@@ -119,6 +119,7 @@ describe('真人 HTTP 与 SSE 接入', () => {
       token: t.token, view: await (await request(`rooms/${room.roomId}/view`, t.token, undefined, 'GET')).json() as ViewResponse,
     })));
     const actor = views.find((v) => v.view.projection?.task)!;
+    expect(views.every((v) => v.view.projection?.me?.canStop === false)).toBe(true);
     const task = actor.view.projection!.task!, tool = task.tools[0];
     const args = Object.fromEntries(tool.params.map((p) => [p.name, p.kind === 'seat' ? p.options[0] : '']));
     const path = `rooms/${room.roomId}/act`;
@@ -131,6 +132,7 @@ describe('真人 HTTP 与 SSE 接入', () => {
     expect(spectator.projection?.events.every((e) => e.audience === 'public')).toBe(true);
     expect(JSON.stringify(spectator)).not.toContain('awakened.mimic');
     expect(spectator.projection && 'god' in spectator.projection).toBe(false);
+    expect(spectator.projection?.me).toBeUndefined();
     const speechPath = `rooms/${room.roomId}/speech`;
     expect((await request(speechPath, '', { eventSeq: 1 })).status).toBe(401);
     expect((await request(speechPath, setup.tokens.spectator, { text: '客户端自由文本' })).status).toBe(400);

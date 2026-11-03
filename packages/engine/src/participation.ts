@@ -1,7 +1,7 @@
 import type { Seat } from '@werewolf/protocol';
 import type { GameState, Step } from './types';
 
-/** 只控制模型调用；不改变事件、订阅或任何真人投影。按完整死亡议程判断，兼容未存停止标记的旧局。 */
+/** 控制本席模型调用和客户端结束信号，不改变事件或订阅。按完整死亡议程判断，兼容旧局。 */
 export function seatTasksComplete(state: GameState, seat: Seat): boolean {
   const player = state.players.find((p) => p.seat === seat);
   if (!player) return false;

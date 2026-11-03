@@ -1,10 +1,21 @@
 {
   "format": "werewolf-video-skill-bundle",
-  "version": 10,
-  "pipelineFiles": 39,
+  "version": 13,
+  "pipelineFiles": 49,
   "artFiles": 10,
+  "artPromptFile": "assets/art/moon-village/prompts.json",
   "source": "scripts/video/",
   "features": [
+    "theme-character-voice-matching",
+    "original-avatar-prompts",
+    "on-demand-asr",
+    "offline-model-registration",
+    "q8-local-asr",
+    "locale-routed-independent-asr",
+    "verified-external-transcript-timing",
+    "authorized-player-view",
+    "player-audio-provenance",
+    "shared-skill-animation",
     "video-ui-languages",
     "perspective-safe-death-glyphs",
     "tts-language-hints",
@@ -27,5 +38,5 @@
     "native-compact-export",
     "strict-gpu-encoding"
   ],
-  "generatedAt": "2026-11-02T09:04:46.913Z"
+  "generatedAt": "2026-11-03T11:11:21.666Z"
 }

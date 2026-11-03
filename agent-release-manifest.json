@@ -1,16 +1,22 @@
 {
-  "version": "agent-v0.1.0",
+  "version": "agent-v0.1.2",
   "status": "published",
-  "releaseUrl": "https://github.com/ZhiqiangBao/ai-werewolf/releases/tag/agent-v0.1.0",
-  "zipUrl": "https://github.com/ZhiqiangBao/ai-werewolf/releases/download/agent-v0.1.0/agent-v0.1.0.zip",
-  "releaseTargetCommit": "accd21234ec002e6735a70e7b3352933e13fd30c",
-  "sha256": "5483cf9a9f0ec828ea1f74f590cf79139c9da32d02a528fa74298aeaaabc67bd",
-  "size": 73210,
-  "treeSha256": "fb442a6e96890d1df53b9257ec998e79585a46c62af66a073f179e6ffd58497f",
+  "releaseUrl": "https://github.com/ZhiqiangBao/ai-werewolf/releases/tag/agent-v0.1.2",
+  "zipUrl": "https://github.com/ZhiqiangBao/ai-werewolf/releases/download/agent-v0.1.2/agent-v0.1.2.zip",
+  "releaseTargetCommit": "63df434f3d8af5489599b6a1531a6a3ab2e7a68d",
+  "sha256": "42b88f9fc3288a963422687f83a73af0d341f3fc14952db2d292a5839b2433b7",
+  "size": 43214,
+  "treeSha256": "57274db66aea0cb47f6dcd4edd423dcfcd6efc0612caa29d4c8f8d457c78e09a",
   "minimumNode": "22.12",
   "testedNode": "24.18.1",
-  "validatedServerCommits": [
-    "6325ea652731dcc9e5c99b2b170adbbe69e5659e",
-    "8a6563ebc1678412c8a5e1bdf563cb4e59f40b3e"
-  ]
+  "validatedServerCommits": [],
+  "verification": {
+    "clientAndPackageTests": 25,
+    "engineTests": 210,
+    "httpAndCompatibilityTests": 22,
+    "typecheck": "passed",
+    "cleanExtraction": "passed",
+    "liveSeatCompletionVerified": true,
+    "realModelMatchRerun": false
+  }
 }

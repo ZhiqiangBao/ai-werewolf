@@ -3,6 +3,7 @@ import type { Script } from './project';
 export interface NarrationEdit { omit?: boolean; text?: string; voiceKey?: string; reason: string; after?: { text: string; reason: string }[] }
 export function draftNarration(script: Script) {
   const edits: Record<string, NarrationEdit> = {};
+  if (script.perspective === 'player') return { roomId: script.roomId, playerSeat: script.playerSeat, policy: '仅朗读座位可见的原始记录，不添加自由解说。', edits };
   const wolf = (seat: number) => { const cast = script.cast.find((c) => c.seat === seat); return !!cast && getRole(cast.role).faction === 'wolf'; };
   const role = (seat: number) => script.cast.find((c) => c.seat === seat)?.role;
   const all = script.chapters.flatMap((c) => c.entries);

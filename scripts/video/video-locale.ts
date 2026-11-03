@@ -1,5 +1,10 @@
 /** 画面文案注册表；只处理程序标签，不改写对局事实、原话或配音。 */
 export interface VideoLanguage { id: string; fallback?: string; messages: Readonly<Record<string, string>> }
+/** ISO 639-2/T language tag for the recorded audio. */
+export function videoAudioLanguage(locale?: string): string {
+  try { return ({ zh: 'zho', en: 'eng', ja: 'jpn' } as Record<string, string>)[new Intl.Locale(locale ?? 'zh-CN').language] ?? 'und'; }
+  catch { return 'und'; }
+}
 const packs = new Map<string, VideoLanguage>();
 export function registerVideoLanguage(pack: VideoLanguage): void {
   if (Intl.getCanonicalLocales(pack.id)[0] !== pack.id || packs.has(pack.id) || (pack.fallback && !packs.has(pack.fallback))) throw Error(`Invalid video language: ${pack.id}`);
@@ -26,6 +31,7 @@ const roles: Record<string, string> = { werewolf: '狼人', seer: '预言家', w
 export function videoRole(locale: string, role: string, fallback: string): string { return Object.hasOwn(roles, role) ? videoText(locale, roles[role]) : fallback; }
 registerVideoLanguage({ id: 'zh-CN', messages: { '查验结果：狼人': '狼人', '查验结果：好人': '好人' } });
 registerVideoLanguage({ id: 'en', fallback: 'zh-CN', messages: {
+  '身份未知':'Unknown', '{0}号玩家视角':'Seat {0} view', '本人身份 · 自动循环滚动':'Your role · scrolling', '本人身份默认简介（zh-CN）':'Default role summary (zh-CN)', '存活 {0} 人':'Alive {0}', '开枪目标':'Shot target',
   '第{0}天':'Day {0}', '第{0}夜':'Night {0}', '狼人':'Werewolf', '预言家':'Seer', '女巫':'Witch', '守卫':'Guard', '猎人':'Hunter', '平民':'Villager', '白痴':'Idiot', '觉醒隐狼':'Awakened Hidden Wolf', '魔镜少女':'Mirror Maiden',
   '放逐':'Exile', '毒药':'Poison', '狼刀':'Wolf', '猎枪':'Shot', '自爆':'Reveal', '同守同救':'Clash', '夜晚':'Night', '其他':'Other',
   '退水':'Withdrew', '上警':'Candidate', '发言中':'Speaking', '守护目标':'Guarded', '查验目标':'Inspected', '使用解药':'Saved', '使用毒药':'Poisoned', '狼刀目标':'Wolf target', '警长投票':'Sheriff vote', '放逐投票':'Exile vote', '{0}号':'Seat {0}', '{0} 票':'{0} votes',
@@ -35,6 +41,7 @@ registerVideoLanguage({ id: 'en', fallback: 'zh-CN', messages: {
   '日式校园':'Campus', '童话绘本':'Storybook', '中式古风':'Classical Chinese', '剑与魔法':'Fantasy', '现代都市':'Urban', '未来科技':'Futuristic'
 } });
 registerVideoLanguage({ id: 'ja', fallback: 'zh-CN', messages: {
+  '身份未知':'不明', '{0}号玩家视角':'{0}番視点', '本人身份 · 自动循环滚动':'自分の役職 · 自動スクロール', '本人身份默认简介（zh-CN）':'既定の役職説明（zh-CN）', '存活 {0} 人':'生存 {0}人', '开枪目标':'射撃対象',
   '第{0}天':'{0}日目', '第{0}夜':'{0}夜目', '狼人':'人狼', '预言家':'占い師', '女巫':'魔女', '守卫':'騎士', '猎人':'猟師', '平民':'村人', '白痴':'愚者', '觉醒隐狼':'覚醒隠狼', '魔镜少女':'鏡の少女',
   '放逐':'追放', '毒药':'毒', '狼刀':'襲撃', '猎枪':'射撃', '自爆':'自白', '同守同救':'護衛＋薬', '夜晚':'夜間', '其他':'その他',
   '退水':'辞退', '上警':'立候補', '发言中':'発言中', '守护目标':'守護対象', '查验目标':'占い対象', '使用解药':'救済', '使用毒药':'毒使用', '狼刀目标':'襲撃対象', '警长投票':'警長投票', '放逐投票':'追放投票', '{0}号':'{0}番', '{0} 票':'{0}票',

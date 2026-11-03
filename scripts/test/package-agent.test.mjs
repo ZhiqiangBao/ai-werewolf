@@ -17,7 +17,7 @@ test('archive is reproducible and excludes runtime and unlisted files', async ()
     for (const output of [a, b]) execFileSync(process.execPath, [script, source, output, 'agent-v0.1.0']);
     const archive = await readFile(a);
     assert.deepEqual(archive, await readFile(b));
-    for (const forbidden of ['seats/1/seat.json', 'notes.md', 'last.txt', 'private.log']) assert.equal(archive.includes(Buffer.from(forbidden)), false);
+    for (const forbidden of ['seats/1/seat.json', 'notes.md', 'last.txt', 'private.log', 'rules/classic9.md', 'rules/idiot12.md', 'rules/mirror12.md', 'rules/standard12.md']) assert.equal(archive.includes(Buffer.from(forbidden)), false);
     assert.equal(archive.includes(Buffer.from('manifest.json')), true);
     assert.throws(() => execFileSync(process.execPath, [script, source, join(dir, 'unreviewed.zip'), 'agent-v0.1.0', '--expected-tree', '0'.repeat(64)], { stdio: 'pipe' }));
     assert.throws(() => execFileSync(process.execPath, [script, source, join(dir, 'unbound.zip'), 'agent-v0.1.0', '--server-commit', 'a'.repeat(40)], { stdio: 'pipe' }));

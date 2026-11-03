@@ -4,7 +4,7 @@
 
 重新分发前运行 `node scripts/video/package-skill.mjs`。本仓库音频模块与网页语音共用 `packages/session/src/speech/`；打包器将对应实现放入技能的 `audio.ts`、`audio-cache.ts`、`qwen.ts`、`tts-types.ts` 并适配内部导入，不能把仅含重导出的本地入口直接作为独立模板。这样旧游戏仓库没有 `session/src/speech` 时仍能安装视频程序。
 
-新版 bundle 的 `assets/bundle.json` 为 version 9，在已有画面、主持、原话验证、波形检查、定点重配和简介同步能力上增加配音前材料检查与 `--check-only`。已有仓库升级时，不能以 bootstrap 成功认定旧文件已更新：先查看本地改动，再对照 `assets/pipeline/` 合并对应文件；不要覆盖用户改动。升级凭据读取时同时合并 `qwen.ts` 与 `project-models.ts`；新模板只读项目模型库，不再依赖全局 settings。核对 `materials.ts`／`preflight.ts`、`workflow.ts` 的材料检查阶段、`prepare.ts` 的实际材料路径、音频质量门禁、`publish-copy.ts` 的公开字段选择、`project.ts` 的 `judgeCues`／`clipSeeds`，并保持原稿字幕、有限码率与完整事实不变。游戏导出还需包含公开 `ruleCard`；旧导出缺失时重新导出，不能让模型凭印象补规则。
+重新打包时由 `scripts/video/package-skill.mjs` 生成 `assets/bundle.json` 的版本与功能清单；不要在说明中固定旧版本号，也不要手工改 manifest 冒充已打包。已有仓库升级时，不能以 bootstrap 成功认定旧文件已更新：先查看本地改动，再对照 `assets/pipeline/` 合并对应文件；不要覆盖用户改动。升级凭据读取时同时合并 `qwen.ts` 与 `project-models.ts`；新模板只读项目模型库，不再依赖全局 settings。核对 `materials.ts`／`preflight.ts`、`workflow.ts` 的材料检查阶段、`prepare.ts` 的实际材料路径、音频质量门禁、`publish-copy.ts` 的公开字段选择、`project.ts` 的 `judgeCues`／`clipSeeds`，并保持原稿字幕、有限码率与完整事实不变。游戏导出还需包含公开 `ruleCard`；旧导出缺失时重新导出，不能让模型凭印象补规则。
 
 ## 运行环境
 
@@ -17,6 +17,7 @@ Windows 读取微软雅黑字体。其他系统应在 `scene.ts` 的字体注册
 | 程序 | 输入 → 输出 |
 | --- | --- |
 | workflow.ts | 最新已结束房间/指定 ID → 材料准备、检查及后续视频流水线；解说写作、封面和文案由制作者完成 |
+| export-video.ts / player-video.ts | 指定席位 → `projectSeat` 权限投影、去除终局 `review`、仅保留本人身份的独立视频记录 |
 | prepare.ts / narration.ts | 原始剪辑稿 → 旁白取舍、声音表、plan.json |
 | materials.ts / preflight.ts | 实际解说稿、声音表与源记录 → 配音前检查、output/materials-check.json；不调用外部服务 |
 | publish-copy.ts | 已定稿文案＋公开座位字段＋本局规则卡 → 幂等更新 output/publish-copy.md 的简介附录 |
@@ -27,6 +28,8 @@ Windows 读取微软雅黑字体。其他系统应在 `scene.ts` 的字体注册
 | qwen.ts / synthesize.ts | Qwen 协议适配与通用的多段合成调度 |
 | audio-cache.ts | 显式指定缓存目录 → 仅复用完整请求键相同的音频与元数据 |
 | audio-inspection.ts / audit-audio.ts | 原始 PCM → 非零平段、削波、静音及时间戳检查，定位报告和试听片段 |
+| review-audio.ts / asr-comparison.ts | 规范化同一原音 → 独立识别、原稿比较与缓存；中文/英语默认本地，日语仅在线 Qwen |
+| audio-alignment.ts / import-audio-alignment.ts | 核实英语/日语独立转写与真实词边界，创建绑定原音/原稿/响应的 sidecar；不覆盖原 TTS 元数据 |
 | repair-audio.ts | 异常报告／显式选择 → 有限次新种子重配、备份、质量通过后替换及可选重建成片 |
 | project.ts | 路径、类型、原文分段、号码读法、按法官 cue 选择已审核的连读／语速配置 |
 | audio.ts / timeline.ts | 实际 PCM → 规范音轨、字幕、绝对帧时间轴 |
@@ -41,7 +44,13 @@ Windows 读取微软雅黑字体。其他系统应在 `scene.ts` 的字体注册
 | compress.ts | 用户指定的已有旧文件 → 独立压缩文件；不在默认制作流程中 |
 | sample.ts / verify-sample.ts | 明确的选段清单 → 独立样品与原话/时序/媒体检查 |
 
+### 单玩家历史视角
+
+`workflow.ts --player-seat=N` 导出前调用 `buildPlayerVideo`；它通过 `projectSeat` 取该座位与公开事件，排除全知终局 `review`，再构造只包含本人真实身份的 cast，其余座位角色统一为 `unknown`。授权可见的查验结果、狼队密谈和其他私密原话仍保留在事件流中；它们不改变其他座位的身份标签。不能用终局 `review`、当前状态或 `knownIdentities` 回填早先画面。`project.ts` 会按当前存档重建投影并与导出逐项比较，`verify.ts` 再检查没有私密越权、完整规则卡或真实身份泄漏；不要以改摘要、重用旧导出或复制上帝视角缓存绕过这些检查。操作、审核和样片规则见[单玩家视角制作](player-view.md)。
+
 `workflow.ts` 用参数数组启动子进程，设置 cwd 和本次房间环境变量，不拼接 shell 字符串。每个阶段成功后写检查点；出错停止，保留前面产物。新程序也应保持这个接口，方便低成本模型直接运行而不重新手写整套流程。
+
+配音继续使用在线 Qwen；配音后的机械步骤是波形检查 → 独立 ASR 原话核对 → 完整字幕时间检查 → timeline。`--asr-provider=auto` 只在中文、英语核对时按配置复用或启动本地服务，日语始终选择在线 Qwen；准备/材料检查不启动 ASR，也不下载模型。日语显式本地/MiMo 在读取识别缓存或请求前就拒绝。原稿或明确别名的审核变化可复用原识别；音频、模型及识别参数变化必须重新识别。本地/MiMo 缺少可靠字时则停在 `alignment-required`，只有明确 `--alignment-provider=qwen-token-plan` 才额外请求英语词边界；中文外部对齐尚不支持。参数、恢复及批量入口见 [音频核对操作指南](local-asr.md)。
 
 ## 核心数据契约
 

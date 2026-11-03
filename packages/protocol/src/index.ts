@@ -243,6 +243,8 @@ export interface MeInfo {
   faction: string;
   factionName: string;
   alive: boolean;
+  /** 引擎确认本席已出局且无后续职责，可结束玩家客户端。旧服务端可缺省。 */
+  canStop?: boolean;
   teammates?: Seat[];
   knownIdentities?: IdentityKnowledge[];
   appendix: string;

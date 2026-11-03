@@ -120,5 +120,5 @@ export function useI18n(): I18n {
 }
 export function UiLanguagePicker() {
   const { locale, setLocale, t } = useI18n();
-  return <label className="row"><span className="small">{t('界面语言')}</span><select aria-label={t('界面语言')} value={locale} onChange={(event) => setLocale(event.target.value)}>{availableUiLanguages().map((language) => <option key={language.id} value={language.id}>{language.label}</option>)}</select></label>;
+  return <select className="ui-language-picker" aria-label={t('界面语言')} value={locale} onChange={(event) => setLocale(event.target.value)}>{availableUiLanguages().map((language) => <option key={language.id} value={language.id}>{language.label}</option>)}</select>;
 }

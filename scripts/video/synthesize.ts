@@ -4,9 +4,15 @@ import { synthesizeSpeech } from './tts';
 import { editScript } from './editorial';
 import { assertPlayerSources } from './integrity';
 import { inspectMaterials } from './materials';
+import assert from 'node:assert/strict';
+import { preparePlayerAudio } from './player-audio-provenance';
 
 const prepared = process.argv.includes('--prepared-clips');
 const source: Script = prepared ? JSON.parse(await readFile(`${projectDir}/source.json`, 'utf8')) : await loadScript();
+if (prepared && (process.env.VIDEO_PLAYER_SEAT || source.perspective === 'player')) {
+  assert.equal(source.perspective, 'player', 'Mixed player and god view artifacts');
+  assert.deepEqual(source, await loadScript(), 'Prepared player source does not match the authorized export');
+}
 const script: Script = prepared ? JSON.parse(await readFile(`${projectDir}/script.json`, 'utf8')) : await editScript(source);
 const voices: VoiceCatalog = prepared ? JSON.parse(await readFile(`${projectDir}/voices.json`, 'utf8')) : await loadVoices();
 const clips = prepared ? JSON.parse(await readFile(`${projectDir}/clips.json`, 'utf8')) as ReturnType<typeof buildClips> : buildClips(script);
@@ -26,6 +32,7 @@ if (process.argv.includes('--plan-only')) {
     hostingChoices: clips.filter((c) => c.type === 'hosting.choice').length, planOnly: true }));
   process.exit(0);
 }
+const recordPlayerAudio = await preparePlayerAudio(source, voices, clips);
 let cursor = 0, complete = 0;
 const fatal = (reason: string) => /401|403|429|key is unavailable|quota|insufficient|billing/i.test(reason);
 const errors: { id: string; reason: string }[] = [];
@@ -40,6 +47,7 @@ async function worker() {
       try {
         const start = Date.now();
         const meta = await synthesizeSpeech(clip.spokenText, profile, voices.model, clip.audioFile);
+        if (recordPlayerAudio) await recordPlayerAudio(clip, meta);
         complete++; done = true;
         console.log(JSON.stringify({ complete, total: clips.length, clip: clip.id, voice: clip.voiceKey, seconds: Math.round((Date.now() - start) / 1000), bytes: meta.bytes, words: meta.sentences.reduce((s, x) => s + x.words.length, 0) }));
       } catch (error) {

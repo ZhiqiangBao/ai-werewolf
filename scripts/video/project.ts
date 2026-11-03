@@ -13,12 +13,19 @@ export const ffprobe = process.env.FFPROBE_PATH || 'ffprobe';
 export interface Cast { seat: number; name: string; role: string; roleName: string; factionName: string; voiceKey: string }
 export interface Fact { sourceSeq: number; day: number; phase: string; type: string; audience: 'public' | number[]; spoken: boolean; text: string; data: Record<string, any> }
 export interface Entry { sourceSeq: number; type: string; speaker: string; voiceKey: string; seat?: number; text: string; visibility: string; data: Record<string, any> }
-export interface Script { locale?: string; roomId: string; perspective: string; presetName: string; status: string; ruleCard?: string; sample?: boolean; cast: Cast[]; events: Fact[]; chapters: { day: number; phase: string; title: string; entries: Entry[] }[]; result: any }
+export interface Script { locale?: string; roomId: string; perspective: string; playerSeat?: number; presetName: string; status: string; ruleCard?: string; sample?: boolean; cast: Cast[]; events: Fact[]; chapters: { day: number; phase: string; title: string; entries: Entry[] }[]; result: any }
 export interface Clip extends Entry { id: string; day: number; phase: string; chapter: string; part: number; parts: number; spokenText: string; audioFile: string }
-export interface TimedClip extends Clip { frames: number; startFrame: number; audioDuration: number; audioMeta: AudioMeta; captions: { text: string; start: number; end: number }[]; envelope: number[] }
+export interface TimedClip extends Clip { frames: number; startFrame: number; audioDuration: number; audioMeta: AudioMeta; captions: { text: string; start: number; end: number }[]; envelope: number[]; normalizedAudioSha256?: string; captionAlignment?: import('./audio-alignment').AlignmentSummary }
 export async function loadScript(): Promise<Script> {
-  const script = JSON.parse(await readFile(join(dataDir, 'exports', `${roomId}-video-script.json`), 'utf8')) as Script;
-  if (script.roomId !== roomId || script.perspective !== 'god' || script.status !== 'ended') throw Error('Expected the completed, authorized god-view script');
+  const seat = process.env.VIDEO_PLAYER_SEAT;
+  if (seat && !/^[1-9][0-9]*$/.test(seat)) throw Error('Invalid player seat');
+  const script = JSON.parse(await readFile(join(dataDir, 'exports', `${roomId}${seat ? `-player-${seat}` : ''}-video-script.json`), 'utf8')) as Script;
+  if (script.roomId !== roomId || script.status !== 'ended' || (seat ? script.perspective !== 'player' || script.playerSeat !== Number(seat) : script.perspective !== 'god')) throw Error('Expected the completed, authorized view script');
+  if (seat) {
+    const { buildPlayerVideo } = await import('../../packages/session/src/player-video');
+    const record = JSON.parse(await readFile(join(dataDir, 'rooms', `${roomId}.json`), 'utf8'));
+    if (JSON.stringify(script) !== JSON.stringify(buildPlayerVideo(record, roomId, Number(seat)))) throw Error('Player export does not match the current authorized projection');
+  }
   return script;
 }
 export interface VoiceCatalog {
@@ -62,7 +69,7 @@ export function clipVoiceProfile(voices: VoiceCatalog, clip: Pick<Clip, 'voiceKe
         (cue?.instruction ? cue.instruction === legacySeerCue : instruction === legacyVoiceInstructions[clip.voiceKey])) {
       instruction = language === 'en'
         ? 'Speak naturally and clearly in English. Preserve the provided text exactly; do not add words.'
-        : '日本語で自然にはっきり読み、指定された文章を変えず、言葉を追加しないでください。';
+        : '';
     }
     const languageHints = profile.locale === sourceLocale && profile.languageHints?.length
       ? profile.languageHints : [language === 'yue' ? 'zh' : language];
