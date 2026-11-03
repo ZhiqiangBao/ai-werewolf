@@ -200,5 +200,6 @@
     "packages/session/test/speech-cancel.test.ts": "5f92baaf4d3efd4cc226ff9999f7ce70862d23a992cb819903f5e470ca2f4d35",
     "packages/session/test/audio-lifecycle.test.ts": "eabba600ea2c164bed5584a807d306589b3eeba01c1b7d59dd305e86d0f40515",
     "packages/session/test/audio-lifecycle-http.test.ts": "e57909072ca52692738a2dd8dc9d5df0697ef552614468bf85955b7d52f9cc46"
-  }
+  },
+  "implementationCommit": "0dc07ea"
 }
