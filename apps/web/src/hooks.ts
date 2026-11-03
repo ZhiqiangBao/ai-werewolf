@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Catalog, ViewResponse } from '@werewolf/protocol';
 import { api, streamUrl } from './api';
+import { scopedCallback, ViewLoader } from './view-loader';
 
 export function useHashRoute(): string[] {
   const [hash, setHash] = useState(() => location.hash);
@@ -33,52 +34,47 @@ export function useCatalog(): Catalog | null {
 export function useStream(roomId: string, token: string, onUpdate: () => void): void {
   const ref = useRef(onUpdate);
   ref.current = onUpdate;
+  const scope = useMemo(() => ({}), [roomId, token]);
+  const currentScope = useRef(scope); currentScope.current = scope;
   useEffect(() => {
+    let active = true;
     const es = new EventSource(streamUrl(roomId, token));
-    es.addEventListener('update', () => ref.current());
-    es.onopen = () => ref.current();
-    const timer = setInterval(() => ref.current(), 20_000);
-    const onFocus = () => ref.current();
+    const update = scopedCallback(() => active && currentScope.current === scope, () => ref.current());
+    es.addEventListener('update', update);
+    es.onopen = update;
+    const timer = setInterval(update, 20_000);
+    const onFocus = update;
     window.addEventListener('focus', onFocus);
     return () => {
+      active = false;
       es.close();
       clearInterval(timer);
       window.removeEventListener('focus', onFocus);
     };
-  }, [roomId, token]);
+  }, [roomId, token, scope]);
 }
 
 export function useView(roomId: string, token: string) {
-  const [data, setData] = useState<ViewResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const busy = useRef(false);
-  const dirty = useRef(false);
-
-  const refresh = useCallback(async () => {
-    if (busy.current) {
-      dirty.current = true;
-      return;
-    }
-    busy.current = true;
-    try {
-      do {
-        dirty.current = false;
-        const v = await api.view(roomId, token);
-        setData(v);
-        setError(null);
-      } while (dirty.current);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      busy.current = false;
-    }
+  const [snapshot, setSnapshot] = useState<{ loader: ViewLoader<ViewResponse>; data: ViewResponse | null; error: string | null } | null>(null);
+  const current = useRef<ViewLoader<ViewResponse> | null>(null);
+  const loader = useMemo(() => {
+    const own: ViewLoader<ViewResponse> = new ViewLoader(
+      () => api.view(roomId, token),
+      (data, error) => setSnapshot((previous) => ({ loader: own, data: data ?? (previous?.loader === own ? previous.data : null), error })),
+      () => current.current === own,
+    );
+    return own;
   }, [roomId, token]);
+  current.current = loader;
+  const refresh = useCallback(() => loader.refresh(), [loader]);
 
   useEffect(() => {
+    loader.activate();
     void refresh();
-  }, [refresh]);
+    return () => loader.deactivate();
+  }, [loader, refresh]);
   useStream(roomId, token, () => void refresh());
-  return { data, error, refresh };
+  return { data: snapshot?.loader === loader ? snapshot.data : null, error: snapshot?.loader === loader ? snapshot.error : null, refresh };
 }
 
 export function useNow(intervalMs = 500): number {

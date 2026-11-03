@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "timeUtc": "2026-11-03T03:50:36.319Z",
+  "runtime": "v24.18.1",
+  "platform": "win32",
+  "arch": "x64",
+  "fixture": {
+    "preset": "standard12",
+    "seed": "event-store-001",
+    "engineActions": 176,
+    "engineEvents": 233,
+    "seats": 12,
+    "syntheticMessagesPerSeat": 200,
+    "messageChars": 256,
+    "updates": 40,
+    "snapshotEvery": 20
+  },
+  "sourceSha256": {
+    "packages/session/src/store.ts": "d9101b1d6aea66b39d73e1d2c563ae73dcf9cf79597043912ea8a7b55b053564",
+    "packages/session/src/room-view.ts": "aef5679447ad30ea8f9b7a3562951e3303828ec0efe086a83cb236ba9115cae1",
+    "packages/session/scripts/event-store-fixture.ts": "0b169578eaadb0e3461f825d0f0be0c3f9946c5eeb4be42e97cfeddd532a6ac9",
+    "packages/session/scripts/event-store-prototype.ts": "596a34d9ee3ce3e44e2afbba14629226d276c74f941b825ab7b47f42b49ab4d5",
+    "packages/session/scripts/event-store-measure.ts": "6948f4add3bd45f98a3cf784e9dccf154c3de71bcdae465904874675458e11b8"
+  },
+  "ms": {
+    "clone": {
+      "count": 40,
+      "p50": 3.564,
+      "p95": 5.038,
+      "total": 149.856
+    },
+    "stringifyLikeFileStore": {
+      "count": 40,
+      "p50": 1.412,
+      "p95": 1.77,
+      "total": 58.565
+    },
+    "preSerializedWriteRename": {
+      "count": 40,
+      "p50": 14.17,
+      "p95": 16.437,
+      "total": 581.487
+    },
+    "currentSave": {
+      "count": 40,
+      "p50": 16.29,
+      "p95": 19.232,
+      "total": 661.177
+    },
+    "prototypeCommitFsync": {
+      "count": 40,
+      "p50": 4.557,
+      "p95": 6.399,
+      "total": 191.135
+    },
+    "prototypeCheckpointFsync": {
+      "count": 2,
+      "p50": 13.043,
+      "p95": 13.043,
+      "total": 26.626
+    },
+    "currentLoadAll": {
+      "count": 15,
+      "p50": 21.531,
+      "p95": 24.052,
+      "total": 328.114
+    },
+    "prototypeRestore": {
+      "count": 15,
+      "p50": 20.75,
+      "p95": 24.273,
+      "total": 318.896
+    },
+    "notifyByViewers": {
+      "1": {
+        "count": 20,
+        "p50": 0.048,
+        "p95": 0.122,
+        "total": 1.338
+      },
+      "14": {
+        "count": 20,
+        "p50": 0.747,
+        "p95": 3.292,
+        "total": 24.329
+      },
+      "56": {
+        "count": 20,
+        "p50": 3.061,
+        "p95": 4.032,
+        "total": 64.311
+      }
+    },
+    "fourRoomsSequentialSave": {
+      "count": 10,
+      "p50": 73.04,
+      "p95": 88.558,
+      "total": 764.566
+    }
+  },
+  "bytes": {
+    "current": 2124184,
+    "prototypeSnapshotAndUntrimmedJournal": 2104225,
+    "journal": 43478
+  }
+}

@@ -97,7 +97,7 @@ function HostGame({ roomId, token, room, projection: p, presentation, refresh }:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const running = room.status === 'running';
-  const speech = useSpeechPlayback(roomId, token, p);
+  const speech = useSpeechPlayback(roomId, token, p, room, presentation);
 
   useEffect(() => {
     api.getSetup(roomId, token).then(setSetup, () => {});
@@ -224,7 +224,7 @@ function HostGame({ roomId, token, room, projection: p, presentation, refresh }:
 export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
   const { data, error, refresh } = useView(roomId, token);
   const catalog = useCatalog();
-  const speech = useSpeechPlayback(roomId, token, data?.projection ?? null);
+  const speech = useSpeechPlayback(roomId, token, data?.projection ?? null, data?.room, data?.presentation);
   if (!data) return <Loading error={error} />;
   const { room } = data;
   if (room.viewer !== 'seat' || !room.seat) return <Loading error="这个链接不是座位链接。" />;
@@ -297,7 +297,7 @@ export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
 export function WatchPage({ roomId, token }: { roomId: string; token: string }) {
   const { data, error } = useView(roomId, token);
   const catalog = useCatalog();
-  const speech = useSpeechPlayback(roomId, token, data?.projection ?? null);
+  const speech = useSpeechPlayback(roomId, token, data?.projection ?? null, data?.room, data?.presentation);
   if (!data) return <Loading error={error} />;
   const { room } = data;
   if (!data.projection) {

@@ -7,6 +7,14 @@ import type { SpeechProvidersView } from '@werewolf/protocol';
 import { defaultSpeechConfig, speechProvider, type SpeechAudio, type SpeechConfig, type SpeechProvider } from './speech/providers';
 export type { SpeechAudio, SpeechProvider, SpeechConfig, SpeechProviderConfig } from './speech/providers';
 
+type Audio = { bytes: Buffer; mimeType: string };
+type Subscriber = { resolve: (audio: Audio) => void; reject: (error: unknown) => void };
+type Task = { controller: AbortController; subscribers: Set<Subscriber>; timer: ReturnType<typeof setTimeout> };
+export interface SpeechRenderOptions { signal?: AbortSignal; timeoutMs?: number }
+const MAX_PENDING = 128;
+const WAIT_TIMEOUT_MS = 240000;
+function cancelled(): Error { return Error('Speech synthesis cancelled'); }
+
 const MIME_TYPES = new Set(['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/webm', 'audio/mp4', 'audio/flac']);
 function normalize(audio: SpeechAudio): { bytes: Buffer; mimeType: string } {
   const original = typeof audio.mimeType === 'string' ? audio.mimeType.split(';')[0].trim().toLowerCase() : '';
@@ -38,11 +46,15 @@ function normalize(audio: SpeechAudio): { bytes: Buffer; mimeType: string } {
 
 /** 所有提供方共用缓存、音频校验和并发预算；不隐式切换来源。 */
 export class SpeechService {
-  private readonly pending = new Map<string, Promise<{ bytes: Buffer; mimeType: string }>>();
+  private readonly pending = new Map<string, Task>();
   private active = 0;
-  private readonly waiters: (() => void)[] = [];
-  constructor(private readonly directory: string, private readonly providers: SpeechProvider[], private readonly defaultId: string | null = providers[0]?.id ?? null, private readonly configError?: string) {
+  private readonly waiters: { start: () => void; signal: AbortSignal; cancel: () => void }[] = [];
+  private disposed = false;
+  private disposedResolve?: () => void;
+  private readonly disposedPromise = new Promise<void>((resolve) => { this.disposedResolve = resolve; });
+  constructor(private readonly directory: string, private readonly providers: SpeechProvider[], private readonly defaultId: string | null = providers[0]?.id ?? null, private readonly configError?: string, private readonly taskTimeoutMs = WAIT_TIMEOUT_MS) {
     if (new Set(providers.map((p) => p.id)).size !== providers.length || (defaultId !== null && !providers.some((p) => p.id === defaultId))) throw Error('Invalid speech provider selection');
+    if (!Number.isFinite(taskTimeoutMs) || taskTimeoutMs < 0 || taskTimeoutMs > 2147483647) throw Error('Invalid speech task timeout');
   }
   static configured(directory: string, configFile = join(dirname(directory), 'speech-providers.json')): SpeechService {
     try {
@@ -57,41 +69,108 @@ export class SpeechService {
     return { providers: [...this.providers, ...additional].map(({ id, label }) => ({ id, label })), defaultProviderId: this.defaultId ?? additional[0]?.id ?? null, ...(this.configError ? { error: this.configError } : {}) };
   }
 
-  render(text: string, providerId?: string, additional: SpeechProvider[] = [], locale = 'zh-CN'): Promise<{ bytes: Buffer; mimeType: string }> {
+  render(text: string, providerId?: string, additional: SpeechProvider[] = [], locale = 'zh-CN', options: SpeechRenderOptions = {}): Promise<Audio> {
+    if (this.disposed) return Promise.reject(Error('Speech service disposed'));
+    if (options.signal?.aborted) return Promise.reject(cancelled());
+    if (options.timeoutMs !== undefined && (!Number.isFinite(options.timeoutMs) || options.timeoutMs < 0 || options.timeoutMs > 2147483647)) return Promise.reject(Error('Invalid speech timeout'));
     gameLanguage(locale);
     const selected = providerId ?? this.defaultId ?? additional[0]?.id;
     const provider = [...this.providers, ...additional].find((p) => p.id === selected);
     if (!provider) return Promise.reject(new Error('Unknown speech provider'));
     const key = createHash('sha256').update(JSON.stringify({ version: 1, provider: provider.cacheIdentity, id: provider.id, text, ...(locale === 'zh-CN' ? {} : { locale }) })).digest('hex');
-    const running = this.pending.get(key);
-    if (running) return running;
-    const task = this.synthesize(provider, text, key, locale).finally(() => this.pending.delete(key));
-    this.pending.set(key, task);
-    return task;
+    let task = this.pending.get(key);
+    if (task?.controller.signal.aborted) return Promise.reject(Error('Speech synthesis cancelling; retry later'));
+    if (!task) {
+      if (this.pending.size >= MAX_PENDING) return Promise.reject(Error('Speech synthesis queue full; retry later'));
+      const controller = new AbortController();
+      const subscribers = new Set<Subscriber>();
+      const timer = setTimeout(() => {
+        controller.abort();
+        for (const subscriber of [...subscribers]) subscriber.reject(Error('Speech synthesis timed out'));
+      }, this.taskTimeoutMs);
+      timer.unref();
+      task = { controller, subscribers, timer };
+      this.pending.set(key, task);
+      const current = task;
+      void Promise.resolve().then(() => this.synthesize(provider, text, key, locale, current.controller.signal)).then(
+        (audio) => this.finish(key, current, undefined, audio),
+        (error: unknown) => this.finish(key, current, error),
+      );
+    }
+    const current = task;
+    return new Promise<Audio>((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout>;
+      const cleanup = () => { clearTimeout(timer); options.signal?.removeEventListener('abort', cancel); current.subscribers.delete(subscriber); };
+      const leave = (error: Error) => { cleanup(); reject(error); if (!current.subscribers.size) { clearTimeout(current.timer); current.controller.abort(); } };
+      const cancel = () => leave(cancelled());
+      const subscriber: Subscriber = { resolve: (audio) => { cleanup(); resolve(audio); }, reject: (error) => { cleanup(); reject(error); } };
+      current.subscribers.add(subscriber);
+      options.signal?.addEventListener('abort', cancel, { once: true });
+      timer = setTimeout(() => leave(Error('Speech synthesis timed out')), options.timeoutMs ?? WAIT_TIMEOUT_MS);
+      if (options.signal?.aborted) cancel();
+    });
   }
-  private async synthesize(provider: SpeechProvider, text: string, key: string, locale: string) {
+  private finish(key: string, task: Task, error?: unknown, audio?: Audio): void {
+    clearTimeout(task.timer);
+    this.pending.delete(key);
+    for (const subscriber of [...task.subscribers]) {
+      if (audio && !task.controller.signal.aborted) subscriber.resolve(audio); else subscriber.reject(error ?? cancelled());
+    }
+    if (this.disposed && !this.pending.size) this.disposedResolve?.();
+  }
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    for (const task of this.pending.values()) {
+      clearTimeout(task.timer);
+      task.controller.abort();
+      for (const subscriber of [...task.subscribers]) subscriber.reject(cancelled());
+    }
+    if (!this.pending.size) this.disposedResolve?.();
+  }
+  whenDisposed(): Promise<void> { return this.disposedPromise; }
+  private acquire(signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted();
+    if (this.active < 2) { this.active++; return Promise.resolve(); }
+    return new Promise<void>((resolve, reject) => {
+      const entry = {
+        signal,
+        start: () => { signal.removeEventListener('abort', entry.cancel); this.active++; resolve(); },
+        cancel: () => { const index = this.waiters.indexOf(entry); if (index !== -1) this.waiters.splice(index, 1); reject(cancelled()); },
+      };
+      this.waiters.push(entry);
+      signal.addEventListener('abort', entry.cancel, { once: true });
+      if (signal.aborted) entry.cancel();
+    });
+  }
+  private release(): void {
+    this.active--;
+    const next = this.waiters.shift();
+    if (next) next.start();
+  }
+  private async synthesize(provider: SpeechProvider, text: string, key: string, locale: string, signal: AbortSignal): Promise<Audio> {
+    signal.throwIfAborted();
     const output = join(this.directory, key + '.audio');
     try {
       const meta = JSON.parse(await readFile(output + '.json', 'utf8'));
       const bytes = await readFile(output);
+      signal.throwIfAborted();
       if (meta.key === key && meta.bytes === bytes.length && meta.digest === createHash('sha256').update(bytes).digest('hex')) return normalize({ bytes, mimeType: meta.mimeType });
-    } catch { /* Missing or invalid cache: synthesize again. */ }
-    if (this.active < 2) this.active++;
-    else await new Promise<void>((resolve) => this.waiters.push(resolve));
+    } catch { signal.throwIfAborted(); /* Missing or invalid cache: synthesize again. */ }
+    await this.acquire(signal);
     try {
-      const signal = AbortSignal.timeout(240000);
-      let aborted: (() => void) | undefined;
-      const timeout = new Promise<never>((_, reject) => { aborted = () => reject(Error('Speech synthesis timed out')); signal.addEventListener('abort', aborted, { once: true }); });
-      let audio: ReturnType<typeof normalize>;
-      try { audio = normalize(await Promise.race([provider.synthesize(text, signal, { locale }), timeout])); }
-      finally { if (aborted) signal.removeEventListener('abort', aborted); }
+      signal.throwIfAborted();
+      const audio = normalize(await provider.synthesize(text, signal, { locale }));
+      signal.throwIfAborted();
       await mkdir(this.directory, { recursive: true });
-      await writeFile(output + '.partial', audio.bytes); await rename(output + '.partial', output);
+      signal.throwIfAborted();
+      await writeFile(output + '.partial', audio.bytes);
+      signal.throwIfAborted();
+      await rename(output + '.partial', output);
+      signal.throwIfAborted();
       await writeFile(output + '.json', JSON.stringify({ key, providerId: provider.id, mimeType: audio.mimeType, bytes: audio.bytes.length, digest: createHash('sha256').update(audio.bytes).digest('hex') }));
+      signal.throwIfAborted();
       return audio;
-    } finally {
-      const next = this.waiters.shift();
-      if (next) next(); else this.active--;
-    }
+    } finally { this.release(); }
   }
 }

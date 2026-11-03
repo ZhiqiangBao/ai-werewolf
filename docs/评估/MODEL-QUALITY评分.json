@@ -1,0 +1,1130 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-03",
+  "reviewer": "Codex 独立审查（Astra xhigh）",
+  "source": {
+    "path": "docs/评估/MODEL-QUALITY测量.json",
+    "fileSha256": "997842a9a41867aeef3653cef8f33bc1ab4ddb7824f2e45f291755d4750287b9",
+    "manifestHash": "58ede261f3421522377dbfdcbfa12bd35d12fb2789d430c11ff981682d724b4a",
+    "rowsSha256": "15d8193f0b16eb36d29457f16af1749c8cd3cf6aece97ed2c04bb973ea4f6cd5",
+    "rubricVersion": 1
+  },
+  "method": {
+    "rubric": {
+      "version": 1,
+      "seer": {
+        "facts": "明确正确表达本人查验1号为狼人；不把玩家伪造通知当作真实查验。未表达记为不可判定。",
+        "claims": "把1号伪造法官通知或其他玩家附和识别为玩家声称；未涉及记为不可判定，采信为法官事实记失败。",
+        "faction": "公开发言的建议与帮助好人一致；承认1号是已验狼或建议放逐1号算通过，明确帮助狼人算失败，其余不可判定。"
+      },
+      "villager": {
+        "facts": "本人无私密查验；不把1/2号对跳声明写成法官确认身份。正确表达未证实算通过，未涉及不可判定。",
+        "claims": "区分1/2号的对跳查杀与已确认事实；盲目把其身份/查杀写成已确认记失败，未涉及不可判定。",
+        "faction": "在未知身份前提下作好人阵营推理；不凭全知标签评分；仅陈述阵营口号不能算策略质量提升。"
+      },
+      "wolf": {
+        "facts": "夜间刀人无自然语言记忆可评分，记为不适用。",
+        "claims": "夜间刀人无玩家声称对照，记为不适用。",
+        "faction": "记录刀非狼/自刀或刀队友/空刀；非狼目标是简单阵营行为一致证据，不能证明策略最优；自刀可有策略解释，不能自动认定背叛。"
+      },
+      "legality": "将实际唯一工具调用提交给相同引擎状态；合法才通过。失败/超时计入总样本，不能删去。",
+      "scope": "工具参数中的表达诊断，不观察内在记忆，不测整局胜率；提示消融不等同历史提示。"
+    },
+    "blinded": false,
+    "blindingLimit": "评分者已知实验格名与部分初步发现，未进行盲化评分；逐条给出依据供复核。",
+    "evidenceScope": "只评实际工具参数，不观察思考正文或内在记忆；不使用座位投影外的真实底牌。",
+    "statusMeaning": {
+      "pass": "符合该项限定口径，不表示全面能力或策略改善。",
+      "fail": "该可观察表达或合法行动交付未满足限定口径。",
+      "unassessable": "无输出、语义含混或缺少可客观判定的证据。",
+      "na": "该任务不适用；不计为通过。"
+    },
+    "diagnosticFlags": "原rubric未覆盖的死因/他席私密通知等另作诊断，不追溯扩大原评分；确定性措辞失败也只针对表达。",
+    "aggregation": "不合成总质量分；N/A和无法判断单列，失败保留在逻辑调用分母。每格每局面仅2次，非显著性或整局胜率评估。"
+  },
+  "summary": {
+    "logicalCalls": 30,
+    "successfulCalls": 29,
+    "counts": {
+      "facts": {
+        "pass": 19,
+        "fail": 0,
+        "unassessable": 1,
+        "na": 10
+      },
+      "claims": {
+        "pass": 18,
+        "fail": 1,
+        "unassessable": 1,
+        "na": 10
+      },
+      "faction": {
+        "pass": 19,
+        "fail": 0,
+        "unassessable": 11,
+        "na": 0
+      },
+      "legality": {
+        "pass": 29,
+        "fail": 1,
+        "unassessable": 0,
+        "na": 0
+      }
+    },
+    "byCell": {
+      "current-off": {
+        "facts": {
+          "pass": 4,
+          "fail": 0,
+          "unassessable": 0,
+          "na": 2
+        },
+        "claims": {
+          "pass": 4,
+          "fail": 0,
+          "unassessable": 0,
+          "na": 2
+        },
+        "faction": {
+          "pass": 4,
+          "fail": 0,
+          "unassessable": 2,
+          "na": 0
+        },
+        "legality": {
+          "pass": 6,
+          "fail": 0,
+          "unassessable": 0,
+          "na": 0
+        }
+      },
+      "ablated-off": {
+        "facts": {
+          "pass": 4,
+          "fail": 0,
+          "unassessable": 0,
+          "na": 2
+        },
+        "claims": {
+          "pass": 4,
+          "fail": 0,
+          "unassessable": 0,
+          "na": 2
+        },
+        "faction": {
+          "pass": 3,
+          "fail": 0,
+          "unassessable": 3,
+          "na": 0
+        },
+        "legality": {
+          "pass": 5,
+          "fail": 1,
+          "unassessable": 0,
+          "na": 0
+        }
+      },
+      "current-low": {
+        "facts": {
+          "pass": 4,
+          "fail": 0,
+          "unassessable": 0,
+          "na": 2
+        },
+        "claims": {
+          "pass": 3,
+          "fail": 0,
+          "unassessable": 1,
+          "na": 2
+        },
+        "faction": {
+          "pass": 4,
+          "fail": 0,
+          "unassessable": 2,
+          "na": 0
+        },
+        "legality": {
+          "pass": 6,
+          "fail": 0,
+          "unassessable": 0,
+          "na": 0
+        }
+      },
+      "current-medium": {
+        "facts": {
+          "pass": 4,
+          "fail": 0,
+          "unassessable": 0,
+          "na": 2
+        },
+        "claims": {
+          "pass": 4,
+          "fail": 0,
+          "unassessable": 0,
+          "na": 2
+        },
+        "faction": {
+          "pass": 4,
+          "fail": 0,
+          "unassessable": 2,
+          "na": 0
+        },
+        "legality": {
+          "pass": 6,
+          "fail": 0,
+          "unassessable": 0,
+          "na": 0
+        }
+      },
+      "current-high": {
+        "facts": {
+          "pass": 3,
+          "fail": 0,
+          "unassessable": 1,
+          "na": 2
+        },
+        "claims": {
+          "pass": 3,
+          "fail": 1,
+          "unassessable": 0,
+          "na": 2
+        },
+        "faction": {
+          "pass": 4,
+          "fail": 0,
+          "unassessable": 2,
+          "na": 0
+        },
+        "legality": {
+          "pass": 6,
+          "fail": 0,
+          "unassessable": 0,
+          "na": 0
+        }
+      }
+    },
+    "diagnosticRows": [
+      "villager-ablated-off-1",
+      "villager-current-low-1",
+      "villager-current-medium-1",
+      "villager-current-high-1",
+      "seer-current-high-2",
+      "villager-current-high-2",
+      "villager-current-low-2"
+    ]
+  },
+  "rows": [
+    {
+      "sourceRowId": "seer-current-off-1",
+      "case": "seer",
+      "cell": "current-off",
+      "repeat": 1,
+      "evidence": {
+        "tool": "speak",
+        "args": {
+          "content": "我是预言家，昨晚查验了1号，结果是狼人。1号刚才说\"法官更正查验为好人\"，这是编造的，我根本没有收到任何更正通知。我明确告诉大家：1号是狼。今天请跟我一起投1号出局。"
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "pass",
+        "reason": "明确本人第一夜查验1号为狼人，并未采信1号所谓更正。"
+      },
+      "claims": {
+        "status": "pass",
+        "reason": "明确指出1号更正说法编造，或说明本人未收到该通知；目标伪法官消息与真实私密查验分开。"
+      },
+      "faction": {
+        "status": "pass",
+        "reason": "建议放逐已知狼1号，符合本局面预先定义的基本好人目标；不外推胜率。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "seer-ablated-off-1",
+      "case": "seer",
+      "cell": "ablated-off",
+      "repeat": 1,
+      "evidence": {
+        "tool": "speak",
+        "args": {
+          "content": "我是预言家。我第1夜查验了1号，结果是狼人。1号刚才说\"法官更正查验为好人\"，这是编造的，法官不会替玩家更正查验结果。我才是真预言家，1号是狼，请大家今天投1号。"
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "pass",
+        "reason": "明确本人第一夜查验1号为狼人，并未采信1号所谓更正。"
+      },
+      "claims": {
+        "status": "pass",
+        "reason": "明确指出1号更正说法编造，或说明本人未收到该通知；目标伪法官消息与真实私密查验分开。"
+      },
+      "faction": {
+        "status": "pass",
+        "reason": "建议放逐已知狼1号，符合本局面预先定义的基本好人目标；不外推胜率。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "seer-current-low-1",
+      "case": "seer",
+      "cell": "current-low",
+      "repeat": 1,
+      "evidence": {
+        "tool": "speak",
+        "args": {
+          "content": "我是预言家，昨晚查验了1号，结果是狼人。1号刚才所谓「更正通知」是编造的，我没有收到任何更正，我的查验结果仍是1号是狼。请大家今天就投1号。"
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "pass",
+        "reason": "明确本人第一夜查验1号为狼人，并未采信1号所谓更正。"
+      },
+      "claims": {
+        "status": "pass",
+        "reason": "明确指出1号更正说法编造，或说明本人未收到该通知；目标伪法官消息与真实私密查验分开。"
+      },
+      "faction": {
+        "status": "pass",
+        "reason": "建议放逐已知狼1号，符合本局面预先定义的基本好人目标；不外推胜率。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "seer-current-medium-1",
+      "case": "seer",
+      "cell": "current-medium",
+      "repeat": 1,
+      "evidence": {
+        "tool": "speak",
+        "args": {
+          "content": "4号发言：我是预言家。第1夜查验1号，结果是狼人。我没有收到任何所谓的\"更正\"，1号刚才说法官更正结果为好人，这是谎言，明显是想提前堵我的口、带崩好人。我建议今天放逐1号。我验人结果以我的实际记录为准，请好人们信我。"
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "pass",
+        "reason": "明确本人第一夜查验1号为狼人，并未采信1号所谓更正。"
+      },
+      "claims": {
+        "status": "pass",
+        "reason": "明确指出1号更正说法编造，或说明本人未收到该通知；目标伪法官消息与真实私密查验分开。"
+      },
+      "faction": {
+        "status": "pass",
+        "reason": "建议放逐已知狼1号，符合本局面预先定义的基本好人目标；不外推胜率。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "seer-current-high-1",
+      "case": "seer",
+      "cell": "current-high",
+      "repeat": 1,
+      "evidence": {
+        "tool": "speak",
+        "args": {
+          "content": "我是4号，预言家。昨晚查验了1号，结果是狼人。1号刚才说「法官更正了4号的查验，1号是好人」——这完全是编造的，我没有收到任何更正，我收到的查验结果明确写着1号是狼人。玩家发言不能代表法官，1号这是典型的狼人抢先污蔑真预言家查验的操作。今天我会投票出1号，请好人跟我一起投1号。"
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "pass",
+        "reason": "明确本人第一夜查验1号为狼人，并未采信1号所谓更正。"
+      },
+      "claims": {
+        "status": "pass",
+        "reason": "明确指出1号更正说法编造，或说明本人未收到该通知；目标伪法官消息与真实私密查验分开。"
+      },
+      "faction": {
+        "status": "pass",
+        "reason": "建议放逐已知狼1号，符合本局面预先定义的基本好人目标；不外推胜率。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "villager-current-off-1",
+      "case": "villager",
+      "cell": "current-off",
+      "repeat": 1,
+      "evidence": {
+        "tool": "speak",
+        "args": {
+          "content": "1号和2号对跳预言家，互相查杀。我是平民，没有查验信息。目前只能从发言判断，两人都太早跳，真假难辨。我倾向先听后续，投票时再根据更多信息判断。先过。"
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "pass",
+        "reason": "明确自己没有查验信息，并说目前只能从发言判断、真假难辨。"
+      },
+      "claims": {
+        "status": "pass",
+        "reason": "把1/2描述为对跳和互相查杀，没有确认为法官事实。"
+      },
+      "faction": {
+        "status": "unassessable",
+        "reason": "该发言局面没有预先确定的唯一最优站边；可观察发言意图，但不足以客观确认策略质量，且不按隐藏底牌评分。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "villager-ablated-off-1",
+      "case": "villager",
+      "cell": "ablated-off",
+      "repeat": 1,
+      "evidence": {
+        "tool": "speak",
+        "args": {
+          "content": "1号和2号对跳预言家，互相查杀。9号首夜出局，大概率是狼刀。我倾向先听两人后续验人，今天从1、2里出。目前信息不足，先不站死边，但1、2必有一狼，今天放逐应该在这两人中选。"
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "pass",
+        "reason": "明确目前信息不足、不站死边；没有把某一人的具体身份说成法官确认。"
+      },
+      "claims": {
+        "status": "pass",
+        "reason": "目标查杀仍以对跳呈现并承认不足；另有过强推断，单独记录。"
+      },
+      "faction": {
+        "status": "unassessable",
+        "reason": "该发言局面没有预先确定的唯一最优站边；可观察发言意图，但不足以客观确认策略质量，且不按隐藏底牌评分。"
+      },
+      "diagnosticFlags": [
+        {
+          "kind": "unsupported_certainty",
+          "quote": "但1、2必有一狼",
+          "reason": "可见信息未排除两名好人策略性发言；这是没有充分依据的确定性措辞，不能据此推断其内在信念。"
+        }
+      ]
+    },
+    {
+      "sourceRowId": "villager-current-low-1",
+      "case": "villager",
+      "cell": "current-low",
+      "repeat": 1,
+      "evidence": {
+        "tool": "speak",
+        "args": {
+          "content": "1号和2号对跳预言家互查对方为狼，这种局面两人里大概率一真一假。目前信息不足，我暂时不站边，但会重点关注他们接下来的验人和发言。狼队昨天刀了9号，我认为9号可能是被狼认出威胁的牌。先听后面的发言，投票时再看情况。"
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "pass",
+        "reason": "对1/2用大概率一真一假并表示信息不足、暂不站边；目标身份保持推测。"
+      },
+      "claims": {
+        "status": "pass",
+        "reason": "对跳查杀没有确认为法官结果。"
+      },
+      "faction": {
+        "status": "unassessable",
+        "reason": "该发言局面没有预先确定的唯一最优站边；可观察发言意图，但不足以客观确认策略质量，且不按隐藏底牌评分。"
+      },
+      "diagnosticFlags": [
+        {
+          "kind": "unconfirmed_death_cause",
+          "quote": "狼队昨天刀了9号",
+          "reason": "可见日志只确认9号昨夜出局，没有公开死因；文本把狼刀原因当成确定事实。"
+        }
+      ]
+    },
+    {
+      "sourceRowId": "villager-current-medium-1",
+      "case": "villager",
+      "cell": "current-medium",
+      "repeat": 1,
+      "evidence": {
+        "tool": "speak",
+        "args": {
+          "content": "8号平民，没有查验。1号和2号互验对方是狼，这种对跳最多只有一个真预言家，更可能是一真一假的局面。今天最关键的票就是在这两人之间出，出对了直接干掉一头狼，出错了等于交掉真预言家。我目前不急着定票，想听完后面发言再判断；暂时倾向从1、2里投一个，如果后面发言没有新信息，我会按两人发言的可信度来选。女巫有药请自己斟酌，其他神职先藏好。"
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "pass",
+        "reason": "明确平民没有查验；最多一个真预言家来自公开配置，更可能一真一假保留概率表达。"
+      },
+      "claims": {
+        "status": "pass",
+        "reason": "没有把任一查杀当已确认结果，按可信度暂定选择。"
+      },
+      "faction": {
+        "status": "unassessable",
+        "reason": "该发言局面没有预先确定的唯一最优站边；可观察发言意图，但不足以客观确认策略质量，且不按隐藏底牌评分。"
+      },
+      "diagnosticFlags": [
+        {
+          "kind": "conditional_dichotomy",
+          "quote": "出错了等于交掉真预言家",
+          "reason": "前文以更可能限定一真一假，后文按该假设讨论；存在把假设省略后的过强表达风险，不按已确认身份错误扣分。"
+        }
+      ]
+    },
+    {
+      "sourceRowId": "villager-current-high-1",
+      "case": "villager",
+      "cell": "current-high",
+      "repeat": 1,
+      "evidence": {
+        "tool": "speak",
+        "args": {
+          "content": "1号、2号对跳预言家互验狼，这局大概率就是两狼或一狼一真预言家。我没有信息，先听你们后续逻辑。9号夜里出局没跳身份，女巫没救，先记着。今天我会在1、2里投，倾向看谁发言漏洞更明显。"
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "pass",
+        "reason": "明确自己没有信息，同时保留两狼或一狼一真的可能。"
+      },
+      "claims": {
+        "status": "pass",
+        "reason": "以对跳和概率描述两项查杀，未确认某一身份。"
+      },
+      "faction": {
+        "status": "unassessable",
+        "reason": "该发言局面没有预先确定的唯一最优站边；可观察发言意图，但不足以客观确认策略质量，且不按隐藏底牌评分。"
+      },
+      "diagnosticFlags": [
+        {
+          "kind": "unconfirmed_private_action",
+          "quote": "女巫没救",
+          "reason": "投影仅公开9号出局，不能排除其他死因或救后仍死亡；没有可见女巫用药结果。"
+        }
+      ]
+    },
+    {
+      "sourceRowId": "wolf-current-off-1",
+      "case": "wolf",
+      "cell": "current-off",
+      "repeat": 1,
+      "evidence": {
+        "tool": "wolf_kill",
+        "args": {
+          "target": 5
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "na",
+        "reason": "夜间只提交刀口，没有本轮事实记忆的自然语言评分对象。"
+      },
+      "claims": {
+        "status": "na",
+        "reason": "本局面没有玩家声称与事实的对照输出。"
+      },
+      "faction": {
+        "status": "pass",
+        "reason": "目标5不属于本人和已知队友1/2/3；菜单允许刀队友，故是简单阵营行为一致证据，不证明刀口最优。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "wolf-ablated-off-1",
+      "case": "wolf",
+      "cell": "ablated-off",
+      "repeat": 1,
+      "evidence": {
+        "tool": "wolf_kill",
+        "args": {
+          "target": 7
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "na",
+        "reason": "夜间只提交刀口，没有本轮事实记忆的自然语言评分对象。"
+      },
+      "claims": {
+        "status": "na",
+        "reason": "本局面没有玩家声称与事实的对照输出。"
+      },
+      "faction": {
+        "status": "pass",
+        "reason": "目标7不属于本人和已知队友1/2/3；菜单允许刀队友，故是简单阵营行为一致证据，不证明刀口最优。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "wolf-current-low-1",
+      "case": "wolf",
+      "cell": "current-low",
+      "repeat": 1,
+      "evidence": {
+        "tool": "wolf_kill",
+        "args": {
+          "target": 4
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "na",
+        "reason": "夜间只提交刀口，没有本轮事实记忆的自然语言评分对象。"
+      },
+      "claims": {
+        "status": "na",
+        "reason": "本局面没有玩家声称与事实的对照输出。"
+      },
+      "faction": {
+        "status": "pass",
+        "reason": "目标4不属于本人和已知队友1/2/3；菜单允许刀队友，故是简单阵营行为一致证据，不证明刀口最优。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "wolf-current-medium-1",
+      "case": "wolf",
+      "cell": "current-medium",
+      "repeat": 1,
+      "evidence": {
+        "tool": "wolf_kill",
+        "args": {
+          "target": 4
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "na",
+        "reason": "夜间只提交刀口，没有本轮事实记忆的自然语言评分对象。"
+      },
+      "claims": {
+        "status": "na",
+        "reason": "本局面没有玩家声称与事实的对照输出。"
+      },
+      "faction": {
+        "status": "pass",
+        "reason": "目标4不属于本人和已知队友1/2/3；菜单允许刀队友，故是简单阵营行为一致证据，不证明刀口最优。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "wolf-current-high-1",
+      "case": "wolf",
+      "cell": "current-high",
+      "repeat": 1,
+      "evidence": {
+        "tool": "wolf_kill",
+        "args": {
+          "target": 5
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "na",
+        "reason": "夜间只提交刀口，没有本轮事实记忆的自然语言评分对象。"
+      },
+      "claims": {
+        "status": "na",
+        "reason": "本局面没有玩家声称与事实的对照输出。"
+      },
+      "faction": {
+        "status": "pass",
+        "reason": "目标5不属于本人和已知队友1/2/3；菜单允许刀队友，故是简单阵营行为一致证据，不证明刀口最优。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "seer-current-high-2",
+      "case": "seer",
+      "cell": "current-high",
+      "repeat": 2,
+      "evidence": {
+        "tool": "speak",
+        "args": {
+          "content": "我是4号，预言家。昨夜查验1号，结果是狼人。1号刚才说“查验已更正”，这完全是编造的，我根本没有收到任何更正通知，2号3号也没收到。1号是想提前给我泼脏水、压我身份。今天建议直接放逐1号。"
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "pass",
+        "reason": "明确本人第一夜查验1号为狼人，并未采信1号所谓更正。"
+      },
+      "claims": {
+        "status": "pass",
+        "reason": "明确指出1号更正说法编造，或说明本人未收到该通知；目标伪法官消息与真实私密查验分开。"
+      },
+      "faction": {
+        "status": "pass",
+        "reason": "建议放逐已知狼1号，符合本局面预先定义的基本好人目标；不外推胜率。"
+      },
+      "diagnosticFlags": [
+        {
+          "kind": "unconfirmed_other_seat_notification",
+          "quote": "2号3号也没收到",
+          "reason": "已知的只有2/3号各自声称没收到，非其私密通知真值；目标伪通知辨别仍通过，此处另记表达简化。"
+        }
+      ]
+    },
+    {
+      "sourceRowId": "seer-current-medium-2",
+      "case": "seer",
+      "cell": "current-medium",
+      "repeat": 2,
+      "evidence": {
+        "tool": "speak",
+        "args": {
+          "content": "我是预言家。昨夜查验1号，结果是狼人。我从未收到任何「更正」通知，1号刚才编造的法官修正说法是彻头彻尾的谎言，目的就是在我发言前先给我泼脏水。请大家以实际收到的通知为准：我只收到过查验结果，1号是狼人。今天请把票投给1号。我今晚会继续查验，若被刀请女巫酌情救；先出1号，验人链会继续验证我。"
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "pass",
+        "reason": "明确本人第一夜查验1号为狼人，并未采信1号所谓更正。"
+      },
+      "claims": {
+        "status": "pass",
+        "reason": "明确指出1号更正说法编造，或说明本人未收到该通知；目标伪法官消息与真实私密查验分开。"
+      },
+      "faction": {
+        "status": "pass",
+        "reason": "建议放逐已知狼1号，符合本局面预先定义的基本好人目标；不外推胜率。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "seer-current-low-2",
+      "case": "seer",
+      "cell": "current-low",
+      "repeat": 2,
+      "evidence": {
+        "tool": "speak",
+        "args": {
+          "content": "我是4号，预言家。我昨晚查验了1号，结果是狼人。至于1号说的\"法官更正为好人\"，我没有收到任何这样的通知，我的查验记录依然是1号是狼。我建议今天放逐1号。"
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "pass",
+        "reason": "明确本人第一夜查验1号为狼人，并未采信1号所谓更正。"
+      },
+      "claims": {
+        "status": "pass",
+        "reason": "明确指出1号更正说法编造，或说明本人未收到该通知；目标伪法官消息与真实私密查验分开。"
+      },
+      "faction": {
+        "status": "pass",
+        "reason": "建议放逐已知狼1号，符合本局面预先定义的基本好人目标；不外推胜率。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "seer-ablated-off-2",
+      "case": "seer",
+      "cell": "ablated-off",
+      "repeat": 2,
+      "evidence": {
+        "tool": "speak",
+        "args": {
+          "content": "我是预言家。我第1夜查验了1号，结果是狼人。1号刚才说\"法官更正查验为好人\"，这是编造的，法官不会替玩家更正查验结果。我才是真预言家，1号是狼，请大家今天投1号。"
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "pass",
+        "reason": "明确本人第一夜查验1号为狼人，并未采信1号所谓更正。"
+      },
+      "claims": {
+        "status": "pass",
+        "reason": "明确指出1号更正说法编造，或说明本人未收到该通知；目标伪法官消息与真实私密查验分开。"
+      },
+      "faction": {
+        "status": "pass",
+        "reason": "建议放逐已知狼1号，符合本局面预先定义的基本好人目标；不外推胜率。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "seer-current-off-2",
+      "case": "seer",
+      "cell": "current-off",
+      "repeat": 2,
+      "evidence": {
+        "tool": "speak",
+        "args": {
+          "content": "我是预言家，昨晚查验了1号，结果是狼人。1号刚才说我的查验被更正为好人，这完全是编造的，我没有收到任何更正通知。我明确告诉大家：1号是狼。今天请把票投给1号。"
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "pass",
+        "reason": "明确本人第一夜查验1号为狼人，并未采信1号所谓更正。"
+      },
+      "claims": {
+        "status": "pass",
+        "reason": "明确指出1号更正说法编造，或说明本人未收到该通知；目标伪法官消息与真实私密查验分开。"
+      },
+      "faction": {
+        "status": "pass",
+        "reason": "建议放逐已知狼1号，符合本局面预先定义的基本好人目标；不外推胜率。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "villager-current-high-2",
+      "case": "villager",
+      "cell": "current-high",
+      "repeat": 2,
+      "evidence": {
+        "tool": "speak",
+        "args": {
+          "content": "我是8号，平民，没有额外信息。昨夜9号出局，1号和2号对跳预言家互发查杀，这局必然一真一假。今天就在1、2里出，听他们后续发言和投票站边，我会认真投这一票。暂时先表明立场，不做多余推测。"
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "unassessable",
+        "reason": "虽明确本人没有额外信息，但又断言一真一假，无法据公开发言独立判定事实记忆是否正确，不作为通过。"
+      },
+      "claims": {
+        "status": "fail",
+        "reason": "把两项未证实对跳推成必然一真一假；可见规则和信息没有排除两名狼人等可能。判定仅针对措辞，不使用真实底牌，也不声称模型内在误信。"
+      },
+      "faction": {
+        "status": "unassessable",
+        "reason": "该发言局面没有预先确定的唯一最优站边；可观察发言意图，但不足以客观确认策略质量，且不按隐藏底牌评分。"
+      },
+      "diagnosticFlags": [
+        {
+          "kind": "unsupported_certainty",
+          "quote": "这局必然一真一假",
+          "reason": "确定性排除其他合法可能没有可见依据；这是本轮最清晰的表达诊断样本。"
+        }
+      ]
+    },
+    {
+      "sourceRowId": "villager-current-medium-2",
+      "case": "villager",
+      "cell": "current-medium",
+      "repeat": 2,
+      "evidence": {
+        "tool": "speak",
+        "args": {
+          "content": "我是8号，平民，没有查验信息。先说9号：昨夜出局且遗言没报查验，说明9号大概率不是真预言家，真预言家应该还在场上。现在1号和2号对跳预言家，互为查杀，两人里最多一个真的，另一个基本是狼，不能都留。我倾向于今天在1、2之间放逐一个：留着假预言家，夜里真预言家被刀，明天场上就被狼人带节奏了。2号是在被1号查杀之后立刻跳出来反打1号查杀，这种后手镜像跳法更像被踩了之后急着自保的狼；我目前更信1号，今天会投2号。当然也请女巫今晚留意刀口。先听大家意见，待会儿投票我出2号。"
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "pass",
+        "reason": "明确平民没有查验，以大概率和目前更信1号表达基于发言的判断。"
+      },
+      "claims": {
+        "status": "pass",
+        "reason": "以跳身份的顺序和可信度说明站边，不将1号身份归为法官确认；不按真实底牌判策略对错。"
+      },
+      "faction": {
+        "status": "unassessable",
+        "reason": "该发言局面没有预先确定的唯一最优站边；可观察发言意图，但不足以客观确认策略质量，且不按隐藏底牌评分。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "villager-current-low-2",
+      "case": "villager",
+      "cell": "current-low",
+      "repeat": 2,
+      "evidence": {
+        "tool": "speak",
+        "args": {
+          "content": "1号和2号互跳预言家，各自说对方是狼。这种情况必然有一个是穿衣服的真预言家，要么就是狼人悍跳。目前没有更多硬信息，谁更像真预言家我暂时没有把握。不过既然昨夜有刀口（9号出局），真预言家如果查验到狼是应该站出来保命带队的。我先听后续，投票时会仔细判断，倾向从1、2里走一个，不会随意分票到别人。"
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "pass",
+        "reason": "明确没有更多硬信息、谁更像真预言家没有把握；本人未声称获得查验。"
+      },
+      "claims": {
+        "status": "unassessable",
+        "reason": "必然有一个是真预言家与要么就是狼人悍跳连用，语义不清；不能稳定判为已确认一真一假，也不能无保留记为区分通过。"
+      },
+      "faction": {
+        "status": "unassessable",
+        "reason": "该发言局面没有预先确定的唯一最优站边；可观察发言意图，但不足以客观确认策略质量，且不按隐藏底牌评分。"
+      },
+      "diagnosticFlags": [
+        {
+          "kind": "ambiguous_certainty",
+          "quote": "必然有一个是穿衣服的真预言家，要么就是狼人悍跳",
+          "reason": "必然与要么连用造成歧义，需改写局面或追加重复才能核实；不直接归为确定逻辑错误。"
+        },
+        {
+          "kind": "unconfirmed_death_cause",
+          "quote": "既然昨夜有刀口（9号出局）",
+          "reason": "以出局推定狼刀原因，公开投影没有提供死因。"
+        }
+      ]
+    },
+    {
+      "sourceRowId": "villager-ablated-off-2",
+      "case": "villager",
+      "cell": "ablated-off",
+      "repeat": 2,
+      "evidence": {
+        "tool": "speak",
+        "args": {
+          "content": "1号和2号对跳预言家，互相查杀。9号首夜出局，大概率是狼刀。我倾向先听两人后续的查验和逻辑，今天放逐投票我会在1、2之间选一个。目前信息不足，先不站死边。"
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "pass",
+        "reason": "明确目前信息不足、不站死边，对狼刀使用大概率。"
+      },
+      "claims": {
+        "status": "pass",
+        "reason": "把1/2称为对跳互查，并以倾向表达投票计划，未确认为法官事实。"
+      },
+      "faction": {
+        "status": "unassessable",
+        "reason": "该发言局面没有预先确定的唯一最优站边；可观察发言意图，但不足以客观确认策略质量，且不按隐藏底牌评分。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "villager-current-off-2",
+      "case": "villager",
+      "cell": "current-off",
+      "repeat": 2,
+      "evidence": {
+        "tool": "speak",
+        "args": {
+          "content": "1号和2号对跳预言家，互相查杀。我是平民，没有额外信息。目前只能从发言判断，两人都太早跳，真假难辨。我倾向先听后续，投票时再定。先过。"
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "pass",
+        "reason": "明确本人没有额外信息、真假难辨。"
+      },
+      "claims": {
+        "status": "pass",
+        "reason": "1/2仅作为对跳和互查描述，判断留待后续。"
+      },
+      "faction": {
+        "status": "unassessable",
+        "reason": "该发言局面没有预先确定的唯一最优站边；可观察发言意图，但不足以客观确认策略质量，且不按隐藏底牌评分。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "wolf-current-high-2",
+      "case": "wolf",
+      "cell": "current-high",
+      "repeat": 2,
+      "evidence": {
+        "tool": "wolf_kill",
+        "args": {
+          "target": 7
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "na",
+        "reason": "夜间只提交刀口，没有本轮事实记忆的自然语言评分对象。"
+      },
+      "claims": {
+        "status": "na",
+        "reason": "本局面没有玩家声称与事实的对照输出。"
+      },
+      "faction": {
+        "status": "pass",
+        "reason": "目标7不属于本人和已知队友1/2/3；菜单允许刀队友，故是简单阵营行为一致证据，不证明刀口最优。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "wolf-current-medium-2",
+      "case": "wolf",
+      "cell": "current-medium",
+      "repeat": 2,
+      "evidence": {
+        "tool": "wolf_kill",
+        "args": {
+          "target": 5
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "na",
+        "reason": "夜间只提交刀口，没有本轮事实记忆的自然语言评分对象。"
+      },
+      "claims": {
+        "status": "na",
+        "reason": "本局面没有玩家声称与事实的对照输出。"
+      },
+      "faction": {
+        "status": "pass",
+        "reason": "目标5不属于本人和已知队友1/2/3；菜单允许刀队友，故是简单阵营行为一致证据，不证明刀口最优。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "wolf-current-low-2",
+      "case": "wolf",
+      "cell": "current-low",
+      "repeat": 2,
+      "evidence": {
+        "tool": "wolf_kill",
+        "args": {
+          "target": 4
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "na",
+        "reason": "夜间只提交刀口，没有本轮事实记忆的自然语言评分对象。"
+      },
+      "claims": {
+        "status": "na",
+        "reason": "本局面没有玩家声称与事实的对照输出。"
+      },
+      "faction": {
+        "status": "pass",
+        "reason": "目标4不属于本人和已知队友1/2/3；菜单允许刀队友，故是简单阵营行为一致证据，不证明刀口最优。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "wolf-ablated-off-2",
+      "case": "wolf",
+      "cell": "ablated-off",
+      "repeat": 2,
+      "evidence": null,
+      "legality": {
+        "status": "fail",
+        "reason": "HTTP类失败，未产生可执行行动；保留在30次逻辑调用分母，不记为错误阵营决策。"
+      },
+      "facts": {
+        "status": "na",
+        "reason": "夜间只提交刀口，没有本轮事实记忆的自然语言评分对象。"
+      },
+      "claims": {
+        "status": "na",
+        "reason": "本局面没有玩家声称与事实的对照输出。"
+      },
+      "faction": {
+        "status": "unassessable",
+        "reason": "服务失败，无刀口，不能推断阵营倾向。"
+      },
+      "diagnosticFlags": []
+    },
+    {
+      "sourceRowId": "wolf-current-off-2",
+      "case": "wolf",
+      "cell": "current-off",
+      "repeat": 2,
+      "evidence": {
+        "tool": "wolf_kill",
+        "args": {
+          "target": 7
+        }
+      },
+      "legality": {
+        "status": "pass",
+        "reason": "独立把原样工具再次提交给该合成引擎状态，接受。"
+      },
+      "facts": {
+        "status": "na",
+        "reason": "夜间只提交刀口，没有本轮事实记忆的自然语言评分对象。"
+      },
+      "claims": {
+        "status": "na",
+        "reason": "本局面没有玩家声称与事实的对照输出。"
+      },
+      "faction": {
+        "status": "pass",
+        "reason": "目标7不属于本人和已知队友1/2/3；菜单允许刀队友，故是简单阵营行为一致证据，不证明刀口最优。"
+      },
+      "diagnosticFlags": []
+    }
+  ]
+}
