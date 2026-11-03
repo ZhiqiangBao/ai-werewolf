@@ -16,7 +16,7 @@ function humanRoom(options: Partial<ConstructorParameters<typeof RoomManager>[0]
   for (const seat of setup.tokens.seats) manager.participate(roomId, seat.token, { ready: true });
   manager.start(roomId, hostToken);
   const views = () => setup.tokens.seats.map((s) => ({ seat: s.seat, token: s.token, p: manager.view(roomId, s.token).projection as Projection }));
-  const live = (manager as any).rooms.get(roomId);
+  const live = (manager as any).runtime.rooms.get(roomId);
   return { manager, roomId, hostToken, views, live };
 }
 
@@ -62,7 +62,7 @@ it('迟到的旁听打断在间隔内获得工具错误回执，不暂停对局'
     const speaker = all.find((v) => v.p.task && !v.p.task.submitted && v.p.task.tools.some((t) => t.name === 'speak'));
     const wolf = all.find((v) => v.seat !== speaker?.seat && v.p.interrupts.some((t) => t.name === 'wolf_explode'));
     if (speaker && wolf) {
-      const receive = (manager as any).receive(live, wolf.seat, speaker.p.task!.decisionId);
+      const receive = (manager as any).runtime.receive(live, wolf.seat, speaker.p.task!.decisionId);
       live.rec.timing.speech.intervalMs = 60_000;
       manager.act(roomId, speaker.token, { decisionId: speaker.p.task!.decisionId, tool: 'speak', args: { content: '发言结束。' } });
       expect(views().find((v) => v.seat === wolf.seat)!.p.interrupts.some((t) => t.name === 'wolf_explode')).toBe(true);
@@ -138,9 +138,9 @@ it('暂停取消在途行动，迟到的工具结果不执行也不触发托管�
   await manager.whenIdle(roomId);
   const actor = views().find((v) => v.p.task && !v.p.task.submitted)!;
   live.rec.seats[actor.seat - 1].controller = 'ai';
-  (manager as any).syncThread(live, actor.seat);
+  (manager as any).runtime.syncThread(live, actor.seat);
   const decision = actor.p.task!.decisionId;
-  const pending = (manager as any).runAi(live, actor.seat, decision);
+  const pending = (manager as any).runtime.runAi(live, actor.seat, decision);
   await started;
   const count = live.rec.actions.length;
   manager.control(roomId, hostToken, 'pause');
