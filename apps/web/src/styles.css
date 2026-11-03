@@ -75,6 +75,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: in
 input[type='text'], input[type='password'], input[type='number'], .speech-settings input, select, textarea { width: 100%; min-width: 0; padding: 9px 11px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--bg-2); color: var(--text); outline: none; }
 input::placeholder, textarea::placeholder { color: var(--dim); }
 input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #bba0ed20; }
+.ui-language-picker { width: auto; flex: none; align-self: center; height: 32px; padding: 5px 9px; font-size: 12px; }
 input[type='checkbox'] { width: 15px; height: 15px; accent-color: var(--accent); }
 textarea { resize: vertical; min-height: 100px; }
 label.field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); min-width: 0; }
