@@ -46,6 +46,10 @@ describe('replay transport', () => {
     expect(await send('chat_completions', json({ choices: [{ finish_reason: 'length', message: { content: 'partial' } }] }))).toMatchObject({ status: 'failed', text: 'partial' });
     expect(await send('chat_completions', sse('data: [DONE]'))).toMatchObject({ status: 'failed', failureKind: 'invalid_response' });
   });
+  it('rejects a chat completion without a message or actual stream output', async () => {
+    expect(await send('chat_completions', json({ choices: [{ finish_reason: 'stop' }] }))).toMatchObject({ status: 'failed', failureKind: 'invalid_response' });
+    expect(await send('chat_completions', sse('data: [DONE]\n\n'))).toMatchObject({ status: 'failed', failureKind: 'invalid_response' });
+  });
   it('does not expose HTTP response bodies or retry', async () => {
     const result = await send('responses', new Response('secret response', { status: 401 }));
     expect(result).toMatchObject({ status: 'failed', failureKind: 'http', httpAttempts: 1 }); expect(JSON.stringify(result)).not.toContain('secret'); expect(fetch).toHaveBeenCalledTimes(1);

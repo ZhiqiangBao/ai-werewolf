@@ -8,6 +8,7 @@ export interface ReplayOutput {
   calls: { id: string; name: string; arguments: string }[];
   latencyMs: number;
   httpAttempts: number;
+  httpStatus?: number;
   usage?: Record<string, number>;
   responseModel?: string;
   error?: string;
@@ -30,7 +31,7 @@ export async function replayRequest(request: ReplayWireRequest, protocol: ApiPro
   };
   let url: URL;
   try { url = new URL(request.endpoint); } catch { return finish('invalid_response'); }
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || /[?#]/.test(request.endpoint) || /^[a-z]+:\/\/[^/]*@/i.test(request.endpoint) || !Number.isFinite(request.timeoutSec) || request.timeoutSec <= 0 || request.timeoutSec > 3600) return finish('invalid_response');
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || /[?#]/.test(request.endpoint) || /^[a-z]+:\/\/[^/]*@/i.test(request.endpoint) || !Number.isFinite(request.timeoutSec) || request.timeoutSec <= 0 || request.timeoutSec > 600) return finish('invalid_response');
   const controller = new AbortController();
   let timedOut = false;
   const timer = setTimeout(() => { timedOut = true; controller.abort(); }, request.timeoutSec * 1000);
@@ -54,21 +55,26 @@ export async function replayRequest(request: ReplayWireRequest, protocol: ApiPro
   let ended = false;
   let bad = false;
   let stopReason: unknown;
+  let chatMessageSeen = false;
+  let chatFinished = false;
   const event = (data: string) => {
     if (data === '[DONE]') { if (protocol === 'chat_completions') ended = true; return; }
     let e: ObjectValue;
     try { e = object(JSON.parse(data)); } catch { bad = true; return; }
     if (e.type === 'error' || e.type === 'response.failed' || e.type === 'response.incomplete') bad = true;
     if (protocol === 'chat_completions') {
+      if (e.error) bad = true;
       model(e.model); updateUsage(e.usage);
       for (const c of Array.isArray(e.choices) ? e.choices : []) {
         const d = object(c.delta); result.text += string(d.content);
+        if (d.role === 'assistant' || typeof d.content === 'string' || Array.isArray(d.tool_calls)) chatMessageSeen = true;
         for (const t of Array.isArray(d.tool_calls) ? d.tool_calls : []) {
           const index = typeof t.index === 'number' ? t.index : 0;
           const call = calls.get(index) ?? { id: '', name: '', arguments: '' };
-          call.id += string(t.id); call.name += string(t.function?.name); call.arguments += string(t.function?.arguments); calls.set(index, call);
+          if (typeof t.id === 'string') call.id = t.id;
+          call.name += string(t.function?.name); call.arguments += string(t.function?.arguments); calls.set(index, call);
         }
-        if (c.finish_reason != null) { ended = true; if (truncated(c.finish_reason)) bad = true; }
+        if (c.finish_reason != null) { ended = true; chatFinished = true; if (truncated(c.finish_reason)) bad = true; }
       }
     } else if (protocol === 'responses') {
       if (e.type === 'response.output_text.delta') result.text += string(e.delta);
@@ -99,6 +105,7 @@ export async function replayRequest(request: ReplayWireRequest, protocol: ApiPro
     const body = JSON.stringify(request.body);
     result.httpAttempts = 1;
     const response = await fetch(request.endpoint, { method: 'POST', headers, body, signal: controller.signal, redirect: 'error' });
+    result.httpStatus = response.status;
     if (!response.ok) return finish('http');
     if (response.headers.get('content-type')?.toLowerCase().includes('text/event-stream')) {
       if (!response.body) return finish('invalid_response');
@@ -121,6 +128,7 @@ export async function replayRequest(request: ReplayWireRequest, protocol: ApiPro
       if (buffer || lines.length) bad = true;
       result.calls.push(...[...calls.entries()].sort(([a], [b]) => a - b).map(([, c]) => c));
       if (protocol === 'anthropic_messages' && (!stopReason || truncated(stopReason))) bad = true;
+      if (protocol === 'chat_completions' && (!chatMessageSeen || !chatFinished)) bad = true;
       if (!ended || bad) return finish('invalid_response');
     } else {
       let data: ObjectValue;
@@ -130,7 +138,7 @@ export async function replayRequest(request: ReplayWireRequest, protocol: ApiPro
         const choice = Array.isArray(data.choices) ? data.choices[0] : undefined; const message = object(choice?.message);
         result.text = string(message.content);
         for (const c of Array.isArray(message.tool_calls) ? message.tool_calls : []) result.calls.push({ id: string(c.id), name: string(c.function?.name), arguments: string(c.function?.arguments) });
-        if (!choice || !choice.finish_reason || truncated(choice.finish_reason)) bad = true;
+        if (!choice || !choice.message || typeof choice.message !== 'object' || !choice.finish_reason || truncated(choice.finish_reason)) bad = true;
       } else if (protocol === 'responses') {
         parseResponseItems(data.output); if (data.status !== 'completed' || !Array.isArray(data.output)) bad = true;
       } else {
