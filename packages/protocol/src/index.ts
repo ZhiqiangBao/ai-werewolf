@@ -382,7 +382,8 @@ export interface SeatConfigInput extends Partial<Omit<SeatConfigView, 'seat' | '
 export interface ModelDraft {
   name: string;
   baseUrl: string;
-  apiKey: string;
+  apiKey?: string;
+  apiKeyEnv?: string;
   apiProtocol?: ApiProtocol;
 }
 
@@ -395,6 +396,8 @@ export interface ModelPresetView {
   baseUrl: string;
   apiProtocol?: ApiProtocol;
   hasKey: boolean;
+  /** 服务进程中读取密钥的环境变量名称；不包含变量值。 */
+  apiKeyEnv?: string;
   /** imported：已复制到项目的旧模型；added：网页添加。settings 仅兼容旧响应。 */
   source: 'settings' | 'imported' | 'added';
 }

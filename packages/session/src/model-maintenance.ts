@@ -107,6 +107,7 @@ export class ModelMaintenance {
     const library = new ModelLibrary(this.secrets, join(this.directory, 'models.json'));
     const source = library.findRaw(sourceId), target = library.findRaw(targetId);
     if (!source || !target) throw new Error('MODEL_NOT_FOUND');
+    if ((source.apiKeyEnv || target.apiKeyEnv) && (!source.apiKeyEnv || source.apiKeyEnv !== target.apiKeyEnv)) throw new Error('MODEL_MERGE_MISMATCH');
     if (target.mergedInto || (source.mergedInto && source.mergedInto !== targetId) || library.list().some((m) => m.mergedInto === sourceId)) throw new Error('MODEL_MERGE_CONFLICT');
     const alreadyMerged = source.mergedInto === targetId;
     if (!alreadyMerged && (source.lifecycle !== 'active' || target.lifecycle !== 'active')) throw new Error('MODEL_MERGE_CONFLICT');

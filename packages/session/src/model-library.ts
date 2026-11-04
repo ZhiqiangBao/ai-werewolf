@@ -19,9 +19,21 @@ interface SavedModel {
   source?: 'imported' | 'added';
   baseUrl: string;
   apiKeyEnc: string | null;
+  apiKeyEnv?: string;
 }
 
 export type ModelLifecycle = 'active' | 'disabled' | 'archived';
+
+export function validEnvName(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
+}
+
+function credentialInput(key: string, name: string): string {
+  const env = name.trim();
+  if (env && !validEnvName(env)) throw new LocalizedError('环境变量名称无效，请只填写变量名');
+  if (key && env) throw new LocalizedError('密钥和环境变量只能选择一种');
+  return env;
+}
 
 export function sameModelRoute(a: string, b: string, protocol: ApiProtocol): boolean {
   try { return new URL(apiUrl(a, protocol)).href === new URL(apiUrl(b, protocol)).href; } catch { return false; }
@@ -38,6 +50,7 @@ export interface ResolvedModel {
   model: string;
   baseUrl: string;
   apiKey: string | null;
+  apiKeyEnv?: string;
   source: 'imported' | 'added';
 }
 
@@ -52,7 +65,7 @@ export class ModelLibrary {
   ) {
     if (!file || !existsSync(file)) return;
     const parsed = JSON.parse(readFileSync(file, 'utf8')) as { version?: number; legacyImported?: boolean; models?: SavedModel[] };
-    if ((parsed.version !== undefined && parsed.version !== 2) || !Array.isArray(parsed.models) || parsed.models.some((m) => !m || !m.id || !m.name || !m.baseUrl || (m.apiKeyEnc !== null && typeof m.apiKeyEnc !== 'string') || (m.lifecycle !== undefined && !['active', 'disabled', 'archived'].includes(m.lifecycle)))) throw new LocalizedError('项目模型库格式无效，请检查 models.json；原文件未被覆盖');
+    if ((parsed.version !== undefined && parsed.version !== 2) || !Array.isArray(parsed.models) || parsed.models.some((m) => !m || !m.id || !m.name || !m.baseUrl || (m.apiKeyEnc !== null && typeof m.apiKeyEnc !== 'string') || (m.apiKeyEnv !== undefined && (!validEnvName(m.apiKeyEnv) || m.apiKeyEnc !== null)) || (m.lifecycle !== undefined && !['active', 'disabled', 'archived'].includes(m.lifecycle)))) throw new LocalizedError('项目模型库格式无效，请检查 models.json；原文件未被覆盖');
     const models = parsed.models;
     if (models.some((m) => m.maintenanceScope !== undefined && (!isScopeBinding(m.maintenanceScope) || 'routeId' in m.maintenanceScope))) throw new LocalizedError('项目模型库维护作用域无效；原文件未被覆盖');
     const ids = new Set(models.map((m) => m.id));
@@ -63,7 +76,8 @@ export class ModelLibrary {
       const source = this.findRaw(model.id)!, target = this.findRaw(model.mergedInto!)!;
       const evidence = model.mergeEvidence as Record<string, unknown> | undefined;
       try {
-        if (source.lifecycle !== 'active' || !source.apiKey || source.apiKey !== target.apiKey || source.apiProtocol !== target.apiProtocol || new URL(apiUrl(source.baseUrl, source.apiProtocol)).href !== new URL(apiUrl(target.baseUrl, target.apiProtocol)).href) throw Error();
+        const sameCredential = source.apiKeyEnv || target.apiKeyEnv ? !!source.apiKeyEnv && source.apiKeyEnv === target.apiKeyEnv : !!source.apiKey && source.apiKey === target.apiKey;
+        if (source.lifecycle !== 'active' || !sameCredential || source.apiProtocol !== target.apiProtocol || new URL(apiUrl(source.baseUrl, source.apiProtocol)).href !== new URL(apiUrl(target.baseUrl, target.apiProtocol)).href) throw Error();
         if (source.model === target.model) {
           if (evidence?.kind !== 'identical_model' && evidence?.kind !== 'official_same_model') throw Error();
         } else {
@@ -84,6 +98,7 @@ export class ModelLibrary {
       baseUrl: m.baseUrl,
       apiProtocol: m.apiProtocol ?? 'chat_completions',
       apiKey: this.keyOf(m),
+      ...(m.apiKeyEnv ? { apiKeyEnv: m.apiKeyEnv } : {}),
       source: m.source ?? 'added',
       lifecycle: m.lifecycle ?? 'active',
       evidence: m.evidence ?? [],
@@ -114,6 +129,7 @@ export class ModelLibrary {
       baseUrl: m.baseUrl,
       apiProtocol: m.apiProtocol,
       hasKey: !!m.apiKey,
+      ...(m.apiKeyEnv ? { apiKeyEnv: m.apiKeyEnv } : {}),
       source: m.source,
       lifecycle: m.lifecycle,
     }));
@@ -127,20 +143,22 @@ export class ModelLibrary {
 
   findRaw(id: string): ResolvedModel | undefined { return this.list().find((m) => m.id === id); }
 
-  add(name: string, baseUrl: string, apiKey: string, protocol: ApiProtocol = 'chat_completions'): ModelPresetView {
+  add(name: string, baseUrl: string, apiKey: string, protocol: ApiProtocol = 'chat_completions', apiKeyEnv = ''): ModelPresetView {
     const model = name.trim();
     const url = apiBase(baseUrl, protocol);
     const key = apiKey.trim();
     if (!model) throw new LocalizedError('请填写模型名称');
     if (!url) throw new LocalizedError('请填写接口地址');
-    if (!key) throw new LocalizedError('请填写密钥');
-    if (this.added.some((m) => (m.model ?? m.name) === model && m.baseUrl === url && (m.apiProtocol ?? 'chat_completions') === protocol)) throw new LocalizedError('这个名称、地址和协议已经添加过了');
+    const env = credentialInput(key, apiKeyEnv);
+    if (!key && !env) throw new LocalizedError('请填写密钥');
+    if (this.added.some((m) => this.find(m.id)?.lifecycle !== 'archived' && (m.model ?? m.name) === model && m.baseUrl === url && (m.apiProtocol ?? 'chat_completions') === protocol)) throw new LocalizedError('这个名称、地址和协议已经添加过了');
     const saved: SavedModel = {
       id: `m_${randomBytes(8).toString('hex')}`,
       name: model.slice(0, 120),
       apiProtocol: protocol,
       baseUrl: url.slice(0, 300),
-      apiKeyEnc: this.secrets.encrypt(key),
+      apiKeyEnc: key ? this.secrets.encrypt(key) : null,
+      ...(env ? { apiKeyEnv: env } : {}),
     };
     const previous = this.added; this.added = [saved, ...this.added];
     try { this.persist(); } catch (error) { this.added = previous; throw error; }
@@ -150,14 +168,32 @@ export class ModelLibrary {
       model: saved.name,
       baseUrl: saved.baseUrl,
       apiProtocol: protocol,
-      hasKey: true,
+      hasKey: !!this.keyOf(saved),
+      ...(env ? { apiKeyEnv: env } : {}),
       source: 'added',
     };
   }
 
   remove(id: string): void {
-    void id;
-    throw new Error('MODEL_MAINTENANCE_REQUIRED');
+    this.setLifecycle(id, 'archived');
+  }
+
+  update(id: string, name: string, baseUrl: string, apiKey: string, protocol: ApiProtocol, apiKeyEnv = ''): ModelPresetView {
+    const index = this.added.findIndex((m) => m.id === id);
+    if (index < 0) throw new Error('MODEL_NOT_FOUND');
+    const model = name.trim(), url = apiBase(baseUrl, protocol), key = apiKey.trim();
+    const env = credentialInput(key, apiKeyEnv);
+    if (!model) throw new LocalizedError('请填写模型名称');
+    if (!url) throw new LocalizedError('请填写接口地址');
+    if (this.added.some((m) => m.id !== id && this.find(m.id)?.lifecycle !== 'archived' && (m.model ?? m.name) === model && m.baseUrl === url && (m.apiProtocol ?? 'chat_completions') === protocol)) throw new LocalizedError('这个名称、地址和协议已经添加过了');
+    const previous = this.added;
+    this.added = previous.map((m, i) => {
+      if (i !== index) return m;
+      const { apiKeyEnv: _oldEnv, ...rest } = m;
+      return { ...rest, name: model.slice(0, 120), model: model.slice(0, 120), baseUrl: url.slice(0, 300), apiProtocol: protocol, ...(env ? { apiKeyEnc: null, apiKeyEnv: env } : key ? { apiKeyEnc: this.secrets.encrypt(key) } : m.apiKeyEnv ? { apiKeyEnv: m.apiKeyEnv } : {}) };
+    });
+    try { this.persist(); } catch (error) { this.added = previous; throw error; }
+    return this.views().find((m) => m.id === id)!;
   }
 
   revision(): string {
@@ -192,6 +228,7 @@ export class ModelLibrary {
   merge(sourceId: string, targetId: string, evidence: unknown): void {
     const source = this.added.find((m) => m.id === sourceId), target = this.added.find((m) => m.id === targetId);
     if (!source || !target) throw new Error('MODEL_NOT_FOUND');
+    if ((source.apiKeyEnv || target.apiKeyEnv) && (!source.apiKeyEnv || source.apiKeyEnv !== target.apiKeyEnv)) throw new Error('MODEL_MERGE_MISMATCH');
     if (source.id === target.id || target.mergedInto || this.added.some((m) => m.mergedInto === sourceId)) throw new Error('MODEL_MERGE_CONFLICT');
     if (source.mergedInto) {
       if (source.mergedInto === targetId) return;
@@ -205,7 +242,7 @@ export class ModelLibrary {
 
   private keyOf(m: SavedModel): string | null {
     try {
-      const key = m.apiKeyEnc ? this.secrets.decrypt(m.apiKeyEnc) : null;
+      const key = m.apiKeyEnv ? process.env[m.apiKeyEnv]?.trim() : m.apiKeyEnc ? this.secrets.decrypt(m.apiKeyEnc) : null;
       return key || null;
     } catch {
       return null;

@@ -198,6 +198,7 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; 
 .setup-advanced > summary { display: flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 600; padding: 3px; }.setup-advanced > summary::before { content: '◇'; color: var(--gold-ink); }.setup-advanced > summary small { margin-left: auto; color: var(--dim); font-weight: 400; }.setup-advanced[open] > summary { margin-bottom: 18px; }.setup-advanced > .panel { background: var(--bg-2); margin-top: 15px; box-shadow: none; }
 .model-add { display: grid; grid-template-columns: 1fr 1fr 1.4fr 1fr auto; gap: 9px; align-items: end; }.model-list { display: grid; gap: 8px; margin-top: 15px; }.model-item { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: center; border: 1px solid var(--line); padding: 9px 12px; border-radius: 8px; font-size: 12px; overflow-wrap: anywhere; }
 .model-collection, .model-notice { margin-top: 14px; }
+.model-credentials { display: grid; gap: 6px; }
 .list-disclosure { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 42px; padding: 10px 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); color: var(--text); font-size: 13px; text-align: left; }
 .list-disclosure:hover { border-color: var(--accent); }
 .disclosure-count { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }

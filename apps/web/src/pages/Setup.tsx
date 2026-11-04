@@ -400,11 +400,7 @@ function SeatsPanel({ setup, catalog, models, roomId, token, patchSeat, patch, f
         <select className="seat-model" style={{ maxWidth: 280 }} value="" onChange={(e) => applyAll(e.target.value)}>
           <option value="">{t('全部 AI 座位改成…')}</option>
           <option value="mock">{t('模拟玩家')}</option>
-          {models.map((m) => (
-            <option key={m.id} value={m.id} disabled={!!m.lifecycle && m.lifecycle !== 'active'}>
-              {m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}{m.lifecycle && m.lifecycle !== 'active' ? t(' · 不可选') : ''}
-            </option>
-          ))}
+          <LibraryModelOptions models={models} />
         </select>
       </h3>
       <TimingSettings value={setup.timing} onChange={(timing) => patch({ timing }, 200)} />
@@ -436,20 +432,26 @@ function selectedId(s: SeatConfigView, models: ModelPresetView[]): string {
   return models.find((m) => m.model === s.model && m.baseUrl === s.baseUrl && (m.apiProtocol ?? 'chat_completions') === (s.apiProtocol ?? 'chat_completions'))?.id ?? (s.model ? 'custom' : 'mock');
 }
 
+function LibraryModelOptions({ models }: { models: ModelPresetView[] }) {
+  const { t } = useI18n();
+  const groups = new Map<string, ModelPresetView[]>();
+  for (const model of models) {
+    const label = model.baseUrl;
+    groups.set(label, [...(groups.get(label) ?? []), model]);
+  }
+  return <>{[...groups].map(([label, entries]) => <optgroup key={label} label={label}>
+    {entries.map((model) => <option key={model.id} value={model.id} disabled={!!model.lifecycle && model.lifecycle !== 'active'}>
+      {model.model}{model.lifecycle && model.lifecycle !== 'active' ? t(' · 不可选') : ''}
+    </option>)}
+  </optgroup>)}</>;
+}
+
 function ModelOptions({ models }: { models: ModelPresetView[] }) {
   const { t } = useI18n();
   return (
     <>
       <option value="mock">{t('模拟玩家')}</option>
-      {models.length > 0 && (
-        <optgroup label={t('项目模型库')}>
-          {models.map((m) => (
-            <option key={m.id} value={m.id} disabled={!!m.lifecycle && m.lifecycle !== 'active'}>
-              {m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}{m.lifecycle && m.lifecycle !== 'active' ? t(' · 不可选') : ''}
-            </option>
-          ))}
-        </optgroup>
-      )}
+      <LibraryModelOptions models={models} />
     </>
   );
 }
@@ -570,7 +572,7 @@ function SeatRow({
                 </select>
               </label>
               <label className="field">
-                {t('接口地址')}
+                {t('baseURL')}
                 <input type="text" value={s.baseUrl} onChange={(e) => patchSeat(s.seat, { baseUrl: e.target.value, modelId: null })} />
               </label>
               <label className="field">

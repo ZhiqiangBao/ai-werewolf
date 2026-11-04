@@ -216,6 +216,7 @@ export class RoomLobbyService {
       const preset = this.models.find(s.presetId);
       if (!preset) throw new ApiFailure(400, 'BAD_REQUEST', '没有这个模型', { key: '没有这个模型' });
       if (preset.lifecycle !== 'active') throw new ApiFailure(409, 'MODEL_DISABLED', '模型已停用，请选择其他模型', { key: '模型已停用，请选择其他模型' });
+      if (preset.apiKeyEnv && !preset.apiKey && typeof s.apiKey !== 'string') throw new ApiFailure(409, 'MODEL_KEY_UNAVAILABLE', '模型环境变量未设置，请在服务进程中配置后重试。', { key: '模型环境变量未设置，请在服务进程中配置后重试。' });
       seat.modelId = s.modelId === null ? null : preset.id;
       seat.model = preset.model;
       seat.baseUrl = preset.baseUrl;
@@ -329,8 +330,9 @@ export class RoomLobbyService {
   }
 
   private unavailableModel(seat: SeatRecord): boolean {
-    if (seat.modelId && this.models.find(seat.modelId)?.lifecycle !== 'active') return true;
-    if (seat.adapter !== 'openai_compatible') return false;
-    return this.models.list().some((m) => this.models.find(m.id)?.lifecycle !== 'active' && m.model === seat.model && m.apiProtocol === (seat.apiProtocol ?? 'chat_completions') && sameModelRoute(m.baseUrl, seat.baseUrl, m.apiProtocol));
+    if (seat.controller !== 'ai' || seat.adapter !== 'openai_compatible') return false;
+    if (seat.modelId) return this.models.find(seat.modelId)?.lifecycle !== 'active';
+    const matches = this.models.list().filter((m) => m.model === seat.model && m.apiProtocol === (seat.apiProtocol ?? 'chat_completions') && sameModelRoute(m.baseUrl, seat.baseUrl, m.apiProtocol));
+    return matches.length > 0 && !matches.some((m) => this.models.find(m.id)?.lifecycle === 'active');
   }
 }

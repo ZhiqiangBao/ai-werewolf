@@ -14,7 +14,7 @@
 
 ASR 默认关闭（`off`），按需启用，不会因制作视频自动产生识别请求。显式 `auto` 才按语言路由：中文和英语使用本地 Q8，日语使用 Qwen Token Plan 在线 ASR。日语生产只能用在线 Qwen；显式 `local` 或 `mimo-token-plan` 会被拒绝。MiMo 日语结果仅保存在单独实验报告中，不能进入日语生产路由。
 
-`auto` 不会在中文/英语本地服务不可用时改走在线 ASR。选择启用 ASR 后，第一次制作前按源局语言准备路由，并在产生外部 TTS 请求前确认前置条件：中文/英语使用 `auto` 时先完成本机模型注册并确认服务 `ready`；日语或显式 Qwen 路由须确认项目加密模型库中有可解密的 Qwen Token Plan 条目。Qwen ASR 只从 `data/models.json` 和对应项目主密钥读取此凭据，不读取 `WEREWOLF_TTS_API_KEY`；TTS 的凭据来源见 [批量 TTS](tts-batch.md)。如当前工作站缺少本地模型，不要假设示例中的 D 盘路径存在或擅自下载；在用户授权下显式改选 Qwen，或先取得模型安装授权。`off` 是当前默认值，表示没有执行语义核对；不能标记为语音内容通过。
+`auto` 不会在中文/英语本地服务不可用时改走在线 ASR。选择启用 ASR 后，第一次制作前按源局语言准备路由，并在产生外部 TTS 请求前确认前置条件：中文/英语使用 `auto` 时先完成本机模型注册并确认服务 `ready`；日语或显式 Qwen 路由须确认项目加密模型库中有可解密的 Qwen Token Plan 条目。Qwen ASR 只从 `data/models.json` 和对应项目主密钥读取此凭据，不读取 `WEREWOLF_TTS_API_KEY`；TTS 的凭据来源见 [批量 TTS](tts-batch.md)。如当前机器缺少本地模型，不要假设示例路径存在或擅自下载；在用户授权下显式改选 Qwen，或先取得模型安装授权。`off` 是当前默认值，表示没有执行语义核对；不能标记为语音内容通过。
 
 阶段顺序为：
 
@@ -85,15 +85,15 @@ workflow 选 local 时会自动执行相当于 `asr:start` 的就绪检查。启
 
 `asr:prepare` 只读取本机现有模型与 runtime，核对固定 repo/revision、文件大小和 SHA，再在指定数据目录生成服务所需的模型清单；它不下载、不启动 ASR，也不修改 `service-settings.json`。GGUF 还会核对目标游戏仓库随附的 `scripts/asr/runtime-manifest.v0.4.1.json` 与其绑定/DLL 文件；该清单按原始字节校验，Git 配置保留其换行。工具和清单不由独立技能包安装。不要手工抄写或修改清单/hash。
 
-已验证 Windows 工作站的 Q8 GGUF 示例：
+在 Windows PowerShell 中，将以下占位路径替换为已安装的 Q8 GGUF 模型目录、匹配的 runtime 目录和项目数据目录的实际绝对路径，再执行：
 
 ```powershell
-pnpm asr:prepare --backend gguf --model-dir D:/QWEN/Qwen3-ASR-1.7B-Q8_0 --runtime-dir D:/QWEN/runtime/transcribe-cpp-0.4.1 --data-dir D:/document/狼人杀/data
+pnpm asr:prepare --backend gguf --model-dir 'C:/path/to/model' --runtime-dir 'C:/path/to/runtime' --data-dir 'C:/path/to/project/data'
 ```
 
 命令成功返回后，确认该数据目录下出现 `local-asr/model-manifest.gguf.json`，且模型与 runtime 检查通过；缺少文件或摘要不符时停止，不手工改清单。若该目录已经有旧模型清单（例如旧 Q5），先确认新模型/runtime 完整并通过校验，再在同一命令末尾加 `--replace`；工具会先校验新文件，再备份并原子替换旧清单。成功不会自动启动服务。
 
-工作站没有此 Q8 GGUF 或 Windows Vulkan runtime 时，不要照抄 D 盘路径或自动下载。0.6B Transformers 是保留的备用模型，可在本机确实有完整权重时显式注册：
+机器没有此 Q8 GGUF 或 Windows Vulkan runtime 时，不要照抄占位路径或自动下载。0.6B Transformers 是保留的备用模型，可在本机确实有完整权重时显式注册；将下面两个占位符替换为实际绝对路径：
 
 ```powershell
 pnpm asr:prepare --backend transformers --model-dir ABS_MODEL_DIR --data-dir ABS_DATA_DIR
@@ -103,18 +103,16 @@ pnpm asr:prepare --backend transformers --model-dir ABS_MODEL_DIR --data-dir ABS
 
 ### 服务配置
 
-本地配置文件是忽略数据目录中的 `data/local-asr/service-settings.json`。下面是已验证 Windows 工作站的配置示例，不是技能包自带内容，也不保证其他机器有相同盘符、模型或显卡；按当前主机实际绝对路径填写。已验证工作站的模型、GGUF binding 和 native runtime 位于 `D:/QWEN`：
-
-该工作站另有 Transformers/CUDA 的 Qwen3-ASR-0.6B 备用模型目录 `D:/QWEN/Qwen3-ASR-0.6B-hf`；生产示例配置选择 Q8 GGUF。其他机器若没有这些文件，不要照抄路径。
+本地配置文件是忽略数据目录中的 `data/local-asr/service-settings.json`。下面是 Windows Q8 GGUF 配置格式；先将每个 `C:/path/to/...` 占位值替换为当前机器已安装文件或目录的实际绝对路径。技能包不包含模型和 runtime；选择 `gpu` 前确认设备支持对应 runtime。
 
 ```json
 {
   "backend": "gguf",
   "device": "gpu",
-  "modelDir": "D:/QWEN/Qwen3-ASR-1.7B-Q8_0",
-  "python": "D:/python/python.exe",
-  "bindings": "D:/QWEN/runtime/transcribe-cpp-0.4.1/python",
-  "library": "D:/QWEN/runtime/transcribe-cpp-0.4.1/native/transcribe-native-windows-x86_64-cpu-vulkan/transcribe.dll"
+  "modelDir": "C:/path/to/model",
+  "python": "C:/path/to/python.exe",
+  "bindings": "C:/path/to/runtime/python",
+  "library": "C:/path/to/runtime/native/transcribe.dll"
 }
 ```
 
@@ -133,10 +131,10 @@ settings 支持 `backend`、`device`、`modelDir`、`python`、`bindings`、`lib
 | bindings | CLI `--bindings-dir` → `WEREWOLF_ASR_BINDINGS_DIR` → settings `bindings` |
 | library | CLI `--library` → `TRANSCRIBE_LIBRARY` → settings `library` |
 
-如果选中的 backend 与 settings 的 `backend` 不同，settings 的 `device` 和 `modelDir` 不应用到新 backend；其他配置仍按各自优先级处理。手动一次性覆盖可用：
+如果选中的 backend 与 settings 的 `backend` 不同，settings 的 `device` 和 `modelDir` 不应用到新 backend；其他配置仍按各自优先级处理。手动一次性覆盖时，将占位路径替换为实际绝对路径：
 
 ```powershell
-pnpm asr:restart -- --backend gguf --device gpu --model-dir D:/QWEN/Qwen3-ASR-1.7B-Q8_0 --python D:/python/python.exe --bindings-dir D:/QWEN/runtime/transcribe-cpp-0.4.1/python --library D:/QWEN/runtime/transcribe-cpp-0.4.1/native/transcribe-native-windows-x86_64-cpu-vulkan/transcribe.dll
+pnpm asr:restart -- --backend gguf --device gpu --model-dir 'C:/path/to/model' --python 'C:/path/to/python.exe' --bindings-dir 'C:/path/to/runtime/python' --library 'C:/path/to/runtime/native/transcribe.dll'
 ```
 
 服务日志在 `data/local-asr/service.log`；控制凭证在同目录的 `service-control.json`。不要复制凭证文件或环境变量到报告、截图或聊天。
@@ -176,5 +174,3 @@ pnpm video:import-alignment --audio=data/video/<room-id>/audio/<clip>.wav --loca
 | GGUF/Vulkan 当前默认 | `handy-computer/Qwen3-ASR-1.7B-gguf`，revision `0e0a596e3959c3f3f2ab7d443a5b6f0f4a4bba6f`，Q8_0 | 2,185,030,624 B；`9a0d81792dfea2d5f278b8a63deb3ea6e02139ce42c2301f32ea19c4f77526b7` |
 
 中文/英语当前本地默认采用 Q8；0.6B Transformers 保留为备用。Q5_K_M 是先前社区 GGUF 对比方案，已不作为当前可用模型。2026-11-03 已完成中、英、日各 10 段、各模型三轮的 Q5/Q8 冻结对比；Q8 的日语原稿差异从 7.59% 降至 5.16%，但仍有否定词等重要错误，不能据此开放日语本地生产。完整数据保存在游戏仓库 `docs/评估/Qwen3-ASR-1.7B量化对比.md`，早期 0.6B 数据为 `docs/本地音频核对与ASR对比.md`；这些历史报告不随独立技能包附带。日语生产只能用在线 Qwen。
-
-曾有一次日语领域后训练 Q5_K_M 实验；模型文件已按用户决定从 `D:/QWEN` 删除，不能配置或启动为本地 ASR。只保留对比报告；日语生产 provider 仍是在线 Qwen。

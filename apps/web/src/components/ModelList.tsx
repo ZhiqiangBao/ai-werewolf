@@ -1,9 +1,9 @@
 import { useI18n } from '../i18n';
 import { useEffect, useId, useState } from 'react';
-import { API_PROTOCOL_LABELS, type ModelPresetView } from '@werewolf/protocol';
+import type { ModelPresetView } from '@werewolf/protocol';
 import { Pagination, paginate } from './Pagination';
 
-export function ModelList({ models, onRemove }: { models: ModelPresetView[]; onRemove: (id: string) => void | Promise<void> }) {
+export function ModelList({ models, onEdit, onRemove, busy }: { models: ModelPresetView[]; onEdit: (model: ModelPresetView) => void; onRemove: (id: string) => void | Promise<void>; busy: boolean }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [page, setPage] = useState(1);
@@ -20,9 +20,12 @@ export function ModelList({ models, onRemove }: { models: ModelPresetView[]; onR
       {expanded && (models.length ? <>
         <div className="model-list">
           {visible.items.map((m) => <div key={m.id} className="model-item">
-            <span>{m.label} · {API_PROTOCOL_LABELS[m.apiProtocol ?? 'chat_completions']}{m.source !== 'added' ? t(' · 已迁移') : ''}{!m.hasKey ? t(' · 未配置密钥') : ''}{m.lifecycle === 'disabled' ? t(' · 已停用') : m.lifecycle === 'archived' ? t(' · 已归档') : ''}</span>
+            <span>{m.model}{m.source !== 'added' ? t(' · 已迁移') : ''}{!m.hasKey ? t(m.apiKeyEnv ? ' · 环境变量未设置' : ' · 未配置密钥') : ''}{m.lifecycle === 'disabled' ? t(' · 已停用') : m.lifecycle === 'archived' ? t(' · 已归档') : ''}</span>
             <span className="tiny dim">{m.baseUrl}</span>
-            <button className="btn sm ghost" type="button" onClick={() => void onRemove(m.id)}>{t('维护说明')}</button>
+            <div className="row">
+              <button className="btn sm ghost" type="button" disabled={busy} onClick={() => onEdit(m)}>{t('编辑')}</button>
+              <button className="btn sm ghost" type="button" disabled={busy} onClick={() => void onRemove(m.id)}>{t('删除')}</button>
+            </div>
           </div>)}
         </div>
         <Pagination label={t('模型库')} page={visible.page} pageCount={visible.pageCount} onChange={setPage} />

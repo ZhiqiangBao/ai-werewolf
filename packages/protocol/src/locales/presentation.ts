@@ -344,6 +344,26 @@ export const presentationMessages: readonly (readonly [string, string, string])[
     "サーバーを停止してからローカルのモデル管理コマンドを使ってください。"
   ],
   [
+    "请在运行服务的电脑上通过 127.0.0.1 打开页面操作。",
+    "Open the page through 127.0.0.1 on the computer running the service to make this change.",
+    "サービスを実行中のコンピューターで 127.0.0.1 からページを開いて操作してください。"
+  ],
+  [
+    "有未结束的房间正在使用此模型，请先更换该房间的模型。",
+    "An unfinished room uses this model. Change that room's model first.",
+    "終了していない部屋でこのモデルが使用されています。先にその部屋のモデルを変更してください。"
+  ],
+  [
+    "未结束的房间 {0} 正在使用此模型，请在这些房间更换模型或结束对局后重试。",
+    "Unfinished rooms {0} use this model. Change their model or end the matches, then try again.",
+    "未終了の部屋 {0} でこのモデルが使用されています。それらの部屋でモデルを変更するか対局を終了してから再試行してください。"
+  ],
+  [
+    "此模型存在归并的别名，请先使用本机维护工具处理。",
+    "This model has merged aliases. Resolve them with the local maintenance tool first.",
+    "このモデルには統合された別名があります。先にローカル管理ツールで処理してください。"
+  ],
+  [
     "网页还没有构建，请先运行 pnpm build，或用 pnpm dev 启动开发模式",
     "The web app is not built. Run pnpm build, or start development mode with pnpm dev.",
     "Web アプリが未ビルドです。pnpm build を実行するか、pnpm dev で開発モードを起動してください。"

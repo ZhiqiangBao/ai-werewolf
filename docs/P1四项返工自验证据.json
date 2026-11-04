@@ -39,8 +39,8 @@
       "vitest": "5.0.5"
     },
     "command": [
-      "C:\\Program Files\\nodejs\\node.exe",
-      "D:\\document\\狼人杀\\scripts\\p1-rework-verify.mjs",
+      "node",
+      "仓库根目录/scripts/p1-rework-verify.mjs",
       "p1-rework-20261103-final"
     ],
     "status": "passed",
@@ -48,7 +48,7 @@
       {
         "step": "targeted-tests",
         "command": [
-          "C:\\Program Files\\nodejs\\node.exe",
+          "node",
           "node_modules/vitest/vitest.mjs",
           "run",
           "packages/session/test/model-maintenance.test.ts",
@@ -58,7 +58,7 @@
           "packages/session/test/passive-projections.test.ts",
           "packages/session/test/passive-native.test.ts",
           "--reporter=json",
-          "--outputFile=D:\\document\\狼人杀\\data\\diagnostics\\p1-rework-20261103-final\\tests.json"
+          "--outputFile=仓库根目录/data/diagnostics/p1-rework-20261103-final/tests.json"
         ],
         "expectedExit": 0,
         "exit": 0,
@@ -76,7 +76,7 @@
       {
         "step": "fixture-lifecycle",
         "command": [
-          "C:\\Program Files\\nodejs\\node.exe",
+          "node",
           "--test",
           "--test-reporter=tap",
           "scripts/test/client-server-fixture-lifecycle.test.mjs"
@@ -97,7 +97,7 @@
       {
         "step": "typecheck",
         "command": [
-          "C:\\Program Files\\nodejs\\node.exe",
+          "node",
           "node_modules/typescript/bin/tsc",
           "-p",
           "tsconfig.json",
@@ -119,10 +119,10 @@
       {
         "step": "scripts-typecheck",
         "command": [
-          "C:\\Program Files\\nodejs\\node.exe",
+          "node",
           "node_modules/typescript/bin/tsc",
           "-p",
-          "D:\\document\\狼人杀\\data\\diagnostics\\p1-rework-20261103-final\\scripts-tsconfig.json",
+          "仓库根目录/data/diagnostics/p1-rework-20261103-final/scripts-tsconfig.json",
           "--noEmit"
         ],
         "expectedExit": 0,
@@ -141,7 +141,7 @@
       {
         "step": "syntax-client-server-check",
         "command": [
-          "C:\\Program Files\\nodejs\\node.exe",
+          "node",
           "--check",
           "scripts/client-server-check.mjs"
         ],
@@ -161,7 +161,7 @@
       {
         "step": "syntax-client-server-fixture-lifecycle",
         "command": [
-          "C:\\Program Files\\nodejs\\node.exe",
+          "node",
           "--check",
           "scripts/client-server-fixture-lifecycle.mjs"
         ],
@@ -181,7 +181,7 @@
       {
         "step": "syntax-p1-rework-verify",
         "command": [
-          "C:\\Program Files\\nodejs\\node.exe",
+          "node",
           "--check",
           "scripts/p1-rework-verify.mjs"
         ],
@@ -201,7 +201,7 @@
       {
         "step": "retained-complete",
         "command": [
-          "C:\\Program Files\\nodejs\\node.exe",
+          "node",
           "--import",
           "tsx",
           "scripts/passive-revalidate.ts",
@@ -232,7 +232,7 @@
       {
         "step": "retained-failure",
         "command": [
-          "C:\\Program Files\\nodejs\\node.exe",
+          "node",
           "--import",
           "tsx",
           "scripts/passive-revalidate.ts",
@@ -1338,75 +1338,75 @@
       "failures": [
         {
           "title": "独立绑定账号／套餐与区域，匹配才分类；未知和不同范围不能判停供",
-          "error": "Error: EPERM: operation not permitted, rename 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-VbmP5x\\models.json.tmp' -> 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-VbmP5x\\models.json'"
+          "error": "Error: EPERM: operation not permitted, rename '[本机用户目录已脱敏] -> '[本机用户目录已脱敏]"
         },
         {
           "title": "新入口拒绝省略字段、原始标识和额外敏感字段，但保留明确 unknown 的待复核证据",
-          "error": "Error: EPERM: operation not permitted, rename 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-kQrMfU\\models.json.tmp' -> 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-kQrMfU\\models.json'"
+          "error": "Error: EPERM: operation not permitted, rename '[本机用户目录已脱敏] -> '[本机用户目录已脱敏]"
         },
         {
           "title": "旧证据只读兼容且不自动补全范围，归档、密钥、别名及旧房间保持可恢复",
-          "error": "Error: EPERM: operation not permitted, rename 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-MLmrCz\\models.json.tmp' -> 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-MLmrCz\\models.json'"
+          "error": "Error: EPERM: operation not permitted, rename '[本机用户目录已脱敏] -> '[本机用户目录已脱敏]"
         },
         {
           "title": "修改绑定不重解释原证据，失败写入不覆盖既存库",
-          "error": "Error: EPERM: operation not permitted, rename 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-W4LMuy\\models.json.tmp' -> 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-W4LMuy\\models.json'"
+          "error": "Error: EPERM: operation not permitted, rename '[本机用户目录已脱敏] -> '[本机用户目录已脱敏]"
         },
         {
           "title": "精确及可能引用分开，活动引用阻止归档；过期预览拒绝",
-          "error": "Error: EPERM: operation not permitted, rename 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-AHDfJO\\models.json.tmp' -> 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-AHDfJO\\models.json'"
+          "error": "Error: EPERM: operation not permitted, rename '[本机用户目录已脱敏] -> '[本机用户目录已脱敏]"
         },
         {
           "title": "停用、归档、恢复和启用均保留 ID 与密钥；损坏房间拒绝盘点",
-          "error": "Error: EPERM: operation not permitted, rename 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-t3zS0T\\models.json.tmp' -> 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-t3zS0T\\models.json'"
+          "error": "Error: EPERM: operation not permitted, rename '[本机用户目录已脱敏] -> '[本机用户目录已脱敏]"
         },
         {
           "title": "租约互斥，旧删除路径拒绝，写入失败回滚内存",
-          "error": "Error: EPERM: operation not permitted, rename 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-D1bQ2L\\models.json.tmp' -> 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-D1bQ2L\\models.json'"
+          "error": "Error: EPERM: operation not permitted, rename '[本机用户目录已脱敏] -> '[本机用户目录已脱敏]"
         },
         {
           "title": "租约初始化写入或关闭失败时仅清理自己创建的文件",
-          "error": "Error: EPERM: operation not permitted, rename 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-aq8fYA\\models.json.tmp' -> 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-aq8fYA\\models.json'"
+          "error": "Error: EPERM: operation not permitted, rename '[本机用户目录已脱敏] -> '[本机用户目录已脱敏]"
         },
         {
           "title": "无法判定的座位字段拒绝盘点，正常旧真人及模拟座位允许缺省模型字段",
-          "error": "Error: EPERM: operation not permitted, rename 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-dsWjru\\models.json.tmp' -> 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-dsWjru\\models.json'"
+          "error": "Error: EPERM: operation not permitted, rename '[本机用户目录已脱敏] -> '[本机用户目录已脱敏]"
         },
         {
           "title": "不同 ID 的实际快照也被盘点，单独修改自定义模型会清除旧 ID 并阻止启动和克隆",
-          "error": "Error: EPERM: operation not permitted, rename 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-cvo1oW\\models.json.tmp' -> 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-cvo1oW\\models.json'"
+          "error": "Error: EPERM: operation not permitted, rename '[本机用户目录已脱敏] -> '[本机用户目录已脱敏]"
         },
         {
           "title": "证据绑定模型和路由，记录后修改修订号，启用明确提示",
-          "error": "Error: EPERM: operation not permitted, rename 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-SznOne\\models.json.tmp' -> 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-SznOne\\models.json'"
+          "error": "Error: EPERM: operation not permitted, rename '[本机用户目录已脱敏] -> '[本机用户目录已脱敏]"
         },
         {
           "title": "TTS 优先读取的密钥和多个后备密钥在停用与归档后仍可读取，包括最后可用条目",
-          "error": "Error: EPERM: operation not permitted, rename 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-tts-maintenance-yJpA1B\\models.json.tmp' -> 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-tts-maintenance-yJpA1B\\models.json'"
+          "error": "Error: EPERM: operation not permitted, rename '[本机用户目录已脱敏] -> '[本机用户目录已脱敏]"
         },
         {
           "title": "已停用模型不可选择、启动或复制；既有座位快照不改写",
-          "error": "Error: EPERM: operation not permitted, rename 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-gP94L6\\models.json.tmp' -> 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-gP94L6\\models.json'"
+          "error": "Error: EPERM: operation not permitted, rename '[本机用户目录已脱敏] -> '[本机用户目录已脱敏]"
         },
         {
           "title": "重复停用与归档幂等，库变化使预览过期，恢复配置冲突不覆盖",
-          "error": "Error: EPERM: operation not permitted, rename 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-DqoDqH\\models.json.tmp' -> 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-DqoDqH\\models.json'"
+          "error": "Error: EPERM: operation not permitted, rename '[本机用户目录已脱敏] -> '[本机用户目录已脱敏]"
         },
         {
           "title": "无 ID 的可能引用阻止归档及克隆，运行与暂停快照保持原样",
-          "error": "Error: EPERM: operation not permitted, rename 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-7s0sPM\\models.json.tmp' -> 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-7s0sPM\\models.json'"
+          "error": "Error: EPERM: operation not permitted, rename '[本机用户目录已脱敏] -> '[本机用户目录已脱敏]"
         },
         {
           "title": "有官方映射的别名可归并，旧房间 ID 解析到规范项并保留原快照及密钥",
-          "error": "Error: EPERM: operation not permitted, rename 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-MiMO0H\\models.json.tmp' -> 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-MiMO0H\\models.json'"
+          "error": "Error: EPERM: operation not permitted, rename '[本机用户目录已脱敏] -> '[本机用户目录已脱敏]"
         },
         {
           "title": "相同模型重复配置可无公告合并；密钥、地址、协议、状态、陈旧盘点及链不符均拒绝",
-          "error": "Error: EPERM: operation not permitted, rename 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-2eibna\\models.json.tmp' -> 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-2eibna\\models.json'"
+          "error": "Error: EPERM: operation not permitted, rename '[本机用户目录已脱敏] -> '[本机用户目录已脱敏]"
         },
         {
           "title": "规范模型归档恢复不与其自身别名冲突；缺失目标或循环的库拒绝加载",
-          "error": "Error: EPERM: operation not permitted, rename 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-6uwX8T\\models.json.tmp' -> 'C:\\Users\\33013\\AppData\\Local\\Packages\\sandbox.{8dd6155c-ab5c-4b10-9b06-fb06b324427a}\\AC\\Temp\\ww-maintenance-6uwX8T\\models.json'"
+          "error": "Error: EPERM: operation not permitted, rename '[本机用户目录已脱敏] -> '[本机用户目录已脱敏]"
         }
       ]
     },
@@ -1470,7 +1470,7 @@
       "sha256": "80552f67df6d4f439bcde04ed023ee59c18ebe1e7bd57eb4ede55c9914df2d91"
     },
     "localClientReadme": {
-      "path": "local-clients/werewolf-agent/README.md",
+      "path": "[Git忽略的本机客户端源码目录]README.md",
       "bytes": 1416,
       "sha256": "cfa825eb8caa5fe7dd3969634223983bbf8fc529bd9f74ba56743c28b32611b2",
       "gitTracked": false,
@@ -1478,5 +1478,6 @@
     },
     "purpose": "Open the agent in the extracted external-client workspace, then send its seat link; commands are executed by the agent.",
     "releaseAssetsRebuilt": false
-  }
+  },
+  "redactionNote": "公开副本中的本机绝对路径和私有客户端目录已脱敏；SHA-256 等摘要值保留原始运行记录，不用于逐字校验此公开脱敏副本。"
 }

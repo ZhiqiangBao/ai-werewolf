@@ -10,6 +10,21 @@ import { attachEventStream } from './event-stream';
 import { shutdownResources } from './shutdown';
 import { errorBody, requestLanguage } from './localization';
 
+/** 共享模型库的修改仅允许通过本机同源页面，不能信任转发头。 */
+export function isLocalModelMutation(req: Pick<IncomingMessage, 'headers' | 'socket'>): boolean {
+  const remote = req.socket.remoteAddress;
+  if (remote !== '127.0.0.1' && remote !== '::1' && remote !== '::ffff:127.0.0.1') return false;
+  const host = req.headers.host;
+  if (!host || !/^127\.0\.0\.1(?::[0-9]{1,5})?$/.test(host)) return false;
+  try {
+    const target = new URL(`http://${host}`);
+    if (target.hostname !== '127.0.0.1' || target.username || target.password || target.pathname !== '/' || target.search || target.hash) return false;
+    const origin = req.headers.origin;
+    if (!origin) return true;
+    return origin === target.origin;
+  } catch { return false; }
+}
+
 export interface Frontend {
   middlewares(req: IncomingMessage, res: ServerResponse, next: () => void): void;
   close(): Promise<void>;
@@ -107,9 +122,18 @@ export function createHttpServer({ manager, speech, speechConnections, webRoot }
     const token = tokenOf(req, url);
 
     if (parts[0] === 'catalog' && method === 'GET') return send(res, 200, manager.catalog());
+    if (parts[0] === 'model-key-envs' && parts.length === 1 && method === 'GET') {
+      if (!isLocalModelMutation(req)) throw new ApiFailure(403, 'FORBIDDEN', '请在运行服务的电脑上通过 127.0.0.1 打开页面操作。', { key: '请在运行服务的电脑上通过 127.0.0.1 打开页面操作。' });
+      return send(res, 200, { variables: manager.modelKeyEnvs() });
+    }
     if ((parts[0] === 'model-presets' || parts[0] === 'models') && !parts[1] && method === 'GET') return send(res, 200, manager.modelPresets());
-    if (parts[0] === 'models' && !parts[1] && method === 'POST') return send(res, 201, manager.addModel(await readBody(req)));
-    if (parts[0] === 'models' && parts[1] && method === 'DELETE') {
+    if (parts[0] === 'models' && !parts[1] && method === 'POST') {
+      if (!isLocalModelMutation(req)) throw new ApiFailure(403, 'FORBIDDEN', '请在运行服务的电脑上通过 127.0.0.1 打开页面操作。', { key: '请在运行服务的电脑上通过 127.0.0.1 打开页面操作。' });
+      return send(res, 201, manager.addModel(await readBody(req)));
+    }
+    if (parts[0] === 'models' && parts[1] && (method === 'DELETE' || method === 'PUT')) {
+      if (!isLocalModelMutation(req)) throw new ApiFailure(403, 'FORBIDDEN', '请在运行服务的电脑上通过 127.0.0.1 打开页面操作。', { key: '请在运行服务的电脑上通过 127.0.0.1 打开页面操作。' });
+      if (method === 'PUT') return send(res, 200, manager.updateModel(decodeURIComponent(parts[1]), await readBody(req)));
       manager.deleteModel(decodeURIComponent(parts[1]));
       return send(res, 200, { ok: true });
     }

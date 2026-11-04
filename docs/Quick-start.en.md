@@ -37,7 +37,7 @@ On the home page, select **Create a match**. In the room setup:
 2. Select the **Match language**. New rooms default to Simplified Chinese (`zh-CN`); English (`en`) and Japanese (`ja`) are also available. The room uses this language for its rules, moderator messages, and the language requested of models. The choice is fixed when the game starts.
 3. Decide which seats are simulated players, model-controlled seats, or human seats.
 
-Simulated players run without an external model service or API key. To use a real model, add it to the project model library with its protocol, endpoint, model name, and API key; then choose it for a seat and use **Test** to check the connection. If the check fails, verify that the endpoint matches the selected protocol and that the model name and key are correct.
+Simulated players run without an external model service or API key. To use a real model, open `http://127.0.0.1:5173/` on the computer running the service (use its configured port if different). On the home page, open **Models & speech** and add the protocol, endpoint, model name, and API key to the model library. Adding or changing models requires this local address. Return to the room using your host link, choose the model for a seat, and use **Test** to check the connection. If the check fails, verify that the endpoint matches the selected protocol and that the model name and key are correct.
 
 ## 4. Invite human players and start
 

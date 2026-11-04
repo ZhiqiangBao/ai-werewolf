@@ -457,7 +457,7 @@
     "sourceCommit": "6325ea652731dcc9e5c99b2b170adbbe69e5659e",
     "sourceHash": "70c5ae5d4ca3277bb8ebf164a82f11a640b5a210bbed04cc7c38372665a4ea3e",
     "command": [
-      "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+      "仓库根目录/scripts/passive-experiment.ts",
       "--execute",
       "preflight",
       "--exclusive-authorized"
@@ -864,7 +864,7 @@
       "mode": "d4",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "d4",
         "--exclusive-authorized"
@@ -896,7 +896,7 @@
       "mode": "d4",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "d4",
         "--exclusive-authorized"
@@ -928,7 +928,7 @@
       "mode": "d8",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "d8",
         "--exclusive-authorized"
@@ -960,7 +960,7 @@
       "mode": "d8",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "d8",
         "--exclusive-authorized"
@@ -992,7 +992,7 @@
       "mode": "fault503",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "fault503",
         "--exclusive-authorized"
@@ -1024,7 +1024,7 @@
       "mode": "preflight",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "preflight",
         "--exclusive-authorized"
@@ -1056,7 +1056,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1088,7 +1088,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1120,7 +1120,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1152,7 +1152,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1184,7 +1184,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1216,7 +1216,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1248,7 +1248,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1280,7 +1280,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1312,7 +1312,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1344,7 +1344,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1376,7 +1376,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1408,7 +1408,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1440,7 +1440,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1472,7 +1472,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1504,7 +1504,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1536,7 +1536,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1568,7 +1568,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1600,7 +1600,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1632,7 +1632,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1664,7 +1664,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1696,7 +1696,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1728,7 +1728,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1760,7 +1760,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1792,7 +1792,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1824,7 +1824,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1856,7 +1856,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1888,7 +1888,7 @@
       "mode": "screen",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "screen",
         "--exclusive-authorized"
@@ -1920,7 +1920,7 @@
       "mode": "preflight",
       "seed": "obs-standard12-001",
       "recordedArgv": [
-        "D:\\document\\狼人杀\\scripts\\passive-experiment.ts",
+        "仓库根目录/scripts/passive-experiment.ts",
         "--execute",
         "preflight",
         "--exclusive-authorized"
@@ -1954,67 +1954,67 @@
     },
     "localWhitelist": [
       {
-        "path": "local-clients/werewolf-agent/.cursor/rules/player.mdc",
+        "path": "[Git忽略的本机客户端源码目录].cursor/rules/player.mdc",
         "bytes": 509,
         "sha256": "7d8f13384f22d07ff6287dced653e4af6afdc090a27e6b3c99de1254d8877237"
       },
       {
-        "path": "local-clients/werewolf-agent/.github/copilot-instructions.md",
+        "path": "[Git忽略的本机客户端源码目录].github/copilot-instructions.md",
         "bytes": 619,
         "sha256": "083b568fe1c364771c0affdc9fdf9f1a315790a9ea7c55c51484ba391133e193"
       },
       {
-        "path": "local-clients/werewolf-agent/.gitignore",
+        "path": "[Git忽略的本机客户端源码目录].gitignore",
         "bytes": 116,
         "sha256": "ad77fc15e1982f02e4a7dc0dd5be11c89f45103c6a0dbd7ae293fb508d87a419"
       },
       {
-        "path": "local-clients/werewolf-agent/AGENTS.md",
+        "path": "[Git忽略的本机客户端源码目录]AGENTS.md",
         "bytes": 7645,
         "sha256": "b8f50575855042da7504a388acb03e3d324a99a572357e6103d84c5739f111ec"
       },
       {
-        "path": "local-clients/werewolf-agent/CLAUDE.md",
+        "path": "[Git忽略的本机客户端源码目录]CLAUDE.md",
         "bytes": 386,
         "sha256": "2bcf56d736ff2967d82cbf5bd6cfd7062d1c7f82c16ec28f8eb70f74f7a36961"
       },
       {
-        "path": "local-clients/werewolf-agent/GEMINI.md",
+        "path": "[Git忽略的本机客户端源码目录]GEMINI.md",
         "bytes": 382,
         "sha256": "a01a9a7621271bd40d0e69f2758da52494145f83c7951accf49b9df8413f0a42"
       },
       {
-        "path": "local-clients/werewolf-agent/QWEN.md",
+        "path": "[Git忽略的本机客户端源码目录]QWEN.md",
         "bytes": 381,
         "sha256": "6ef81de7edd7922e271aa50de70071742cf81853bbda0d295d8e5856c39a0efd"
       },
       {
-        "path": "local-clients/werewolf-agent/README.md",
+        "path": "[Git忽略的本机客户端源码目录]README.md",
         "bytes": 989,
         "sha256": "462c08c851552c8f9a12bc2a2680fb51624d71fd3cfdd0374daa758dfb46e82a"
       },
       {
-        "path": "local-clients/werewolf-agent/player.mjs",
+        "path": "[Git忽略的本机客户端源码目录]player.mjs",
         "bytes": 26368,
         "sha256": "0f823153edd4292a13d03d94585bd0300234656ff88934ff5f54e6c838faf7b8"
       },
       {
-        "path": "local-clients/werewolf-agent/rules/classic9.md",
+        "path": "[Git忽略的本机客户端源码目录]rules/classic9.md",
         "bytes": 7332,
         "sha256": "70866bc238b123b4924a87d2a2fa29294dd98a6136e28f238290d4705284dcf7"
       },
       {
-        "path": "local-clients/werewolf-agent/rules/idiot12.md",
+        "path": "[Git忽略的本机客户端源码目录]rules/idiot12.md",
         "bytes": 7550,
         "sha256": "3c362a2af758c52fb48ac0ecc0359439c5bbfb8671838bdee683d10625c3902f"
       },
       {
-        "path": "local-clients/werewolf-agent/rules/mirror12.md",
+        "path": "[Git忽略的本机客户端源码目录]rules/mirror12.md",
         "bytes": 9381,
         "sha256": "f1733dd1797357b6a65514dad5dd8b8613994c5b33ec5c6f5f9961baf28d16fa"
       },
       {
-        "path": "local-clients/werewolf-agent/rules/standard12.md",
+        "path": "[Git忽略的本机客户端源码目录]rules/standard12.md",
         "bytes": 7813,
         "sha256": "bf36dc4afc5fc06106aff46a036e119c9889b026d414153260ad329258341fee"
       }
@@ -2162,7 +2162,7 @@
       "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
       "eventId": "exec-ea010117-bf01-461b-b0e0-9660fd7f59fb",
       "commandInPowerShell": "'node --import tsx scripts/passive-experiment.ts --execute preflight --exclusive-authorized'",
-      "cwd": "D:\\document\\狼人杀",
+      "cwd": "仓库根目录",
       "exitCode": 0,
       "durationMs": 1735
     },
@@ -2171,7 +2171,7 @@
       "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
       "eventId": "exec-1836ff28-9c0b-43de-abb0-f55ec702943d",
       "commandInPowerShell": "'node --import tsx scripts/passive-experiment.ts --execute d4 --exclusive-authorized'",
-      "cwd": "D:\\document\\狼人杀",
+      "cwd": "仓库根目录",
       "exitCode": 0,
       "durationMs": 4871
     },
@@ -2180,7 +2180,7 @@
       "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
       "eventId": "exec-6c7824e4-e2ed-4985-9a2f-544a4d206dd2",
       "commandInPowerShell": "'node --import tsx scripts/passive-experiment.ts --execute d8 --exclusive-authorized'",
-      "cwd": "D:\\document\\狼人杀",
+      "cwd": "仓库根目录",
       "exitCode": 0,
       "durationMs": 4786
     },
@@ -2189,7 +2189,7 @@
       "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
       "eventId": "exec-8623569b-90ae-4d3c-a9c5-3b1843b5b567",
       "commandInPowerShell": "'node --import tsx scripts/passive-experiment.ts --execute fault503 --exclusive-authorized'",
-      "cwd": "D:\\document\\狼人杀",
+      "cwd": "仓库根目录",
       "exitCode": 0,
       "durationMs": 2890
     },
@@ -2198,7 +2198,7 @@
       "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
       "eventId": "exec-a18b3531-d685-4cd9-82fd-562addb7b1db",
       "commandInPowerShell": "'node --import tsx scripts/passive-experiment.ts --execute screen --exclusive-authorized'",
-      "cwd": "D:\\document\\狼人杀",
+      "cwd": "仓库根目录",
       "exitCode": 0,
       "durationMs": 27741
     },
@@ -2207,7 +2207,7 @@
       "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
       "eventId": "exec-4ab4d02d-5b33-4ad6-bf78-2beef8898e6c",
       "commandInPowerShell": "'node --import tsx data/diagnostics/p1-20261103/client-server-check.mjs'",
-      "cwd": "D:\\document\\狼人杀",
+      "cwd": "仓库根目录",
       "exitCode": 0,
       "durationMs": 12600
     },
@@ -2216,7 +2216,7 @@
       "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
       "eventId": "exec-15f1f787-84e1-4eb1-b375-2157087c0556",
       "commandInPowerShell": "'node data/diagnostics/p1-20261103/run-full-regression.mjs'",
-      "cwd": "D:\\document\\狼人杀",
+      "cwd": "仓库根目录",
       "exitCode": 1,
       "durationMs": 65726
     },
@@ -2225,7 +2225,7 @@
       "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
       "eventId": "exec-bb29e725-b0fe-474d-871b-ecb6a0aba7cd",
       "commandInPowerShell": "'node data/diagnostics/p1-20261103/run-client-final.mjs'",
-      "cwd": "D:\\document\\狼人杀",
+      "cwd": "仓库根目录",
       "exitCode": 1,
       "durationMs": 18747
     },
@@ -2234,7 +2234,7 @@
       "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
       "eventId": "exec-77b9de9c-cc86-499a-907a-ae830bb570de",
       "commandInPowerShell": "'node data/diagnostics/p1-20261103/run-client-final.mjs --only-clean'",
-      "cwd": "D:\\document\\狼人杀",
+      "cwd": "仓库根目录",
       "exitCode": 0,
       "durationMs": 680
     },
@@ -2243,7 +2243,7 @@
       "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
       "eventId": "exec-b2379f14-e262-47b0-a890-fdf0412c8f6b",
       "commandInPowerShell": "'node data/diagnostics/p1-20261103/run-targeted-tests.mjs lifecycle-fixed packages/session/test/session.test.ts packages/session/test/room-boundaries.test.ts packages/session/test/room-disposal.test.ts packages/session/test/observability-runtime.test.ts packages/session/test/observability-http-lifecycle.test.ts packages/session/test/observability-event-loop.test.ts'",
-      "cwd": "D:\\document\\狼人杀",
+      "cwd": "仓库根目录",
       "exitCode": 0,
       "durationMs": 27848
     },
@@ -2252,7 +2252,7 @@
       "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
       "eventId": "exec-0274435d-1b15-44b6-9258-008b72b62388",
       "commandInPowerShell": "\"node data/diagnostics/p1-20261103/run-targeted-tests.mjs http-budget-completion apps/server/test/human-http.test.ts --testNamePattern '房主可通过网页接口管理与试听|首页 TTS 库'\"",
-      "cwd": "D:\\document\\狼人杀",
+      "cwd": "仓库根目录",
       "exitCode": 0,
       "durationMs": 1985
     },
@@ -2261,7 +2261,7 @@
       "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
       "eventId": "exec-469be800-d09d-44aa-9f8f-19b9247b8b4c",
       "commandInPowerShell": "'node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit'",
-      "cwd": "D:\\document\\狼人杀",
+      "cwd": "仓库根目录",
       "exitCode": 0,
       "durationMs": 1425
     },
@@ -2270,7 +2270,7 @@
       "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
       "eventId": "exec-da9cb68c-bfa3-48a1-9caa-9713d9e0600b",
       "commandInPowerShell": "'node node_modules/vite/bin/vite.js build'",
-      "cwd": "D:\\document\\狼人杀\\apps\\web",
+      "cwd": "仓库根目录/apps/web",
       "exitCode": 0,
       "durationMs": 1606
     },
@@ -2279,7 +2279,7 @@
       "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
       "eventId": "exec-e104c502-44c6-4f3a-939f-6ef390bcb72b",
       "commandInPowerShell": "'node --import tsx data/diagnostics/p1-20261103/client-server-check.mjs client-server-final'",
-      "cwd": "D:\\document\\狼人杀",
+      "cwd": "仓库根目录",
       "exitCode": 0,
       "durationMs": 11035
     },
@@ -2287,8 +2287,8 @@
       "threadId": "01a19cbc-ed22-7d40-a641-a4c97adddb1c",
       "turnId": "01a19ed0-f21e-7cb1-bc1f-2b487051dbf0",
       "eventId": "exec-f7ee4800-69d3-4f99-a90b-c4d14911d41a",
-      "commandInPowerShell": "'node scripts/package-agent.mjs local-clients/werewolf-agent data/releases/agent-v0.1.0.zip agent-v0.1.0 --expected-tree fb442a6e96890d1df53b9257ec998e79585a46c62af66a073f179e6ffd58497f --server-commit 6325ea652731dcc9e5c99b2b170adbbe69e5659e --server-commit 8a6563ebc1678412c8a5e1bdf563cb4e59f40b3e'",
-      "cwd": "D:\\document\\狼人杀",
+      "commandInPowerShell": "'node scripts/package-agent.mjs [Git忽略的本机客户端源码目录] data/releases/agent-v0.1.0.zip agent-v0.1.0 --expected-tree fb442a6e96890d1df53b9257ec998e79585a46c62af66a073f179e6ffd58497f --server-commit 6325ea652731dcc9e5c99b2b170adbbe69e5659e --server-commit 8a6563ebc1678412c8a5e1bdf563cb4e59f40b3e'",
+      "cwd": "仓库根目录",
       "exitCode": 0,
       "durationMs": 736
     },
@@ -2297,7 +2297,7 @@
       "turnId": "01a19ed7-551f-7390-b38b-e48aa20175a9",
       "eventId": "exec-b51c19a8-25cd-4a7a-9c37-5c25a07079e8",
       "commandInPowerShell": "'node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit'",
-      "cwd": "D:\\document\\狼人杀",
+      "cwd": "仓库根目录",
       "exitCode": 0,
       "durationMs": 1426
     },
@@ -2306,7 +2306,7 @@
       "turnId": "01a19ed7-551f-7390-b38b-e48aa20175a9",
       "eventId": "exec-0bdc672a-a983-40bd-9268-6afc29cbcc51",
       "commandInPowerShell": "'node node_modules/vitest/vitest.mjs run passive-'",
-      "cwd": "D:\\document\\狼人杀",
+      "cwd": "仓库根目录",
       "exitCode": 0,
       "durationMs": 2206
     },
@@ -2315,7 +2315,7 @@
       "turnId": "01a19ed5-cc33-7213-b79a-dd0bdb334691",
       "eventId": "exec-7f17850b-2c07-4d53-8d1c-8b36353cdd07",
       "commandInPowerShell": "'node --import tsx scripts/passive-experiment.ts --execute preflight --exclusive-authorized'",
-      "cwd": "D:\\document\\狼人杀",
+      "cwd": "仓库根目录",
       "exitCode": 1,
       "durationMs": 1573
     },
@@ -2324,7 +2324,7 @@
       "turnId": "01a19ed2-22b0-7b21-b75e-70a661dc5e59",
       "eventId": "exec-32b2c872-a2ab-4710-b22a-ec3872c83a90",
       "commandInPowerShell": "'node node_modules/vitest/vitest.mjs run packages/session/test/passive-validator.test.ts'",
-      "cwd": "D:\\document\\狼人杀",
+      "cwd": "仓库根目录",
       "exitCode": 0,
       "durationMs": 1667
     }
@@ -2336,5 +2336,6 @@
     "Three-room all-human locale integration fixtures exceeded the two-table common bound.",
     "Existing P evidence reconciles; validator completeness and resume-summary binding remain unresolved.",
     "OBS deleted raw ZIP was not reaudited."
-  ]
+  ],
+  "redactionNote": "公开副本中的本机绝对路径和私有客户端目录已脱敏；SHA-256 等摘要值保留原始运行记录，不用于逐字校验此公开脱敏副本。"
 }
