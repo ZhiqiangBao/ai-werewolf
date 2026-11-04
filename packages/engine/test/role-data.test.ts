@@ -69,7 +69,7 @@ describe('角色私有数据版本迁移', () => {
 
   for (const toolsetVersion of [1, 2] as const) for (const electionVersion of [1, 2, 3] as const) {
     it(`保留工具${toolsetVersion}/竞选${electionVersion}旧技能决策，并与原行动重放相同`, () => {
-      const g = new TestGame({ preset: 'mirror12', deal, toolsetVersion, electionVersion, values: { 'sheriff.enabled': false } });
+      const g = new TestGame({ preset: 'mirror12', deal, toolsetVersion, electionVersion, awakenedNightVersion: 1, values: { 'sheriff.enabled': false } });
       g.ok(4, 'awakened_mimic', { targetSeat: 6 });
       g.until((x) => x.state.phase !== 'night'); g.toNight();
       g.until((x) => x.pending?.step.type === 'night:awakened_skill');

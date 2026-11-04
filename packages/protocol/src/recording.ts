@@ -33,6 +33,10 @@ export function gameRecordEvents(events: GameEvent[], locale: string | undefined
     // 旧存档曾把行动问话合并到事实正文里，展示时还原为简短、客观的事实。
     if (e.type === 'sheriff.start') text = gameText(locale, "警长竞选开始。");
     if (e.type === 'witch.knife' && actorSeat !== undefined && (isSeat(p.knife) || p.knife === null)) text = isSeat(p.knife) ? gameText(locale, "女巫{0}获知刀口：{1}号。", actor, p.knife) : gameText(locale, "女巫获知今夜没有刀口。");
+    if (e.type === 'witch.targets' && actorSeat !== undefined && Array.isArray(p.targets) && p.targets.every(isSeat)) {
+      text = p.targets.length ? gameText(locale, "女巫{0}获知本夜受到狼人攻击的玩家：{1}。", actor, p.targets.map((seat) => gameText(locale, "{0}号", seat)).join(gameText(locale, '、')))
+        : gameText(locale, "女巫获知今夜无人受到狼人攻击。");
+    }
     if (e.type === 'wolf.kill.split' && Array.isArray(p.picks) && p.picks.length > 0 && p.picks.every((pick) => Array.isArray(pick) && pick.length === 2 && isSeat(pick[0]) && (pick[1] === null || isSeat(pick[1])))) {
       const picks = p.picks as [Seat, Seat | null][];
       text = gameText(locale, "狼队刀口并列{0}。", gameText(locale, '（{0}）', picks.map(([s, t]) => gameText(locale, "{0}号→{1}", s, t === null ? gameText(locale, "空刀") : gameText(locale, "{0}号", t))).join(gameText(locale, '、'))));

@@ -1,5 +1,5 @@
 import { roleData } from '../role-data';
-import { gameText } from '@werewolf/protocol';
+import { gameText, isEnglishGameLocale } from '@werewolf/protocol';
 import type { RuleSet, ToolSpec } from '@werewolf/protocol';
 import type { Seat } from '@werewolf/protocol';
 import type { Ctx } from '../context';
@@ -25,7 +25,7 @@ export const guard: RoleModule = {
   faction: 'good',
   category: 'god',
   maxPerGame: 1,
-  summary: '每晚守护一名玩家免受狼刀，也可以空守；不能连续两晚守护同一人。',
+  summary: '每晚可以守护一名存活玩家，也可以选择不守护任何人；不能连续两夜守护同一人。',
   nightPhase: { id: 'guard', order: 10 },
   options: [
     { key: 'guard.noConsecutive', group: '守卫', label: '不能连续两晚守护同一人', type: 'boolean', default: true, editable: false },
@@ -35,14 +35,14 @@ export const guard: RoleModule = {
 
   ruleCard(rules) {
     const v = rules.values;
+    const sentenceSeparator = isEnglishGameLocale(rules.locale) ? ' ' : '';
     return [
-      gameText(rules.locale, "守卫：每晚守护一名存活玩家，也可以空守。{0}", v['guard.allowSelf'] ? gameText(rules.locale, "可以守护自己。") : gameText(rules.locale, "不能守护自己。")) +
+      gameText(rules.locale, "守卫：每晚可以守护一名存活玩家，也可以选择不守护任何人。") + sentenceSeparator +
+        (v['guard.allowSelf'] ? gameText(rules.locale, "可以守护自己。") : gameText(rules.locale, "不能守护自己。")) + sentenceSeparator +
         (v['guard.noConsecutive']
-          ? gameText(rules.locale, "不能连守同一人；空守后次夜不限。")
-          : gameText(rules.locale, "可以连续守护同一人。")) +
-        gameText(rules.locale, "守护只挡狼刀，挡不住毒药。") +
-        gameText(rules.locale, "仅本人收到选择回执；不获知刀口或是否挡住攻击，目标不获通知。") +
-        (v['resolve.guardAndSaveKills'] ? gameText(rules.locale, "守卫和女巫同夜守救刀口，该玩家出局（同守同救）。") : ''),
+          ? gameText(rules.locale, "不能连续两夜守护同一名玩家；如果一夜没有守护任何人，下一夜可以守护任何符合条件的存活玩家。")
+          : gameText(rules.locale, "可以连续两夜守护同一名玩家。")) + sentenceSeparator +
+        gameText(rules.locale, "法官只向守卫回执其自己的选择，不告知狼人的攻击目标或守护结果；被守护的玩家不会收到通知。"),
     ];
   },
 

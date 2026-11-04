@@ -21,6 +21,7 @@ export interface GameOptions {
   toolsetVersion?: 1 | 2;
   electionVersion?: 1 | 2 | 3;
   deathResolutionVersion?: 1 | 2;
+  awakenedNightVersion?: 1 | 2;
   preset?: string;
   deal?: string[];
   values?: Record<string, unknown>;
@@ -44,7 +45,7 @@ export class TestGame {
   constructor(o: GameOptions = {}) {
     const preset = o.preset ?? (o.deal?.length === 9 ? 'classic9' : 'standard12');
     // 原有用例继续覆盖版本 2；发言后退水用例显式选择 3，随机整局和会话测试覆盖新局默认版本。
-    const rules = buildRules(preset, o.values ?? {}, { toolsetVersion: o.toolsetVersion ?? 1, electionVersion: o.electionVersion ?? 2, deathResolutionVersion: o.deathResolutionVersion, allowFixed: true, ...(o.deal ? { roles: o.deal } : {}) });
+    const rules = buildRules(preset, o.values ?? {}, { toolsetVersion: o.toolsetVersion ?? 1, electionVersion: o.electionVersion ?? 2, deathResolutionVersion: o.deathResolutionVersion, awakenedNightVersion: o.awakenedNightVersion, allowFixed: true, ...(o.deal ? { roles: o.deal } : {}) });
     this.options = { id: 'test', rules, seed: o.seed ?? 'seed-1', ...(o.deal ? { deal: o.deal } : {}) };
     const r = createGame(this.options);
     this.state = r.state;
@@ -120,7 +121,11 @@ export class TestGame {
       else if (names.includes('wolf_discuss')) this.ok(seat, 'wolf_discuss', { content: '商量一下' });
       else if (names.includes('wolf_kill')) this.ok(seat, 'wolf_kill', { target: plan.kill ?? null });
       else if (names.includes('seer_inspect') && plan.inspect !== undefined) this.ok(seat, 'seer_inspect', { target: plan.inspect });
-      else if (names.includes('witch_act')) this.ok(seat, 'witch_act', { save: !!plan.save, poisonTarget: plan.poison ?? null });
+      else if (names.includes('witch_act')) {
+        const saveTarget = this.toolsOf(seat).find((tool) => tool.name === 'witch_act')?.params.find((p) => p.name === 'saveTarget');
+        const save = saveTarget?.kind === 'seat' ? { saveTarget: plan.save ? saveTarget.options[0] : null } : { save: !!plan.save };
+        this.ok(seat, 'witch_act', { ...save, poisonTarget: plan.poison ?? null });
+      }
       else this.auto(seat);
     }
   }

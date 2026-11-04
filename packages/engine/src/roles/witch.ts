@@ -1,9 +1,9 @@
 import { roleData } from '../role-data';
-import { gameText } from '@werewolf/protocol';
+import { gameText, isEnglishGameLocale } from '@werewolf/protocol';
 import type { RuleSet, ToolSpec } from '@werewolf/protocol';
 import type { ParamSpec, Seat } from '@werewolf/protocol';
 import type { Ctx } from '../context';
-import { seatLabel } from '../text';
+import { seatLabel, seatList } from '../text';
 import { err, seatParam } from '../tools';
 import type { RoleModule } from '../types';
 
@@ -18,12 +18,35 @@ function knifeOf(ctx: Ctx): Seat | null {
   return ctx.state.night?.knife ?? null;
 }
 
+function choosesAntidoteTarget(rules: RuleSet): boolean {
+  return rules.awakenedNightVersion === 2 && rules.roles.includes('werewolf') && rules.roles.includes('awakened_wolf');
+}
+
+function wolfAttackTargets(ctx: Ctx): Seat[] {
+  return [...new Set(ctx.state.night?.attacks.filter(({ kind }) => kind === 'wolf').map(({ target }) => target))].sort((a, b) => a - b);
+}
+
+function attackNotice(ctx: Ctx, targets: Seat[]): string {
+  return targets.length ? gameText(ctx.rules.locale, "今晚受到狼人攻击的玩家：{0}。", seatList(targets, ctx.rules.locale))
+    : gameText(ctx.rules.locale, "今晚无人受到狼人攻击。");
+}
+
+function selectedSave(ctx: Ctx, args: Record<string, unknown>): Seat | null {
+  if (choosesAntidoteTarget(ctx.rules)) return (args.saveTarget as Seat | null | undefined) ?? null;
+  return args.save === true ? knifeOf(ctx) : null;
+}
+
 function paramsFor(ctx: Ctx, seat: Seat): ParamSpec[] {
   const p = potions(ctx, seat);
   const knife = knifeOf(ctx);
   const params: ParamSpec[] = [];
-  if (p.antidote && knife !== null && (knife !== seat || selfSaveAllowed(ctx))) {
-    params.push({ kind: 'boolean', name: 'save', label: gameText(ctx.rules.locale, "对 {0} 使用解药", seatLabel(knife, ctx.rules.locale)), trueLabel: gameText(ctx.rules.locale, "救"), falseLabel: gameText(ctx.rules.locale, "不救") });
+  if (p.antidote) {
+    if (choosesAntidoteTarget(ctx.rules)) {
+      const targets = wolfAttackTargets(ctx).filter((target) => target !== seat || selfSaveAllowed(ctx));
+      if (targets.length) params.push(seatParam('saveTarget', gameText(ctx.rules.locale, "解药目标"), targets, gameText(ctx.rules.locale, "不用解药")));
+    } else if (knife !== null && (knife !== seat || selfSaveAllowed(ctx))) {
+      params.push({ kind: 'boolean', name: 'save', label: gameText(ctx.rules.locale, "对 {0} 使用解药", seatLabel(knife, ctx.rules.locale)), trueLabel: gameText(ctx.rules.locale, "救"), falseLabel: gameText(ctx.rules.locale, "不救") });
+    }
   }
   if (p.poison) {
     params.push(seatParam('poisonTarget', gameText(ctx.rules.locale, "毒药目标"), ctx.alive().filter((x) => x !== seat), gameText(ctx.rules.locale, "不用毒药")));
@@ -36,23 +59,24 @@ function promptFor(ctx: Ctx, seat: Seat): string {
   const knife = knifeOf(ctx);
   const parts: string[] = [];
   if (p.antidote) {
-    parts.push(knife !== null ? gameText(ctx.rules.locale, "狼人今晚选择刀 {0}。", seatLabel(knife, ctx.rules.locale)) : gameText(ctx.rules.locale, "狼人今晚没有落刀。"));
-    if (knife === seat && !selfSaveAllowed(ctx)) parts.push(gameText(ctx.rules.locale, "本局规则不允许你自救。"));
+    const targets = choosesAntidoteTarget(ctx.rules) ? wolfAttackTargets(ctx) : null;
+    parts.push(targets ? attackNotice(ctx, targets) : knife !== null ? gameText(ctx.rules.locale, "狼人今晚选择刀 {0}。", seatLabel(knife, ctx.rules.locale)) : gameText(ctx.rules.locale, "狼人今晚没有落刀。"));
+    if ((targets ? targets.includes(seat) : knife === seat) && !selfSaveAllowed(ctx)) parts.push(gameText(ctx.rules.locale, "本局规则不允许你自救。"));
   }
   parts.push(gameText(ctx.rules.locale, "你现在持有：{0}。", [p.antidote ? gameText(ctx.rules.locale, "解药") : '', p.poison ? gameText(ctx.rules.locale, "毒药") : ''].filter(Boolean).join(gameText(ctx.rules.locale, '、'))));
   if (p.antidote && p.poison && !ctx.opt<boolean>('witch.bothPotionsSameNight')) parts.push(gameText(ctx.rules.locale, "同一晚不能既救又毒。"));
-  return parts.join(new Intl.Locale(ctx.rules.locale ?? 'zh-CN').language === 'en' ? '\n' : '');
+  return parts.join(isEnglishGameLocale(ctx.rules.locale) ? '\n' : '');
 }
 
 export const witch: RoleModule = {
   copiedAbility: 'poison',
   id: 'witch',
-  tools: ({ seats, rules }) => [witchTool(seats, rules.values, rules.locale)],
+  tools: ({ seats, rules }) => [witchTool(seats, rules)],
   name: '女巫',
   faction: 'good',
   category: 'god',
   maxPerGame: 1,
-  summary: '有一瓶解药和一瓶毒药。解药还在的夜晚，法官会告诉你当晚刀口。',
+  summary: '有一瓶解药和一瓶毒药。解药尚未使用时，法官会私下告知狼人当晚选择的攻击目标。',
   nightPhase: { id: 'witch', order: 40 },
   options: [
     {
@@ -73,13 +97,25 @@ export const witch: RoleModule = {
 
   ruleCard(rules) {
     const v = rules.values;
+    const sentenceSeparator = isEnglishGameLocale(rules.locale) ? ' ' : '';
+    const hasCopiedClaw = rules.roles.includes('werewolf') && rules.roles.includes('awakened_wolf');
     const self =
       v['witch.selfSave'] === 'always' ? gameText(rules.locale, "可以自救") : v['witch.selfSave'] === 'first_night' ? gameText(rules.locale, "仅第 1 夜可以自救") : gameText(rules.locale, "不能自救");
-    const knife = rules.roles.includes('guard') ? gameText(rules.locale, "狼人选择的目标，不含守卫结果") : gameText(rules.locale, "狼人选择的目标");
+    const guardInfo = rules.roles.includes('guard') ? gameText(rules.locale, "法官不会告知守卫的选择。") : '';
     return [
-      gameText(rules.locale, "女巫：解药、毒药各一瓶。仅持有解药时得知当晚刀口（{0}；空刀会告知）。", knife) +
-        gameText(rules.locale, "解药只能救当晚刀口，{0}。{1}", self, v['witch.bothPotionsSameNight'] ? gameText(rules.locale, "同一晚可以既救又毒。") : gameText(rules.locale, "同一晚不能既救又毒。")) +
-        gameText(rules.locale, "毒药可毒其他存活者（含刀口），不能毒自己。刀口和用药仅反馈本人，不通知目标；双药用尽后夜里不再行动。"),
+      gameText(rules.locale, "女巫：有一瓶解药和一瓶毒药，每瓶只能使用一次。") + sentenceSeparator +
+        gameText(rules.locale, choosesAntidoteTarget(rules)
+          ? "解药尚未使用时，法官私下告知女巫本夜受到普通狼刀或额外爪击的玩家，只报座位，不区分攻击来源；同一座位只报一次。若无人受到攻击，也会告知。"
+          : hasCopiedClaw
+            ? "解药尚未使用时，法官只告知女巫普通狼刀的攻击目标，不告知额外爪击的目标。若普通狼刀没有目标，额外爪击不会成为可选解药目标。"
+            : "解药尚未使用时，法官会私下告知女巫狼人当晚选择的最终攻击目标；如果当晚没有狼人攻击，法官会告知女巫无人受到攻击。") + sentenceSeparator +
+        (guardInfo ? guardInfo + sentenceSeparator : '') +
+        gameText(rules.locale, choosesAntidoteTarget(rules)
+          ? "一瓶解药只能选一名当夜受到狼人攻击的玩家；{0}。{1}"
+          : hasCopiedClaw
+            ? "解药只能救普通狼刀的攻击目标；额外爪击与普通狼刀目标相同时也会被这瓶解药挡住；{0}。{1}"
+            : "解药只能用于当晚狼人的攻击目标；{0}。{1}", self, v['witch.bothPotionsSameNight'] ? gameText(rules.locale, "一夜可以同时使用两瓶药。") : gameText(rules.locale, "一夜不能同时使用两瓶药。")) + sentenceSeparator +
+        gameText(rules.locale, "毒药可以用于其他存活玩家，包括狼人的攻击目标；不能对自己使用，也可以选择不用药。用药选择在游戏期间不公开，用药目标不会收到通知。"),
     ];
   },
 
@@ -102,9 +138,12 @@ export const witch: RoleModule = {
         const knife = knifeOf(ctx);
         for (const w of witches) {
           if (!potions(ctx, w).antidote) continue;
-          ctx.priv([w], 'witch.knife', knife !== null ? gameText(ctx.rules.locale, "狼人今晚选择刀 {0}。", seatLabel(knife, ctx.rules.locale)) : gameText(ctx.rules.locale, "狼人今晚没有落刀。"), {
-            knife,
-          });
+          if (choosesAntidoteTarget(ctx.rules)) {
+            const targets = wolfAttackTargets(ctx);
+            ctx.priv([w], 'witch.targets', attackNotice(ctx, targets), { targets });
+          } else {
+            ctx.priv([w], 'witch.knife', knife !== null ? gameText(ctx.rules.locale, "狼人今晚选择刀 {0}。", seatLabel(knife, ctx.rules.locale)) : gameText(ctx.rules.locale, "狼人今晚没有落刀。"), { knife });
+          }
         }
         const actors = witches.filter((w) => paramsFor(ctx, w).length > 0);
         if (!actors.length) return;
@@ -126,13 +165,17 @@ export const witch: RoleModule = {
       },
       validate(ctx, _step, seat, call) {
         const p = potions(ctx, seat);
-        const knife = knifeOf(ctx);
-        const save = call.args.save === true;
+        const targeted = choosesAntidoteTarget(ctx.rules);
+        const saveTarget = selectedSave(ctx, call.args);
+        const save = saveTarget !== null || call.args.save === true;
         const poisonTarget = call.args.poisonTarget;
         if (save) {
           if (!p.antidote) return err('POTION_USED', gameText(ctx.rules.locale, "解药已经用过"));
-          if (knife === null) return err('INVALID_ARGUMENT', gameText(ctx.rules.locale, "今晚没有刀口，不能使用解药"));
-          if (knife === seat && !selfSaveAllowed(ctx)) return err('CANNOT_SELF_SAVE', gameText(ctx.rules.locale, "本场规则不允许自救"));
+          if (targeted && (saveTarget === null || !wolfAttackTargets(ctx).includes(saveTarget))) {
+            return err('INVALID_ARGUMENT', gameText(ctx.rules.locale, "请从当夜受到狼人攻击的玩家中选择一名使用解药。"));
+          }
+          if (saveTarget === null) return err('INVALID_ARGUMENT', gameText(ctx.rules.locale, "今晚没有刀口，不能使用解药"));
+          if (saveTarget === seat && !selfSaveAllowed(ctx)) return err('CANNOT_SELF_SAVE', gameText(ctx.rules.locale, "本场规则不允许自救"));
         }
         if (poisonTarget !== null && poisonTarget !== undefined) {
           if (!p.poison) return err('POTION_USED', gameText(ctx.rules.locale, "毒药已经用过"));
@@ -146,18 +189,17 @@ export const witch: RoleModule = {
       decide(ctx, _step, subs) {
         const night = ctx.state.night;
         if (!night) throw new Error(gameText(ctx.rules.locale, "女巫行动缺少夜晚状态"));
-        const knife = knifeOf(ctx);
         for (const [key, call] of Object.entries(subs)) {
           const seat = Number(key);
           const p = potions(ctx, seat);
-          const save = call.args.save === true && knife !== null;
+          const saveTarget = selectedSave(ctx, call.args);
           const target = (call.args.poisonTarget as Seat | null | undefined) ?? null;
           const done: string[] = [];
-          if (save && knife !== null) {
-            night.protections.push({ target: knife, kind: 'antidote', blocks: ['wolf'], by: seat });
+          if (saveTarget !== null) {
+            night.protections.push({ target: saveTarget, kind: 'antidote', blocks: ['wolf'], by: seat });
             p.antidote = false;
-            ctx.priv([seat], 'witch.save', gameText(ctx.rules.locale, "你对 {0} 使用了解药。", seatLabel(knife, ctx.rules.locale)), { target: knife });
-            done.push(gameText(ctx.rules.locale, "救 {0}", seatLabel(knife, ctx.rules.locale)));
+            ctx.priv([seat], 'witch.save', gameText(ctx.rules.locale, "你对 {0} 使用了解药。", seatLabel(saveTarget, ctx.rules.locale)), { target: saveTarget });
+            done.push(gameText(ctx.rules.locale, "救 {0}", seatLabel(saveTarget, ctx.rules.locale)));
           }
           if (target !== null) {
             night.attacks.push({ target, kind: 'poison', by: [seat] });
@@ -169,14 +211,24 @@ export const witch: RoleModule = {
           night.lines.push(gameText(ctx.rules.locale, "女巫（{0}）{1}", seatLabel(seat, ctx.rules.locale), done.length ? done.join('、') : gameText(ctx.rules.locale, "未用药")));
         }
       },
-      fallback: (ctx) => ({ tool: 'witch_act', args: { save: false, poisonTarget: null } }),
+      fallback: (ctx) => ({ tool: 'witch_act', args: { ...(choosesAntidoteTarget(ctx.rules) ? { saveTarget: null } : { save: false }), poisonTarget: null } }),
     },
   },
 };
 
-function witchTool(seats: Seat[], v: RuleSet['values'], locale: string | undefined = 'zh-CN'): ToolSpec {
+function witchTool(seats: Seat[], rules: RuleSet): ToolSpec {
+  const { values: v, locale } = rules;
   const self = v['witch.selfSave'] === 'always' ? gameText(locale, "可以自救。") : v['witch.selfSave'] === 'first_night' ? gameText(locale, "仅第 1 夜可以自救。") : gameText(locale, "不能自救。");
   const both = v['witch.bothPotionsSameNight'] === true ? gameText(locale, "同一晚可以既救又毒。") : gameText(locale, "同一晚不能既救又毒。");
+  if (choosesAntidoteTarget(rules)) return {
+    name: 'witch_act',
+    title: gameText(locale, "用药"),
+    description: gameText(locale, "女巫夜间用药时使用。saveTarget 只能选择法官本轮列出的一个受袭玩家座位号，null 表示不用解药。{0}poisonTarget 只能选择一名其他存活玩家的座位号，null 表示不用毒药。药品各只能用一次；只填写本轮提供的字段。{1}", self, both),
+    params: [
+      seatParam('saveTarget', gameText(locale, "解药目标"), seats, gameText(locale, "不用解药")),
+      seatParam('poisonTarget', gameText(locale, "毒药目标"), seats, gameText(locale, "不用毒药")),
+    ],
+  };
   return {
     name: 'witch_act',
     title: gameText(locale, "用药"),

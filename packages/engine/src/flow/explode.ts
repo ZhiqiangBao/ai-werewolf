@@ -82,9 +82,14 @@ export const explodeSteps: Record<string, StepHandler> = {
     },
     fallback: (ctx) => ({ tool: 'wolf_explode_decision', args: { explode: false } }),
   },
+  'sheriff.announcePostponement': {
+    run(ctx, step) {
+      ctx.pub('sheriff.postponed', step.text as string, {});
+    },
+  },
 };
 
-/** 自爆：立刻出局并公开狼人身份，取消当天剩余发言、竞选和放逐，然后按 警徽 → 遗言 → 胜负 处理。 */
+/** 自爆立即公开，出局、胜负和后续流程交由议程结算。 */
 export function applyExplosion(ctx: Ctx, seat: Seat): void {
   const s = ctx.state;
   const vote = s.agenda.find((x) => x.type === 'sheriff.vote');
@@ -112,7 +117,14 @@ export function applyExplosion(ctx: Ctx, seat: Seat): void {
       const postponedText = (s.rules.electionVersion ?? 1) >= 2
         ? gameText(ctx.rules.locale, "首次警上自爆，竞选延期；下一白天先确认自爆并直接续投，不再竞选发言，警徽落地或再次自爆后才通报昨夜情况；再次竞选自爆则警徽流失。")
         : gameText(ctx.rules.locale, "首次警上自爆，竞选延期；下一白天公布昨夜情况后直接续投，不再竞选发言，再次竞选自爆则警徽流失。");
-      ctx.pub('sheriff.postponed', policy === 'postpone_vote' ? postponedText : gameText(ctx.rules.locale, "警长竞选尚未结束有人自爆，竞选推迟到下一个白天。"), {});
+      const text = policy === 'postpone_vote' ? postponedText : gameText(ctx.rules.locale, "警长竞选尚未结束有人自爆，竞选推迟到下一个白天。");
+      if (s.rules.electionExplosionVersion === 2 && s.rules.deathResolutionVersion === 2) {
+        // 等本次出局和仍待公告的夜间出局结算完毕。终局或再次自爆会移除此步骤。
+        const dawnIndex = s.agenda.findIndex((step) => step.type === 'dawn.announce');
+        s.agenda.splice(dawnIndex + 1, 0, { type: 'sheriff.announcePostponement', text, cancelOnExplode: true });
+      } else {
+        ctx.pub('sheriff.postponed', text, {});
+      }
     } else {
       el.explosions += 1;
       el.status = 'done';

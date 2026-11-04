@@ -51,6 +51,7 @@ describe('胜负判定', () => {
     const g = new TestGame({ deal: DEAL9, values: noSheriff, deathResolutionVersion: 1 });
     if (version === 'missing') {
       delete g.state.rules.deathResolutionVersion;
+      delete g.state.rules.electionExplosionVersion;
       g.state = JSON.parse(JSON.stringify(g.state));
     }
     g.removeSeats(2, 3, 4, 5);
@@ -63,11 +64,22 @@ describe('胜负判定', () => {
   it('规则卡按死亡结算版本描述对应顺序，缺省版本沿用旧规则', () => {
     const rules = buildRules('classic9');
     expect(rules.deathResolutionVersion).toBe(2);
-    expect(buildRuleCard(rules)).toContain('胜负已分立即结束');
+    const currentCard = buildRuleCard(rules);
+    expect(currentCard).toContain('每次确认新的出局后，先判定胜负');
+    expect(currentCard).toContain('胜负已分则立即结束，不再处理出局技能、警徽或遗言');
+    expect(currentCard).toContain('若技能造成新的出局，先判定胜负');
     rules.deathResolutionVersion = 1;
-    expect(buildRuleCard(rules)).toContain('先处理同批次出局技能及其引发的死亡连锁');
+    rules.hunterShotVersion = 1;
+    rules.electionExplosionVersion = 1;
+    const explicitLegacyCard = buildRuleCard(rules);
+    expect(explicitLegacyCard).toContain('先处理本次出局触发的技能及其引发的后续出局，再判定胜负');
+    expect(explicitLegacyCard).not.toContain('胜负已分则立即结束');
     delete rules.deathResolutionVersion;
-    expect(buildRuleCard(rules)).toContain('先处理同批次出局技能及其引发的死亡连锁');
+    delete rules.hunterShotVersion;
+    delete rules.electionExplosionVersion;
+    const missingVersionCard = buildRuleCard(rules);
+    expect(missingVersionCard).toContain('先处理本次出局触发的技能及其引发的后续出局，再判定胜负');
+    expect(missingVersionCard).not.toContain('胜负已分则立即结束');
   });
 
   it('平民全部出局：屠边狼人胜利，胜负已分后不再发表遗言', () => {

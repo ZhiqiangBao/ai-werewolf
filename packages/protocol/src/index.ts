@@ -157,6 +157,12 @@ export interface RuleSet {
   electionVersion?: 1 | 2 | 3;
   /** 缺省／1 先处理死亡技能再判胜负；新局 2 在死亡后先判胜负，终局不再发动技能。 */
   deathResolutionVersion?: 1 | 2;
+  /** 缺省／1 保留猎枪出局不触发开枪；新局 2 允许连枪，必须搭配出局结算版本 2。 */
+  hunterShotVersion?: 1 | 2;
+  /** 缺省／1 保留历史延期公告时点；新局 2 在出局结算后仍继续游戏时才公布延期。 */
+  electionExplosionVersion?: 1 | 2;
+  /** 缺省／1 保留原夜间步骤及单目标解药；2 合并觉醒隐狼轮次，并允许在适用版型选择解药目标。 */
+  awakenedNightVersion?: 1 | 2;
   presetId: string;
   /** 新版型的项目规则版本；旧房间缺省不补写历史。 */
   presetVersion?: number;
@@ -527,7 +533,7 @@ export interface AuditEntry {
   replyChars?: number;
 }
 
-export { DEFAULT_GAME_LOCALE, gameLanguage, gameLanguages, gameText, isGameLocale, localizeTool, registerGameLanguage } from './locale';
+export { DEFAULT_GAME_LOCALE, baseGameLanguage, gameLanguage, gameLanguages, gameText, isEnglishGameLocale, isGameLocale, localizeTool, registerGameLanguage } from './locale';
 export type { GameLocale, GameLanguage, GameLanguagePack } from './locale';
 export { checkGameLanguage, checkedMessages, gameMessageKeys } from './locale';
 export { apiErrorText, preferredLanguage, LocalizedError } from './errors';

@@ -21,7 +21,11 @@ describe('offline match replay', () => {
     script.ruleCard = buildRuleCard(buildRules('standard12'));
     const cards = allRoleRules(script);
     expect(cards.map((c) => c.role)).toEqual(['werewolf', 'seer', 'witch', 'guard', 'hunter', 'villager', 'sheriff']);
-    expect(cards.find((c) => c.role === 'witch')?.text).toContain('双药用尽后夜里不再行动');
+    const witchRules = cards.find((c) => c.role === 'witch')?.text ?? '';
+    expect(witchRules).toContain('有一瓶解药和一瓶毒药，每瓶只能使用一次。');
+    expect(witchRules).toContain('解药只能用于当晚狼人的攻击目标；');
+    expect(witchRules).toContain('一夜不能同时使用两瓶药。');
+    expect(witchRules).toContain('毒药可以用于其他存活玩家');
     expect(cards.find((c) => c.role === 'villager')?.text).toContain('没有夜间技能');
     expect(cards.some((c) => c.role === 'idiot')).toBe(false);
   });

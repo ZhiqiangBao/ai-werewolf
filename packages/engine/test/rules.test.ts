@@ -19,12 +19,15 @@ describe('版型与规则', () => {
   it('新局默认死亡后先判胜负，并拒绝未知死亡结算版本', () => {
     const rules = buildRules('classic9');
     expect(rules.deathResolutionVersion).toBe(2);
-    expect(buildRuleCard(rules)).toContain('胜负已分立即结束，不再发动猎人开枪等出局技能');
-    expect(buildRuleCard(rules)).toContain('死亡后若胜负已分，不能开枪。');
-    const legacy = { ...rules, deathResolutionVersion: undefined };
+    const currentCard = buildRuleCard(rules);
+    expect(currentCard).toContain('胜负已分则立即结束，不再处理出局技能、警徽或遗言');
+    expect(currentCard).toContain('若胜负已分，不再发动开枪技能。');
+    expect(currentCard).toContain('若技能造成新的出局，先判定胜负');
+    const legacy = { ...rules, deathResolutionVersion: undefined, hunterShotVersion: undefined, electionExplosionVersion: undefined };
     expect(validateRules(legacy)).toEqual([]);
-    expect(buildRuleCard(legacy)).toContain('先处理同批次出局技能');
-    expect(buildRuleCard(legacy)).not.toContain('死亡后若胜负已分，不能开枪。');
+    expect(buildRuleCard(legacy)).toContain('先处理本次出局触发的技能及其引发的后续出局，再判定胜负');
+    expect(buildRuleCard(legacy)).not.toContain('胜负已分则立即结束');
+    expect(buildRuleCard(legacy)).not.toContain('若胜负已分，不再发动开枪技能。');
     expect(validateRules({ ...rules, deathResolutionVersion: 3 as 2 })).toContain('死亡结算版本只支持 1 或 2');
   });
 
@@ -48,17 +51,18 @@ describe('版型与规则', () => {
   it('精简规则卡保留特殊身份及可配置结算边界', () => {
     const mirror = buildRuleCard(buildRules('mirror12'));
     expect(mirror).toContain('阵营查验始终显示好人');
-    expect(mirror).toContain('学习夜天亮出局时开枪');
-    expect(mirror).toContain('同守同救按本局规则结算狼刀');
+    expect(mirror).toContain('学习夜天亮出局时，按猎人规则判断是否可开枪');
+    expect(mirror).toContain('若猎枪造成你的出局，且胜负未分、枪仍可用');
+    expect(mirror).toContain('守卫或模仿守卫当晚守护，且女巫同时救治同一名狼人攻击目标时（同守同救），该玩家仍会出局');
     const base = buildRules('standard12');
     const card = buildRuleCard({ ...base, electionVersion: 3, values: { ...base.values,
       'sheriff.explodeInElection': 'postpone_vote', 'lastWords.shotAfterFirstNight': false,
       'witch.selfSave': 'first_night', 'guard.noConsecutive': true } });
-    expect(card).toContain('竞选延期至次日');
-    expect(card).toContain('PK 和投票时不能退水');
+    expect(card).toContain('竞选才延期至次日');
+    expect(card).toContain('平票候选人的补充发言和投票时不能退出竞选');
     expect(card).toContain('猎人第 1 夜出局时没有遗言');
     expect(card).toContain('仅第 1 夜可以自救');
-    expect(card).toContain('不能连守同一人');
+    expect(card).toContain('不能连续两夜守护同一名玩家');
   });
 
   it('非法版型给出中文原因', () => {

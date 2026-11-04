@@ -1,4 +1,4 @@
-import { gameText } from '@werewolf/protocol';
+import { gameText, isEnglishGameLocale } from '@werewolf/protocol';
 import type { RuleSet, ToolSpec } from '@werewolf/protocol';
 import type { Seat } from '@werewolf/protocol';
 import type { Ctx } from '../context';
@@ -11,9 +11,14 @@ type Pick = [Seat, Seat | null];
 const pickText = (picks: Pick[], locale: string | undefined = 'zh-CN') =>
   picks.map(([w, t]) => `${seatLabel(w, locale)}→${t === null ? gameText(locale, "空刀") : seatLabel(t, locale)}`).join(gameText(locale, '，'));
 
-function killTargets(ctx: Ctx): Seat[] {
+export function wolfKillTargets(ctx: Ctx, inheritor?: Seat): Seat[] {
   const allowTeam = ctx.opt<boolean>('wolf.allowTeammateTarget');
-  return ctx.alive().filter((x) => allowTeam || !ctx.isWolfTeam(x));
+  return ctx.alive().filter((x) => allowTeam || (x !== inheritor && !ctx.isWolfTeam(x)));
+}
+
+export function wolfKillFallbackTarget(ctx: Ctx, inheritor?: Seat): Seat | null {
+  if (ctx.rules.awakenedNightVersion !== 2 || ctx.opt<boolean>('wolf.allowEmpty')) return null;
+  return wolfKillTargets(ctx, inheritor)[0] ?? null;
 }
 
 export const werewolf: RoleModule = {
@@ -24,7 +29,7 @@ export const werewolf: RoleModule = {
   faction: 'wolf',
   category: 'wolf',
   maxPerGame: 8,
-  summary: '夜里与狼队友密谈后落刀；白天可以自爆。',
+  summary: '夜间选择狼人的攻击目标；可以与队友讨论。',
   inspectAs: 'wolf',
   wolfTeam: true,
   canExplode: true,
@@ -51,16 +56,25 @@ export const werewolf: RoleModule = {
 
   ruleCard(rules) {
     const v = rules.values;
-    const lines = [
-      gameText(rules.locale, "普通狼人：{0}。每晚按座位号各密谈一句，再同时交刀；仅当夜参与的存活普通狼可见密谈和结果。", v['wolf.knowTeammates'] ? gameText(rules.locale, "互知队友") : gameText(rules.locale, "不知道队友")) +
-        `${v['wolf.allowEmpty'] ? gameText(rules.locale, "可空刀且不计票；全空才无刀口。") : ''}${v['wolf.allowTeammateTarget'] ? gameText(rules.locale, "可刀队友或自己。") : gameText(rules.locale, "不能刀狼队友。")}` +
-        gameText(rules.locale, "最高票为刀口") +
-        (Number(v['wolf.killRounds']) > 1
-          ? gameText(rules.locale, "；并列时仅向本轮参与狼公布各自选择并重投一次，再并列取较小座位号。")
-          : gameText(rules.locale, "；并列取较小座位号。")) +
-        gameText(rules.locale, "独狼的提交直接生效。"),
+    const sentenceSeparator = isEnglishGameLocale(rules.locale) ? ' ' : '';
+    const discussionRounds = Number(v['wolf.discussRounds']);
+    return [
+      gameText(rules.locale, "普通狼人：{0}。", v['wolf.knowTeammates']
+        ? gameText(rules.locale, "本局普通狼人互相知道队友身份")
+        : gameText(rules.locale, "开局不提供队友名单；夜间参与狼人会看到彼此座位和投刀选择，因此可以识别当夜参与的狼人")) + sentenceSeparator +
+        (discussionRounds > 0
+          ? gameText(rules.locale, "多名存活普通狼人时，按座位号依次讨论{0}轮；只剩一名时不密谈，直接提交攻击目标。", discussionRounds)
+          : gameText(rules.locale, "多名存活普通狼人时不进行密谈，直接提交攻击目标；只剩一名时也直接提交。")),
+      gameText(rules.locale, "当夜参与的存活普通狼人同时秘密提交攻击目标，提交期间看不到其他人的选择；提交后，每个人的选择和最终攻击目标只向当夜参与的狼人公开。"),
+      ...(v['wolf.allowEmpty'] ? [gameText(rules.locale, "狼人可以选择不攻击，这种选择不计票。所有参与普通狼刀的玩家都选择不攻击时，普通狼刀没有目标。" )] : []),
+      gameText(rules.locale, v['wolf.allowTeammateTarget']
+        ? "可选目标必须是存活玩家，可以选择队友或自己。"
+        : "可选目标必须是存活玩家，不能选择狼人队友或自己。"),
+      gameText(rules.locale, "得票最高的玩家成为狼人的最终攻击目标，也称为刀口。"),
+      Number(v['wolf.killRounds']) > 1
+        ? gameText(rules.locale, "最高票并列时，法官只向当夜参与的狼人公布各自选择，狼人再投一次；再次并列时，选择座位号较小的玩家。")
+        : gameText(rules.locale, "最高票并列时，选择座位号较小的玩家。"),
     ];
-    return lines;
   },
 
   appendix(ctx, seat) {
@@ -79,7 +93,10 @@ export const werewolf: RoleModule = {
     'night:werewolf': {
       run(ctx) {
         const wolves = ctx.wolfTeam();
-        if (!wolves.length) return;
+        if (!wolves.length) {
+          if (ctx.rules.awakenedNightVersion === 2 && ctx.seatsOf('awakened_wolf').length) ctx.pushFront({ type: 'night:awakened_knife' });
+          return;
+        }
         const steps: Step[] = [];
         if (wolves.length > 1) {
           const rounds = ctx.opt<number>('wolf.discussRounds');
@@ -122,7 +139,7 @@ export const werewolf: RoleModule = {
       run(ctx, step) {
         const wolves = ctx.wolfTeam();
         if (!wolves.length) return;
-        const targets = killTargets(ctx);
+        const targets = wolfKillTargets(ctx);
         const allowEmpty = ctx.opt<boolean>('wolf.allowEmpty');
         const prev = step.previous as Pick[] | undefined;
         ctx.ask({
@@ -187,7 +204,7 @@ export const werewolf: RoleModule = {
         ctx.priv(wolves, 'wolf.kill.result', gameText(ctx.rules.locale, '{0}（{1}）。', outcome, pickText(picks, ctx.rules.locale)), { picks, knife });
         night.lines.push(gameText(ctx.rules.locale, "狼人（{0}）{1}", seatList(wolves, ctx.rules.locale), knife === null ? gameText(ctx.rules.locale, "空刀") : gameText(ctx.rules.locale, "刀 {0}", seatLabel(knife, ctx.rules.locale))));
       },
-      fallback: (ctx) => ({ tool: 'wolf_kill', args: { target: null } }),
+      fallback: (ctx) => ({ tool: 'wolf_kill', args: { target: wolfKillFallbackTarget(ctx) } }),
     },
   },
 };

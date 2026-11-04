@@ -190,9 +190,9 @@ export class Ctx {
     const same = actors.every((s) => prompts[s] === first);
     const payload = { step, decisionId: this.state.pending!.id };
     // 这些通知本来就是同一次问话，直接补全原事件，不再先通知、再追问。
-    const trigger = { 'sheriff.signup': 'sheriff.start', 'night:witch': 'witch.knife', 'wolf.kill': 'wolf.kill.split' }[step];
+    const triggers = { 'sheriff.signup': ['sheriff.start'], 'night:witch': ['witch.knife', 'witch.targets'], 'wolf.kill': ['wolf.kill.split'] }[step];
     const previous = this.events.at(-1);
-    if (same && previous && trigger && previous.type === trigger) {
+    if (same && previous && triggers?.includes(previous.type)) {
       Object.assign(previous.payload, payload, { prompt: first });
       return;
     }

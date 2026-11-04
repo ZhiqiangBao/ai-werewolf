@@ -61,6 +61,7 @@ export const catalogMessages: readonly (readonly [string, string, string])[] = [
   ["被狼刀出局可以开枪", "May shoot when eliminated by a wolf attack", "人狼の襲撃で脱落した場合に発砲できる"],
   ["被放逐可以开枪", "May shoot when exiled", "追放された場合に発砲できる"],
   ["死因含毒药可以开枪", "May shoot when poison is among the causes of elimination", "死因に毒が含まれる場合に発砲できる"],
+  ["出局原因含毒药可以开枪", "May shoot when poison is among the elimination causes", "脱落原因に毒が含まれる場合に発砲できる"],
   ["同守同救出局可以开枪", "May shoot after a guard-and-antidote collision", "護衛と解毒薬の衝突で脱落した場合に発砲できる"],
   ["放弃开枪公开身份", "Reveal role when declining to shoot", "発砲を辞退した場合に役職を公開する"],
   ["不能连续两晚守护同一人", "Cannot protect the same player on consecutive nights", "同じプレイヤーを連夜で護衛できない"],

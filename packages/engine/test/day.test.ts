@@ -360,8 +360,8 @@ describe('自爆（DAY-09）', () => {
     for (const s of later.waiting()) later.ok(s, 'sheriff_signup', { run: [1, 9, 10].includes(s) });
     later.until((x) => x.pending?.step.kind === 'campaign');
     later.ok(1, 'wolf_explode', {});
-    expect(lastPublic(later, 'sheriff.postponed')).toBeDefined();
     later.toNight();
+    expect(lastPublic(later, 'sheriff.postponed')).toBeDefined();
     later.night({ kill: null });
     later.until((x) => x.hasTool('sheriff_vote'));
     expect(lastPublic(later, 'sheriff.resume')?.payload.candidates).toEqual([9, 10]);

@@ -12,7 +12,9 @@ describe('镜隐迷踪：真实身份、查验表现和能力', () => {
     const rules = buildRules('mirror12');
     expect(rules.roles).toEqual(DEAL);
     expect(rules.values['witch.selfSave']).toBe('never');
-    expect(rules.nightOrder).toEqual(['awakened_mimic', 'guard', 'werewolf', 'awakened_knife', 'mirror_maiden', 'witch', 'awakened_skill']);
+    expect(rules.nightOrder).toEqual(['awakened_mimic', 'guard', 'werewolf', 'mirror_maiden', 'witch']);
+    expect(buildRules('mirror12', {}, { awakenedNightVersion: 1 }).nightOrder)
+      .toEqual(['awakened_mimic', 'guard', 'werewolf', 'awakened_knife', 'mirror_maiden', 'witch', 'awakened_skill']);
     expect(buildRules('standard12').roles.filter((r) => r === 'werewolf')).toHaveLength(4);
   });
 
@@ -110,6 +112,8 @@ describe('镜隐迷踪：真实身份、查验表现和能力', () => {
     expect(g.toolsOf(4).map((t) => t.name)).toEqual(['awakened_poison', 'awakened_skip_skill']);
     expect(g.act(4, 'awakened_poison', { targetSeat: 4 })).toBeDefined();
     g.ok(4, 'awakened_poison', { targetSeat: 10 });
+    expect(g.pending?.step.type).toBe('night:guard');
+    g.night();
     expect(g.state.players[9].alive).toBe(false);
     expect(abilityState(g.state.players[3].abilities![0], 'poison').available).toBe(false);
     g.toNight(); g.night();
@@ -149,10 +153,11 @@ describe('镜隐迷踪：真实身份、查验表现和能力', () => {
 describe('镜隐迷踪：夜间结算、刀权和死亡职责', () => {
   it('增强守护同时挡狼刀和毒药，连守被拒绝，空守后可再守', () => {
     const g = game(); g.ok(4, 'awakened_mimic', { targetSeat: 8 }); g.night(); g.toNight();
+    expect(g.pending?.step.type).toBe('night:awakened_skill');
+    g.ok(4, 'awakened_guard', { targetSeat: 9 });
     g.untilTool('wolf_kill');
     for (const s of g.waiting()) g.ok(s, 'wolf_kill', { target: 9 });
-    g.untilTool('witch_act'); g.ok(6, 'witch_act', { save: false, poisonTarget: 9 });
-    g.until((x) => x.pending?.step.type === 'night:awakened_skill'); g.ok(4, 'awakened_guard', { targetSeat: 9 });
+    g.untilTool('witch_act'); g.ok(6, 'witch_act', { saveTarget: null, poisonTarget: 9 });
     expect(g.state.players[8].alive).toBe(true);
     g.toNight(); g.until((x) => x.pending?.step.type === 'night:awakened_skill');
     expect(g.act(4, 'awakened_guard', { targetSeat: 9 })).toBeDefined();
@@ -162,13 +167,14 @@ describe('镜隐迷踪：夜间结算、刀权和死亡职责', () => {
 
   it('增强守护与解药同用仍奶穿狼刀；普通守卫不挡复制毒药', () => {
     const g = game(); g.ok(4, 'awakened_mimic', { targetSeat: 8 }); g.night(); g.toNight();
+    g.ok(4, 'awakened_guard', { targetSeat: 9 });
     g.untilTool('wolf_kill'); for (const s of g.waiting()) g.ok(s, 'wolf_kill', { target: 9 });
-    g.untilTool('witch_act'); g.ok(6, 'witch_act', { save: true, poisonTarget: null });
-    g.until((x) => x.pending?.step.type === 'night:awakened_skill'); g.ok(4, 'awakened_guard', { targetSeat: 9 });
+    g.untilTool('witch_act'); g.ok(6, 'witch_act', { saveTarget: 9, poisonTarget: null });
     expect(g.state.deaths.find((d) => d.seat === 9)?.causes).toEqual(['guard_and_save']);
     const p = game(); p.ok(4, 'awakened_mimic', { targetSeat: 6 }); p.night(); p.toNight();
+    p.ok(4, 'awakened_poison', { targetSeat: 9 });
     p.ok(8, 'guard_protect', { target: 9 });
-    p.until((x) => x.pending?.step.type === 'night:awakened_skill'); p.ok(4, 'awakened_poison', { targetSeat: 9 });
+    p.night();
     expect(p.state.deaths.find((d) => d.seat === 9)?.causes).toEqual(['poison']);
   });
 
@@ -202,8 +208,9 @@ describe('镜隐迷踪：夜间结算、刀权和死亡职责', () => {
     const g = game(); g.ok(4, 'awakened_mimic', { targetSeat: 1 }); g.night(); g.toNight();
     g.night(); expect(g.events.some((e) => e.payload.tool === 'awakened_claw')).toBe(false);
     g.removeSeats(1, 2, 3); g.toNight();
+    expect(g.pending?.step.type).toBe('night:awakened_skill'); g.ok(4, 'awakened_claw', { targetSeat: 9 });
     g.ok(8, 'guard_protect', { target: 9 }); g.untilTool('awakened_kill'); g.ok(4, 'awakened_kill', { targetSeat: 10 });
-    g.until((x) => x.pending?.step.type === 'night:awakened_skill'); g.ok(4, 'awakened_claw', { targetSeat: 9 });
+    g.night();
     expect(g.state.players[8].alive).toBe(true);
     expect(g.state.players[9].alive).toBe(false);
     expect(abilityState(g.state.players[3].abilities![0], 'wolf').claw).toBe(false);

@@ -207,6 +207,14 @@ function legacyMockDecision(p: Projection, tools: ToolSpec[]): ToolCall {
       return { tool: spec.name, args: { target: claimers.length ? claimers[0] : pick(r, fresh.length ? fresh : options) } };
     }
     case 'witch_act': {
+      const saveOptions = optionsOf(spec, 'saveTarget');
+      if (saveOptions.length) {
+        const claimedSeer = saveOptions.find((seat) => k.claimedSeers.includes(seat));
+        const saveTarget = p.day === 1 || claimedSeer !== undefined || r() < 0.4 ? claimedSeer ?? pick(r, saveOptions) : null;
+        const accused = k.accused.filter((seat) => optionsOf(spec, 'poisonTarget').includes(seat));
+        const poisonTarget = saveTarget === null && accused.length && r() < 0.5 ? last(accused)! : null;
+        return { tool: spec.name, args: { saveTarget, poisonTarget } };
+      }
       const canSave = spec.params.some((x) => x.name === 'save');
       const save = canSave && (p.day === 1 || (k.knife !== null && k.claimedSeers.includes(k.knife)) || r() < 0.4);
       const poisonOptions = optionsOf(spec, 'poisonTarget');

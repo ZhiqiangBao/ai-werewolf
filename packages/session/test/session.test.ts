@@ -373,10 +373,23 @@ describe('模型调度', () => {
   });
 
   it('同一座位下一轮只在上一轮消息后面追加', async () => {
-    const { m, roomId, hostToken } = setup();
+    // 测试适配器不选择自爆，让普通发言轮次完整运行；其他决策仍由模拟玩家作出。
+    const noExplosion: Adapter = {
+      async decide(req) {
+        const result = await mockAdapter.decide(req);
+        if (!result.ok || result.call?.tool !== 'wolf_explode' || !req.projection) return result;
+        const legal = req.projection.task?.tools ?? req.tools;
+        const call = legal.some((tool) => tool.name === 'wolf_decline_explode')
+          ? { tool: 'wolf_decline_explode', args: {} }
+          : mockDecision(req.projection, legal.filter((tool) => tool.name !== 'wolf_explode'));
+        return { ...result, call, assistant: { role: 'assistant', content: JSON.stringify(call) } };
+      },
+    };
+    const { m, roomId, hostToken } = setup({ adapters: { mock: noExplosion } });
     m.updateSetup(roomId, hostToken, { presetId: 'classic9', aiPacingMs: 0 });
     m.start(roomId, hostToken);
     await m.whenIdle(roomId);
+    expect(god(m, roomId, hostToken).ruleCard).toContain('自爆');
     const audit = m.audit(roomId, hostToken);
     const bySeat = new Map<number, unknown[][]>();
     for (const row of audit) {
@@ -410,8 +423,14 @@ describe('模型调度', () => {
     const said = JSON.stringify(bySeat.get(speaker)!.at(-1));
     expect(said).toContain(text);
     expect(said).not.toContain(`${speaker}号发言：${text}`);
-    const listener = [1, 2, 3, 4, 5, 6, 7, 8, 9].find((seat) => seat !== speaker)!;
-    const heard = (bySeat.get(listener)!.at(-1)! as TranscriptMessage[]).find((message) => message.role === 'user' && message.name === String(speaker) && message.content.includes(text));
+    // 发言可能为空，故依据下一次发言问话定位实际行动者，而非下一条发言事件。
+    const listenerCue = events.find((e) => e.seq > speech!.seq && e.day === speech!.day && e.type === 'judge' && e.payload.step === 'speech' && Array.isArray(e.audience) && e.audience.length === 1);
+    expect(listenerCue).toBeDefined();
+    const listener = (listenerCue!.audience as number[])[0];
+    expect(listener).not.toBe(speaker);
+    const listenerRequest = audit.find((row) => row.seat === listener && row.purpose === 'action' && row.decisionId === listenerCue!.payload.decisionId);
+    expect(listenerRequest).toBeDefined();
+    const heard = (listenerRequest!.messages as TranscriptMessage[]).find((message) => message.role === 'user' && message.name === String(speaker) && message.content.includes(text));
     expect(heard).toBeDefined();
     expect(heard!.content).toContain(`「${text}」`);
     const roles = god(m, roomId, hostToken).god.roles;

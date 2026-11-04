@@ -18,13 +18,17 @@ export function expandActionTools(tools: ToolSpec[], rules: RuleSet): ToolSpec[]
     if (tool.operation) return [tool];
     if (tool.name === 'witch_act') {
       const canSave = tool.params.some((p) => p.name === 'save');
+      const canSelectSave = tool.params.some((p) => p.kind === 'seat' && p.name === 'saveTarget' && p.options.length > 0);
+      const noSave = canSelectSave ? { saveTarget: null } : { save: false };
       const poison = tool.params.find((p) => p.name === 'poisonTarget');
       const canPoison = poison?.kind === 'seat' && poison.options.length > 0;
       return [
         ...(canSave ? [operation(tool, 'witch_save', gameText(rules.locale, "使用解药救刀口"), gameText(rules.locale, "对法官告知的当夜刀口使用解药；目标由法官确定，不需要填写座位号。只消耗解药，不使用毒药，最终效果按夜间规则结算。仅在法官本轮列为可用时调用，填写 {}。"), { save: true, poisonTarget: null }, undefined, rules.locale)] : []),
-        ...(canPoison ? [operation(tool, 'witch_poison', gameText(rules.locale, "使用毒药"), gameText(rules.locale, "对目标玩家使用毒药。targetSeat 填其他存活玩家的整数座位号；这是毒人，不是救人。只消耗毒药，不使用解药，最终效果按夜间规则结算。例：{\"targetSeat\":3}；目标以本轮法官菜单为准。"), { save: false }, { targetSeat: 'poisonTarget' }, rules.locale)] : []),
-        operation(tool, 'witch_skip', gameText(rules.locale, "本夜不用药"), gameText(rules.locale, "明确选择今晚既不用解药，也不用毒药，保留剩余药品。没有参数，填写 {}。"), { save: false, poisonTarget: null }, undefined, rules.locale),
+        ...(canSelectSave ? [operation(tool, 'witch_save', gameText(rules.locale, "使用解药"), gameText(rules.locale, "targetSeat 填本轮法官列出的一个受袭玩家座位号。只消耗解药，不使用毒药。"), { poisonTarget: null }, { targetSeat: 'saveTarget' }, rules.locale)] : []),
+        ...(canPoison ? [operation(tool, 'witch_poison', gameText(rules.locale, "使用毒药"), gameText(rules.locale, "对目标玩家使用毒药。targetSeat 填其他存活玩家的整数座位号；这是毒人，不是救人。只消耗毒药，不使用解药，最终效果按夜间规则结算。例：{\"targetSeat\":3}；目标以本轮法官菜单为准。"), noSave, { targetSeat: 'poisonTarget' }, rules.locale)] : []),
+        operation(tool, 'witch_skip', gameText(rules.locale, "本夜不用药"), gameText(rules.locale, "明确选择今晚既不用解药，也不用毒药，保留剩余药品。没有参数，填写 {}。"), { ...noSave, poisonTarget: null }, undefined, rules.locale),
         ...(canSave && canPoison && rules.values['witch.bothPotionsSameNight'] === true ? [operation(tool, 'witch_save_and_poison', gameText(rules.locale, "同时救刀口并用毒药"), gameText(rules.locale, "仅本局允许同夜双药且两瓶药可用时调用：解药救法官告知的刀口，同时对 targetSeat 使用毒药。一次消耗两瓶药。例：{\"targetSeat\":3}；目标以本轮法官菜单为准。"), { save: true }, { targetSeat: 'poisonTarget' }, rules.locale)] : []),
+        ...(canSelectSave && canPoison && rules.values['witch.bothPotionsSameNight'] === true ? [operation(tool, 'witch_save_and_poison', gameText(rules.locale, "同时使用解药和毒药"), gameText(rules.locale, "saveTargetSeat 填本轮法官列出的一个受袭玩家座位号，targetSeat 填毒药目标。一次消耗两瓶药。"), {}, { saveTargetSeat: 'saveTarget', targetSeat: 'poisonTarget' }, rules.locale)] : []),
       ];
     }
     if (tool.name === 'sheriff_signup') return [
@@ -121,8 +125,12 @@ export function actionMenu(tools: ToolSpec[], locale: string | undefined = 'zh-C
   if (!tools.length) return '';
   return gameText(locale, "本轮只能从以下工具中选择一个调用：\n") + tools.map((tool) => {
     const params = tool.params.map((p) => p.kind === 'seat' ? gameText(locale, "{0}=整数座位号；可选：{1}{2}", p.name, p.options.join('、'), p.nullable ? `；null=${p.nullLabel}` : '') : p.kind === 'boolean' ? `${p.name}：true=${p.trueLabel ?? gameText(locale, "是")}，false=${p.falseLabel ?? gameText(locale, "否")}` : p.kind === 'choice' ? `${p.name}：${p.options.map((o) => `${o.value}=${o.label}`).join('；')}` : p.kind === 'text' ? gameText(locale, "{0}=字符串{1}", p.name, p.minLength ? gameText(locale, "，不能为空") : gameText(locale, "，可以留空")) : gameText(locale, "{0}=座位号数组", p.name)).join('；');
+    const saveTarget = tool.params.find((p) => p.kind === 'seat' && p.name === 'saveTarget');
     const legacyWitch = tool.name === 'witch_act'
-      ? gameText(locale, "{0}不用药：{1}。毒药只在决定毒人时填写目标，不要把救人目标填进 poisonTarget。", tool.params.some((p) => p.name === 'save') ? gameText(locale, "只救刀口：{0}；", JSON.stringify(Object.fromEntries(tool.params.map((p) => [p.name, p.name === 'save' ? true : null])))) : '', JSON.stringify(Object.fromEntries(tool.params.map((p) => [p.name, p.name === 'save' ? false : null]))))
+      ? gameText(locale, "{0}不用药：{1}。毒药只在决定毒人时填写目标，不要把救人目标填进 poisonTarget。",
+        saveTarget?.kind === 'seat' ? gameText(locale, "只用解药：{0}；", JSON.stringify(Object.fromEntries(tool.params.map((p) => [p.name, p.name === 'saveTarget' ? saveTarget.options[0] : null]))))
+          : tool.params.some((p) => p.name === 'save') ? gameText(locale, "只救刀口：{0}；", JSON.stringify(Object.fromEntries(tool.params.map((p) => [p.name, p.name === 'save' ? true : null])))) : '',
+        JSON.stringify(Object.fromEntries(tool.params.map((p) => [p.name, p.name === 'save' ? false : null]))))
       : '';
     return `- ${tool.name}：${tool.title}。${params || gameText(locale, "无参数，填写 {}。")}${legacyWitch}`;
   }).join('\n');

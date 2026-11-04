@@ -39,6 +39,8 @@ describe('提示词', () => {
     expect(seer[0].role).toBe('system');
     const sys = seer[0].content as string;
     expect(sys.startsWith('遵守时限。'));
+    expect(sys).toContain('每次确认新的出局后，先判定胜负');
+    expect(sys).toContain('胜负已分则立即结束，不再处理出局技能或遗言');
     expect(sys.indexOf('遵守时限')).toBeLessThan(sys.indexOf('【本局规则'));
     expect(sys.indexOf('【本局规则')).toBeLessThan(sys.indexOf('【你的身份】'));
     expect(sys.indexOf('【你的身份】')).toBeLessThan(sys.indexOf('【扮演风格】'));

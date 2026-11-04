@@ -9,6 +9,7 @@ import { err, normalizeCall, validateArgs } from './tools';
 import type { GameState, RuleError } from './types';
 import { migrateGameState } from './role-data';
 import { evaluateWin } from './flow/win';
+import { seatLabel } from './text';
 
 export interface CreateGameOptions {
   id: string;
@@ -182,7 +183,9 @@ function apply(ctx: Ctx, input: SubmitInput): RuleError | null {
   if (input.auto) {
     final = handler.fallback ? handler.fallback(ctx, d.step, input.seat) : { tool: d.tools[input.seat][0].name, args: {} };
     const reason = input.autoReason === 'invalid_tool' ? gameText(ctx.rules.locale, "连续工具调用失败") : input.autoReason === 'request_failed' ? gameText(ctx.rules.locale, "模型请求失败") : gameText(ctx.rules.locale, "你没有在时限内完成有效行动");
-    ctx.priv([input.seat], 'action.fallback', gameText(ctx.rules.locale, "{0}，系统已托管：{1}。", reason, gameText(ctx.rules.locale, FALLBACK_TEXT[final.tool] ?? final.tool)), {
+    const attackTarget = final.tool === 'wolf_kill' ? final.args.target : final.tool === 'awakened_kill' ? final.args.targetSeat : undefined;
+    const fallbackText = typeof attackTarget === 'number' ? gameText(ctx.rules.locale, "攻击目标记为{0}", seatLabel(attackTarget, ctx.rules.locale)) : gameText(ctx.rules.locale, FALLBACK_TEXT[final.tool] ?? final.tool);
+    ctx.priv([input.seat], 'action.fallback', gameText(ctx.rules.locale, "{0}，系统已托管：{1}。", reason, fallbackText), {
       call: final,
       ...(input.autoReason ? { reason: input.autoReason } : {}),
     });

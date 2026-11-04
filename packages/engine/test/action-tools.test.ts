@@ -144,6 +144,7 @@ describe('显式单动作工具 v2', () => {
     expect(names(g.toolsOf(1))).toEqual(['wolf_kill']);
     expect(g.pending!.prompts[1]).toContain('本局不能选择空刀');
     expect(g.act(1, 'wolf_empty_kill')?.code).toBe('TOOL_NOT_LEGAL');
+    for (const seat of g.waiting()) g.ok(seat, 'wolf_kill', { targetSeat: 9 });
     g.untilTool('vote');
     expect(names(g.toolsOf(g.waiting()[0]))).toEqual(['vote']);
     for (const seat of g.waiting()) g.ok(seat, 'vote', { targetSeat: seat === 1 ? 2 : 1 });

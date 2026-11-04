@@ -132,10 +132,10 @@ describe('信息隔离', () => {
   it('公共规则说明出局职责例外和警长与阵营的关系', () => {
     const g = new TestGame({ deal: DEAL12 });
     const card = g.view(1).ruleCard;
-    expect(card).toContain('已公布出局者不再参加常规行动或夜间技能');
-    expect(card).toContain('死亡触发技能和警徽等职责');
+    expect(card).toContain('出局是指法官确认一名玩家不再参加白天讨论、投票和夜间行动');
+    expect(card).toContain('胜负已分则立即结束，不再处理出局技能、警徽或遗言');
     expect(card).toContain('任何阵营均可竞选，不代表阵营');
-    expect(card).toContain('首夜出局在公布前的竞选资格');
+    expect(card).toContain('夜间将出局的玩家公布前仍可按当时资格参与竞选，其资格不代表已确认存活');
     expect(card).not.toContain('查验者出局或移交警徽');
   });
 });

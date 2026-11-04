@@ -1,4 +1,5 @@
 import aiInvariantGolden from './fixtures/room-p2-invariants.json';
+import compatibilityGolden from './fixtures/room-compatibility-presentation.json';
 import { createHash } from 'node:crypto';
 import { expect, it } from 'vitest';
 import { defaultGameTiming, type Projection } from '@werewolf/protocol';
@@ -6,11 +7,11 @@ import { buildRules, createGame } from '@werewolf/engine';
 import { mockAdapter, mockDecision, type Adapter } from '@werewolf/llm';
 import { MemoryStore, RoomManager, SecretBox } from '../src/index';
 
-// Generated from git revision ea8e7f7's manager with this same scenario.
-const golden: Record<string, string> = {
-  legacy: '05af15a7056fa046be733d2f7634428df03ce958f6f29fe73811d0b68520647f',
-  modern: 'eff9be2a42273b58095cfd08452624bfb046eb1b5505a282866381d9222f5ee4',
-};
+// The original whole-record hashes came from revision ea8e7f7. The fact hashes
+// below were independently captured from HEAD before the current changes and
+// matched its original test. Presentation hashes reflect the authorized rule
+// card, role descriptions and sheriff prompt edits, which affect projections
+// and model contexts generated at runtime. They remain checked separately.
 
 // New data-version and client-completion metadata is excluded explicitly;
 // all pre-existing facts, model messages and timing fields remain in the golden.
@@ -37,6 +38,9 @@ async function scenario(Manager: typeof RoomManager, modern: boolean) {
   const rules = buildRules('standard12');
   // 该基线来自死亡流程版本出现前的房间，恢复时不套用新局的结算规则。
   delete rules.deathResolutionVersion;
+  delete rules.hunterShotVersion;
+  delete rules.electionExplosionVersion;
+  delete rules.awakenedNightVersion;
   const { state, events } = createGame({ id: 'fixed-room', rules, seed: 'fixed-seed' });
   Object.assign(rec, {
     id: 'fixed-room', hostToken: 'host', spectatorToken: 'spectator',
@@ -89,13 +93,15 @@ async function scenario(Manager: typeof RoomManager, modern: boolean) {
 for (const modern of [false, true]) {
   it(`matches the pre-refactor ${modern ? 'modern' : 'legacy'} timing record`, async () => {
     const value = await scenario(RoomManager, modern);
-    const digest = createHash('sha256').update(JSON.stringify(normalize(value))).digest('hex');
-    expect(digest).toBe(golden[modern ? 'modern' : 'legacy']);
+    for (const [name, expected] of Object.entries(compatibilityGolden.humanHeadFacts)) {
+      expect(digestOf(value[name as keyof typeof compatibilityGolden.humanHeadFacts]), name).toBe(expected);
+    }
+    expect(digestOf(value.snapshots)).toBe(compatibilityGolden.humanUpdatedSnapshots[modern ? 'modern' : 'legacy']);
   });
 }
 
 // Original whole-record golden passed at b217704 before extracting the immutable component hashes.
-// See fixtures/room-p2-invariants.json: only completed-seat listen calls and their audit IDs may change.
+// room-p2-invariants.json retains the original action, event and notice baselines.
 async function aiScenario(Manager: typeof RoomManager, modern: boolean) {
   const now = 100_000;
   const store = new MemoryStore();
@@ -123,6 +129,9 @@ async function aiScenario(Manager: typeof RoomManager, modern: boolean) {
   store.rooms.clear();
   const rules = buildRules('standard12');
   delete rules.deathResolutionVersion;
+  delete rules.hunterShotVersion;
+  delete rules.electionExplosionVersion;
+  delete rules.awakenedNightVersion;
   const { state, events } = createGame({ id: 'fixed-ai-room', rules, seed: 'fixed-ai-seed' });
   Object.assign(rec, {
     id: 'fixed-ai-room', hostToken: 'host', spectatorToken: 'spectator',
@@ -159,12 +168,24 @@ for (const modern of [false, true]) {
   it(`matches pre-refactor AI requests and context with ${modern ? 'modern' : 'legacy'} timing`, async () => {
     const value = await aiScenario(RoomManager, modern);
     const expected = aiInvariantGolden[modern ? 'modern' : 'legacy'];
-    const parts = { events: value.events, actions: value.actions, views: value.views, notices: value.notices,
+    const updatedPrompt = '轮到你发言。你是警长，最后一个发言。';
+    const previousPrompt = '轮到你发言。你是警长，最后一个发言，可以在发言里归票。';
+    const changedPrompts = value.events.filter((event) => event.type === 'judge' && event.text === updatedPrompt);
+    expect(changedPrompts.map((event) => event.seq)).toEqual([66, 111, 156]);
+    // Restore only these exact, explicitly asserted text changes for comparison
+    // with the original event digest; all other event fields remain protected.
+    const originalTextEvents = value.events.map((event) => changedPrompts.includes(event) ? { ...event, text: previousPrompt } : event);
+    expect(digestOf(originalTextEvents), 'events with original sheriff prompt').toBe(expected.events);
+    expect(digestOf(value.actions), 'actions').toBe(expected.actions);
+    expect(digestOf(value.notices), 'notices').toBe(expected.notices);
+    expect(digestOf(value.state), 'state').toBe(compatibilityGolden.aiHeadState);
+    const presentation = { views: value.views,
       actionRequests: value.requests.filter((r) => r.purpose === 'action'),
       livingRequests: value.requests.filter((r) => r.projection?.me?.alive),
       actionAudit: value.audit.filter((r) => r.purpose === 'action').map(({ id: _id, ...row }) => row),
       survivingThreads: value.threads?.filter((t) => value.state!.players[t.seat - 1].alive) };
-    for (const [name, part] of Object.entries(parts)) expect(digestOf(part), name).toBe(expected[name as keyof typeof parts]);
+    const updated = compatibilityGolden.aiUpdatedPresentation[modern ? 'modern' : 'legacy'];
+    for (const [name, part] of Object.entries(presentation)) expect(digestOf(part), name).toBe(updated[name as keyof typeof presentation]);
     expect(value.requests.length).toBeLessThan(expected.requestCount);
   }, 30000);
 }

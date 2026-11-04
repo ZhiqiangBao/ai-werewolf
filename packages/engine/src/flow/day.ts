@@ -42,7 +42,7 @@ function speechPrompt(ctx: Ctx, seat: Seat, kind: SpeechKind): string {
   switch (kind) {
     case 'discussion':
       return s.sheriff === seat
-        ? gameText(ctx.rules.locale, "轮到你发言。你是警长，最后一个发言，可以在发言里归票。")
+        ? gameText(ctx.rules.locale, "轮到你发言。你是警长，最后一个发言。")
         : gameText(ctx.rules.locale, "轮到你发言。请分析局势、表明立场。");
     case 'campaign':
       return gameText(ctx.rules.locale, "轮到你竞选发言。你也可以选择退水（退出竞选）。");

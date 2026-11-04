@@ -195,7 +195,7 @@ export function eventToMessage(
     // 过期问话不是新事实，不能把「轮到你」与「不要调用」一起重播。
     return null;
   }
-  const fact = ['witch.knife', 'sheriff.start', 'wolf.kill.split'].includes(e.type) ? gameRecordEvents([e], hint.locale)[0]?.text ?? e.text : e.text;
+  const fact = ['witch.knife', 'witch.targets', 'sheriff.start', 'wolf.kill.split'].includes(e.type) ? gameRecordEvents([e], hint.locale)[0]?.text ?? e.text : e.text;
   const tail = hint.cue?.interruptTools?.[me]?.length && e.seq >= (hint.cue.afterSeq ?? 0)
     ? cueTail(hint.cue, me) : gameText(hint.locale, "不要调用工具。");
   return { role: 'user', name: 'judge', content: gameText(hint.locale, "法官：{0}\n{1}", fact, tail) };
@@ -207,7 +207,7 @@ function openAction(e: GameEvent, me: Seat, hint: TurnHint): TranscriptMessage |
   if (!cue) return null;
   if (e.payload.decisionId ? e.payload.decisionId !== cue.id : e.seq !== cue.afterSeq) return null;
   const match =
-    (e.type === 'witch.knife' && cue.step === 'night:witch') ||
+    ((e.type === 'witch.knife' || e.type === 'witch.targets') && cue.step === 'night:witch') ||
     (e.type === 'sheriff.start' && cue.step === 'sheriff.signup') ||
     (e.type === 'wolf.kill.split' && cue.step === 'wolf.kill');
   if (!match) return null;
@@ -324,6 +324,13 @@ export function ownLine(tool: string, args: Record<string, unknown>, locale: str
   if (typeof args.content === 'string' && args.content) return args.content;
   // These are receipts for the submitted action, not claims about its outcome.
   // Keep tool names and arguments unchanged in the assistant's native call.
+  const seat = (target: number) => gameText(locale, '{0}号', target);
+  if (tool === 'witch_save' && typeof args.targetSeat === 'number') {
+    return gameText(locale, '已提交对 {0} 使用解药。', seat(args.targetSeat));
+  }
+  if (tool === 'witch_save_and_poison' && typeof args.saveTargetSeat === 'number' && typeof args.targetSeat === 'number') {
+    return gameText(locale, '已提交对 {0} 使用解药，并对 {1} 使用毒药。', seat(args.saveTargetSeat), seat(args.targetSeat));
+  }
   const noTarget: Record<string, string> = {
     witch_save: '已提交使用解药。', witch_skip: '已提交本夜不用药。',
     guard_skip: '已提交本夜空守。', wolf_empty_kill: '已提交空刀。',
@@ -333,6 +340,11 @@ export function ownLine(tool: string, args: Record<string, unknown>, locale: str
   if (Object.hasOwn(noTarget, tool)) return gameText(locale, noTarget[tool]);
   if (tool === 'witch_act') {
     const target = args.poisonTarget;
+    if (typeof args.saveTarget === 'number') {
+      return typeof target === 'number'
+        ? gameText(locale, '已提交对 {0} 使用解药，并对 {1} 使用毒药。', seat(args.saveTarget), seat(target))
+        : gameText(locale, '已提交对 {0} 使用解药。', seat(args.saveTarget));
+    }
     if (typeof target === 'number') return gameText(locale, args.save === true ? '已提交使用解药并对 {0} 使用毒药。' : '已提交对 {0} 使用毒药。', gameText(locale, '{0}号', target));
     return gameText(locale, args.save === true ? '已提交使用解药。' : '已提交本夜不用药。');
   }

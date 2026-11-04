@@ -7,11 +7,16 @@ import { inspectRole, inspectionAppendix, inspectionKnowledge, inspectionTargets
 export const mirrorMaiden: RoleModule = {
   copiedAbility: 'mirror',
   id: 'mirror_maiden', name: '魔镜少女', faction: 'good', category: 'god', maxPerGame: 1,
-  summary: '每晚查验一名其他存活玩家的具体身份，不能重复查验。觉醒隐狼模仿后显示模仿身份。',
+  summary: '每晚查验一名其他存活玩家的具体身份，不能重复查验。',
   nightPhase: { id: 'mirror_maiden', order: 35 },
   tools: ({ seats }) => [mirrorTool(seats)],
   setup(ctx, seats) { for (const seat of seats) roleData(ctx.player(seat), 'mirror_maiden').roleChecks = []; },
-  ruleCard: (rules) => [gameText(rules.locale, "魔镜少女：每晚查验一名其他存活玩家的具体身份，不能重复查验同一玩家。{0}觉醒隐狼未模仿时显示觉醒隐狼；模仿后立即显示模仿身份，真实阵营仍为狼人。没有未查验目标时跳过。", gameText(rules.locale, INSPECTION_PRIVACY_RULE))],
+  ruleCard(rules) {
+    const privacy = gameText(rules.locale, INSPECTION_PRIVACY_RULE);
+    return [rules.roles.includes('awakened_wolf')
+      ? gameText(rules.locale, "魔镜少女：每晚查验一名其他存活玩家的具体身份，不能重复查验同一玩家。{0}觉醒隐狼未模仿时显示觉醒隐狼；模仿后立即显示模仿身份，真实阵营仍为狼人。没有未查验目标时跳过。", privacy)
+      : gameText(rules.locale, "魔镜少女：每晚查验一名其他存活玩家的具体身份，不能重复查验同一玩家。{0}没有未查验目标时跳过。", privacy)];
+  },
   knowledge: inspectionKnowledge,
   appendix: (ctx, seat) => [inspectionAppendix(ctx, seat)],
   steps: {
@@ -21,7 +26,9 @@ export const mirrorMaiden: RoleModule = {
         if (!actors.length) return;
         ctx.ask({
           step, actors, tools: (seat) => [mirrorTool(inspectionTargets(ctx, seat), ctx.rules.locale)],
-          prompt: () => gameText(ctx.rules.locale, "请选择一名其他存活且从未查验过的玩家，查验其具体身份。模仿后的觉醒隐狼会显示模仿身份。"),
+          prompt: () => gameText(ctx.rules.locale, ctx.rules.roles.includes('awakened_wolf')
+            ? "请选择一名其他存活且从未查验过的玩家，查验其具体身份。模仿后的觉醒隐狼会显示模仿身份。"
+            : "请选择一名其他存活且从未查验过的玩家，查验其具体身份。"),
           title: gameText(ctx.rules.locale, "第{0}夜 · 魔镜查验", ctx.state.day), publicStage: gameText(ctx.rules.locale, "夜晚"),
         });
       },

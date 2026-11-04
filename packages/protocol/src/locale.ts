@@ -73,6 +73,14 @@ export function gameLanguage(locale: GameLocale = DEFAULT_GAME_LOCALE): GameLang
   if (!pack) throw Error(`Unsupported game language: ${locale}`);
   return pack;
 }
+/** Return the final language in a registered pack's fallback chain. */
+export function baseGameLanguage(locale: GameLocale = DEFAULT_GAME_LOCALE): GameLanguagePack {
+  let pack = gameLanguage(locale);
+  while (pack.fallback && pack.fallback !== DEFAULT_GAME_LOCALE) pack = gameLanguage(pack.fallback);
+  return pack;
+}
+/** Format English text consistently for English dialects and packs that inherit English. */
+export const isEnglishGameLocale = (locale: GameLocale = DEFAULT_GAME_LOCALE): boolean => baseGameLanguage(locale).id === 'en';
 export const isGameLocale = (value: unknown): value is GameLocale => typeof value === 'string' && packs.has(value);
 export const gameLanguages = (): GameLanguage[] => [...packs.values()].map(({ id, label, languageName, speechLang, ttsLanguageHints }) => ({ id, label, languageName, speechLang, ttsLanguageHints: [...ttsLanguageHints] }));
 

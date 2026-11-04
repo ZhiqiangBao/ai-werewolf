@@ -22,7 +22,7 @@ export const inspectionTargets = (ctx: Ctx, seat: Seat): Seat[] =>
 export function mirrorTool(seats: Seat[], locale: string | undefined = 'zh-CN'): ToolSpec {
   return {
     name: 'mirror_inspect', title: gameText(locale, "查验具体身份"),
-    description: gameText(locale, "法官允许使用魔镜查验时，查验一名其他存活且自己从未查验过的玩家。targetSeat 为真实整数座位号，例：{\"targetSeat\":3}。结果仅自己可见。觉醒隐狼模仿后显示模仿身份，查验表现不保证真实阵营；不能查自己、重复查验或传 null。"),
+    description: gameText(locale, "法官允许使用魔镜查验时，查验一名其他存活且自己从未查验过的玩家。targetSeat 为真实整数座位号，例：{\"targetSeat\":3}。结果仅自己可见；查验表现不保证真实阵营。不能查自己、重复查验或传 null。"),
     params: [seatParam('targetSeat', gameText(locale, "查验目标"), seats, undefined)],
   };
 }

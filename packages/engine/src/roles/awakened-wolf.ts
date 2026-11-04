@@ -1,4 +1,4 @@
-import { gameText } from '@werewolf/protocol';
+import { gameText, isEnglishGameLocale } from '@werewolf/protocol';
 import type { Seat, ToolSpec } from '@werewolf/protocol';
 import type { Ctx } from '../context';
 import { getRole } from '../registry';
@@ -10,6 +10,7 @@ import { abilityAction, abilityNightSteps, findAbility, grantAbility } from '../
 import { copiedDefinition, poisonTool, guardTool, clawTool, skipSkill } from '../copied-abilities';
 import { roleData } from '../role-data';
 import { allRoleChecks, inspectionAppendix, inspectionKnowledge, mirrorTool } from './inspection';
+import { wolfKillFallbackTarget, wolfKillTargets } from './werewolf';
 
 const data = (ctx: Ctx, seat: Seat) => roleData(ctx.player(seat), 'awakened_wolf').awakened;
 const learnedAbility = (ctx: Ctx, seat: Seat) => {
@@ -24,7 +25,6 @@ const killTool = (seats: Seat[], locale: string | undefined = 'zh-CN') => action
 const emptyKill = (locale: string | undefined = 'zh-CN') => action('awakened_empty_kill', gameText(locale, "继承狼刀空刀"), gameText(locale, "本夜继承的普通狼刀不击杀任何人。填写 {}，不影响另一次模仿技能。"), undefined, locale);
 const mimicTool = (seats: Seat[], locale: string | undefined = 'zh-CN') => action('awakened_mimic', gameText(locale, "模仿一名玩家"), gameText(locale, "整局只能成功模仿一次。targetSeat 为其他存活玩家真实整数座位号，例：{\"targetSeat\":3}。本人立即获知目标真实身份；此后具体身份查验对你返回该模仿身份，你的真实身份和阵营不变。当夜结束才获得独立技能，夜间主动技能从下一夜可用，不与普通狼人互认。"), seats, locale);
 const waitTool = (locale: string | undefined = 'zh-CN') => action('awakened_wait', gameText(locale, "本夜暂不模仿"), gameText(locale, "本夜不模仿，保留整局唯一模仿机会。以后夜晚可再决定。填写 {}。"), undefined, locale);
-
 export const awakenedWolf: RoleModule = {
   abilityCatalog: ['mirror', 'poison', 'guard', 'wolf', 'hunter', 'none'],
   id: 'awakened_wolf', name: '觉醒隐狼', faction: 'wolf', category: 'wolf', maxPerGame: 1,
@@ -60,22 +60,66 @@ export const awakenedWolf: RoleModule = {
       ...(skill?.kind === 'poison' ? [gameText(ctx.rules.locale, "模仿毒药：{0}；没有解药。", skill.available ? gameText(ctx.rules.locale, "尚有一瓶") : gameText(ctx.rules.locale, "已用完"))] : []),
       ...(skill?.kind === 'guard' ? [gameText(ctx.rules.locale, "上次增强守护：{0}。", skill.last === null ? gameText(ctx.rules.locale, "空守或尚未行动") : seatLabel(skill.last, ctx.rules.locale))] : []),
       ...(skill?.kind === 'wolf' ? [gameText(ctx.rules.locale, "额外爪击：{0}。", skill.claw ? gameText(ctx.rules.locale, "尚未使用，须继承刀权后才可发动") : gameText(ctx.rules.locale, "已用完"))] : []),
+      ...(skill?.kind === 'hunter' ? [gameText(ctx.rules.locale, ctx.rules.deathResolutionVersion === 2
+        ? ctx.rules.hunterShotVersion === 2
+          ? "模仿猎人：学习夜天亮出局时，按猎人规则判断是否可开枪；若猎枪造成你的出局，且胜负未分、枪仍可用，可继续选择开枪或放弃。"
+          : "模仿猎人：学习夜天亮出局时，开枪条件与猎人规则相同；若胜负已分，不再发动开枪技能。"
+        : "模仿猎人：学习夜天亮出局时，开枪条件与猎人规则相同。")] : []),
       d.knifeFromNight === null ? gameText(ctx.rules.locale, "尚未继承狼刀。") : gameText(ctx.rules.locale, "已从第{0}夜起继承普通狼刀，每夜独立落刀。", d.knifeFromNight),
       inspectionAppendix(ctx, seat, allRoleChecks(ctx, seat)),
     ];
   },
-  ruleCard: (rules) => [
-    gameText(rules.locale, "觉醒隐狼：真实身份和胜负归属始终为狼；与普通狼互不知晓，不密谈、不自爆。每夜可模仿一名其他存活玩家或暂不模仿，整局仅成功一次。立即得知目标真实身份并改变自身具体身份查验表现，目标不获通知；阵营查验始终显示好人。"),
-    gameText(rules.locale, "学习夜结束获得技能，夜间主动技能次夜起可用；模仿猎人可在学习夜天亮出局时开枪，含毒不能开枪，只公开猎人表现，终局公开真实身份。"),
-    gameText(rules.locale, "模仿魔镜：独立查验具体身份，不可重复。模仿女巫：独立一毒无解药，不继承已用库存。模仿守卫：独立记录，可自守不可连守，挡狼刀和毒，不挡放逐和猎枪；同守同救按本局规则结算狼刀。模仿平民：无主动技能。"),
-    gameText(rules.locale, "其他狼全部出局后次夜继承普通狼刀，不得知队友资料。模仿狼人还得一次额外爪击，技能启用且继承刀权后可用，也可保留；按狼刀结算，可被守护或解药阻挡。继承狼刀与模仿技能独立决策。"),
-  ],
+  ruleCard(rules) {
+    const has = (id: string) => rules.roles.includes(id);
+    const isUnifiedNightOrder = rules.awakenedNightVersion === 2;
+    const canContinueShot = has('hunter') && has('awakened_wolf') &&
+      rules.hunterShotVersion === 2 && rules.deathResolutionVersion === 2;
+    const details: string[] = [];
+    const hunterDetail = has('hunter') ? gameText(rules.locale, canContinueShot
+      ? "模仿猎人：学习夜结束后取得猎人技能；学习夜天亮出局时，按猎人规则判断是否可开枪；胜负已分时不再开枪。若猎枪造成你的出局，且胜负未分、枪仍可用，可继续选择开枪或放弃；连续开枪时，被枪带走玩家的遗言资格按第一枪触发的出局情形确定。"
+      : rules.deathResolutionVersion === 2
+        ? "模仿猎人：学习夜结束后取得猎人技能；学习夜天亮出局时，开枪条件与猎人规则相同；若胜负已分，不再发动开枪技能。"
+        : "模仿猎人：学习夜结束后取得猎人技能；学习夜天亮出局时，开枪条件与猎人规则相同。") : undefined;
+    if (has('mirror_maiden')) details.push(gameText(rules.locale, "模仿魔镜：独立查验具体身份，不可重复。"));
+    if (has('witch')) details.push(gameText(rules.locale, "模仿女巫：独立一毒无解药，不继承已用库存。"));
+    if (has('guard')) details.push(gameText(rules.locale, "模仿守卫：独立记录，可自守不可连守，也可以阻挡毒药。"));
+    if (has('werewolf')) details.push(gameText(rules.locale, isUnifiedNightOrder
+      ? "模仿狼人：获得一次额外爪击；其他普通狼人全部出局后的夜间，可在觉醒隐狼轮次选择发动或保留。额外爪击按狼刀结算。"
+      : "模仿狼人：额外获得一次爪击，技能启用且继承刀权后可用，也可保留；按狼刀结算。继承狼刀与模仿技能独立决策。"));
+    const noAbilityRoles = [...new Set(rules.roles.filter((id) => id !== 'awakened_wolf' && !getRole(id).copiedAbility))].map((id) => gameText(rules.locale, getRole(id).name));
+    if (noAbilityRoles.length) {
+      const noAbilityNames = isEnglishGameLocale(rules.locale) && noAbilityRoles.length > 1
+        ? `${noAbilityRoles.slice(0, -1).join(', ')} and ${noAbilityRoles[noAbilityRoles.length - 1]}`
+        : noAbilityRoles.join(isEnglishGameLocale(rules.locale) ? ', ' : '、');
+      details.push(gameText(rules.locale, "模仿{0}不获得主动技能。", noAbilityNames));
+    }
+    return [
+      gameText(rules.locale, isUnifiedNightOrder
+        ? "觉醒隐狼：真实身份和胜负归属始终为狼；与普通狼互不知晓，不密谈、不自爆。尚未成功模仿时，每夜自己的行动轮次可模仿一名其他存活玩家或暂不模仿；整局只能成功一次。立即得知目标真实身份并改变自身具体身份查验表现，目标不获通知；阵营查验始终显示好人。"
+        : "觉醒隐狼：真实身份和胜负归属始终为狼；与普通狼互不知晓，不密谈、不自爆。每夜可模仿一名其他存活玩家或暂不模仿，整局仅成功一次。立即得知目标真实身份并改变自身具体身份查验表现，目标不获通知；阵营查验始终显示好人。"),
+      gameText(rules.locale, isUnifiedNightOrder
+        ? "模仿和已学的夜间主动技能在觉醒隐狼自己的同一夜间轮次处理。成功模仿后，技能在当夜结束时获得；夜间主动技能从下一夜起可用。"
+        : "学习夜结束时取得所模仿的技能；夜间主动技能从下一夜起可用；模仿没有主动技能的身份时不会获得技能。"),
+      ...(hunterDetail ? [gameText(rules.locale, "{0}只公开猎人表现，终局公开真实身份。", hunterDetail)] : []),
+      ...details,
+      gameText(rules.locale, has('werewolf')
+        ? isUnifiedNightOrder
+          ? "其他普通狼人全部出局后，觉醒隐狼从下一夜起负责普通狼人的攻击，并在狼人轮次单独提交；不获得队友资料。"
+          : "其他普通狼人全部出局后，觉醒隐狼从下一夜起负责普通狼人的攻击；不获得队友资料。"
+        : isUnifiedNightOrder
+          ? "从第 1 夜起负责普通狼人的攻击，并在狼人轮次单独提交；不获得队友资料。"
+          : "从第 1 夜起负责普通狼人的攻击；不获得队友资料。"),
+    ];
+  },
   nightStart(ctx) {
     for (const seat of holders(ctx)) {
       const d = data(ctx, seat);
       if (d.knifeFromNight === null && !ctx.alive().some((s) => s !== seat && ctx.roleOf(s).faction === 'wolf')) {
         d.knifeFromNight = ctx.state.day;
-        ctx.priv([seat], 'awakened.inherit', gameText(ctx.rules.locale, "其余狼人已经全部出局，你从今晚开始继承普通狼刀。"), { night: ctx.state.day });
+        const text = ctx.rules.awakenedNightVersion === 2 && !ctx.rules.roles.includes('werewolf')
+          ? gameText(ctx.rules.locale, "你从今晚开始负责普通狼人的攻击。")
+          : gameText(ctx.rules.locale, "其余狼人已经全部出局，你从今晚开始继承普通狼刀。");
+        ctx.priv([seat], 'awakened.inherit', text, { night: ctx.state.day });
       }
     }
   },
@@ -91,6 +135,7 @@ export const awakenedWolf: RoleModule = {
   steps: {
     'night:awakened_mimic': {
       run(ctx, step) {
+        if (ctx.rules.awakenedNightVersion === 2) ctx.pushFront({ type: 'night:awakened_skill' });
         const actors = holders(ctx).filter((s) => !data(ctx, s).learned && ctx.alive().some((x) => x !== s));
         if (!actors.length) return;
         ctx.ask({ step, actors, tools: (seat) => [mimicTool(ctx.alive().filter((s) => s !== seat), ctx.rules.locale), waitTool(ctx.rules.locale)],
@@ -126,7 +171,8 @@ export const awakenedWolf: RoleModule = {
         const actors = holders(ctx).filter((s) => data(ctx, s).knifeFromNight !== null);
         if (!actors.length) return;
         ctx.ask({ step, actors, tools: (seat) => {
-          const targets = ctx.alive().filter((s) => ctx.opt<boolean>('wolf.allowTeammateTarget') || ctx.roleOf(s).faction !== 'wolf');
+          const targets = ctx.rules.awakenedNightVersion === 2 ? wolfKillTargets(ctx, seat)
+            : ctx.alive().filter((s) => ctx.opt<boolean>('wolf.allowTeammateTarget') || ctx.roleOf(s).faction !== 'wolf');
           return [killTool(targets, ctx.rules.locale), ...(ctx.opt<boolean>('wolf.allowEmpty') ? [emptyKill(ctx.rules.locale)] : [])];
         }, prompt: () => gameText(ctx.rules.locale, "你已继承普通狼刀，请独立提交今晚刀口。"), title: gameText(ctx.rules.locale, "第{0}夜 · 继承狼刀", ctx.state.day), publicStage: gameText(ctx.rules.locale, "夜晚") });
       },
@@ -140,7 +186,10 @@ export const awakenedWolf: RoleModule = {
           n.lines.push(gameText(ctx.rules.locale, "觉醒隐狼（{0}）继承狼刀：{1}", seatLabel(seat, ctx.rules.locale), target === null ? gameText(ctx.rules.locale, "空刀") : seatLabel(target, ctx.rules.locale)));
         }
       },
-      fallback: (ctx) => ({ tool: 'awakened_empty_kill', args: {} }),
+      fallback(ctx, _step, seat) {
+        const targetSeat = wolfKillFallbackTarget(ctx, seat);
+        return targetSeat === null ? { tool: 'awakened_empty_kill', args: {} } : { tool: 'awakened_kill', args: { targetSeat } };
+      },
     },
     'night:awakened_skill': {
       run(ctx, step) {

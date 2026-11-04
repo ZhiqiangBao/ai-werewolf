@@ -1,5 +1,5 @@
 import { roleData } from '../role-data';
-import { gameText } from '@werewolf/protocol';
+import { gameText, isEnglishGameLocale } from '@werewolf/protocol';
 import { seatLabel } from '../text';
 import type { RoleModule } from '../types';
 
@@ -27,9 +27,15 @@ export const idiot: RoleModule = {
   ],
 
   ruleCard(rules) {
+    const badgeResult = rules.values['sheriff.enabled'] === true
+      ? rules.values['idiot.badgeOnFlip'] === 'lost'
+        ? gameText(rules.locale, "警长白痴翻牌后警徽流失。")
+        : gameText(rules.locale, "警长白痴翻牌后保留警徽。")
+      : '';
+    const sentenceSeparator = isEnglishGameLocale(rules.locale) ? ' ' : '';
     return [
-      gameText(rules.locale, "白痴：被投票放逐时翻牌亮明身份，留在场上，此后不能投票但仍可发言；翻牌后再被放逐则出局。被刀、被毒、被枪正常出局。") +
-        (rules.values['idiot.badgeOnFlip'] === 'lost' ? gameText(rules.locale, "警长白痴翻牌后警徽流失。") : gameText(rules.locale, "警长白痴翻牌后保留警徽。")),
+      gameText(rules.locale, "白痴：首次被放逐时翻牌亮明身份；之后不能投票但仍可发言。") +
+        (badgeResult ? sentenceSeparator + badgeResult : ''),
     ];
   },
 

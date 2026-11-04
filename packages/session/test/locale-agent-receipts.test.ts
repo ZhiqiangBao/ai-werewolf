@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ownLine, eventToMessage } from '../src/agent';
+import { ownLine, eventToMessage, readyToAct, syncThread, type SeatThread } from '../src/agent';
 import { mockAdapter, type Adapter } from '@werewolf/llm';
 import { MemoryStore, RoomManager, SecretBox } from '../src/index';
 import type { GodProjection } from '@werewolf/protocol';
@@ -13,6 +13,38 @@ describe('语言与行动回执', () => {
     expect(ownLine('seer_inspect', { targetSeat: 3 }, locale)).toBe(inspect);
     expect(ownLine('witch_save', {}, locale)).toBe(save);
     expect(ownLine('witch_act', { save: true, poisonTarget: null }, locale)).toBe(save);
+  });
+  it.each(['zh-CN', 'en', 'ja'])('%s 的女巫行动回执区分解药和毒药目标', (locale) => {
+    const saveArgs = { targetSeat: 3 };
+    const bothArgs = { saveTargetSeat: 3, targetSeat: 9 };
+    const save = ownLine('witch_save', saveArgs, locale);
+    const both = ownLine('witch_save_and_poison', bothArgs, locale);
+    expect(save).toContain('3');
+    expect(save).not.toBe(ownLine('witch_save', {}, locale));
+    expect(both).toContain('3');
+    expect(both).toContain('9');
+    expect(ownLine('witch_act', { saveTarget: 3, poisonTarget: null }, locale)).toBe(save);
+    expect(ownLine('witch_act', { saveTarget: 3, poisonTarget: 9 }, locale)).toBe(both);
+    expect(saveArgs).toEqual({ targetSeat: 3 });
+    expect(bothArgs).toEqual({ saveTargetSeat: 3, targetSeat: 9 });
+    if (locale === 'en') expect(`${save} ${both}`).not.toMatch(/[\u4e00-\u9fff]/u);
+  });
+  it('女巫多目标私密消息只进入本人上下文并开启当轮行动', () => {
+    const event = { seq: 1, day: 2, phase: 'night' as const, type: 'witch.targets', audience: [6],
+      text: '狼人今晚的攻击目标：3号、9号。', payload: { targets: [3, 9], decisionId: 'decision', step: 'night:witch' } };
+    const cue = { id: 'decision', afterSeq: 1, step: 'night:witch', kind: null, actors: [6],
+      prompts: { 6: '狼人今晚的攻击目标：3号、9号。' }, tool: 'witch_act', broadcast: false };
+    const hint = { nextSeat: 6, nextStep: 'night:witch', cue };
+    const witch: SeatThread = { seat: 6, seen: 0, messages: [] };
+    const other: SeatThread = { seat: 5, seen: 0, messages: [] };
+    const system = { role: 'system' as const, content: '规则' };
+    syncThread(witch, [event], system, hint);
+    syncThread(other, [event], system, hint);
+    expect(witch.messages).toHaveLength(2);
+    expect(witch.messages[1].content).toContain('3号、9号');
+    expect(readyToAct(witch, cue)).toBe(true);
+    expect(other.messages).toEqual([system]);
+    expect(readyToAct(other, cue)).toBe(false);
   });
   it.each([
     ['guard_protect', { targetSeat: 3 }, 'Submitted protection of Player 3.'],
