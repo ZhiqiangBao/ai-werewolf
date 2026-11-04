@@ -95,9 +95,9 @@ export function ModelLibrary() {
             </select>
           </label>
           {keySource === 'env' ? <label className="field">
-            {t('环境变量名')}
+            {t('密钥')}
             <select value={apiKeyEnv} onChange={(e) => setApiKeyEnv(e.target.value)}>
-              <option value="">{t('选择环境变量')}</option>
+              <option value="">{t('选择密钥')}</option>
               {apiKeyEnv && !envOptions.some((item) => item.name === apiKeyEnv) && <option value={apiKeyEnv}>{apiKeyEnv} · {t('不在配置列表中')}</option>}
               {envOptions.map((item) => <option key={item.name} value={item.name}>{item.name}{item.available ? '' : ` · ${t('未设置')}`}</option>)}
             </select>
