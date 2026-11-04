@@ -73,6 +73,14 @@ describe('显式单动作工具 v2', () => {
     g.toNight();
     untilWitch(g, 9);
     expect(names(g.toolsOf(6))).toEqual(['witch_poison', 'witch_skip']);
+    expect(actionMenu(g.toolsOf(6))).toContain('targetSeat=整数座位号；本轮可选择的毒药目标：');
+    expect(actionMenu(g.toolsOf(6), 'en')).toContain('targetSeat=integer seat number; poison targets available this turn:');
+    expect(actionMenu(g.toolsOf(6), 'ja')).toContain('targetSeat=整数席番号。今回選べる毒薬の対象：');
+    const attackedWitch = atWitch();
+    attackedWitch.ok(6, 'witch_save');
+    attackedWitch.toNight();
+    untilWitch(attackedWitch, 6);
+    expect(actionMenu(attackedWitch.toolsOf(6))).toBe(actionMenu(g.toolsOf(6)));
     expect(actionMenu(g.toolsOf(6))).not.toContain('witch_save');
     expect(g.act(6, 'witch_save')?.code).toBe('TOOL_NOT_LEGAL');
   });

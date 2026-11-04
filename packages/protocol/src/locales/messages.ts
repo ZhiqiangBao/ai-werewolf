@@ -485,6 +485,7 @@ export const translations: readonly (readonly [string, string, string])[] = [
   ["模拟行动 {0} 无法映射到本轮工具","Simulated action {0} cannot map to the current menu","模擬行動{0}を現在のメニューに対応させられない"],
   ["本轮只能从以下工具中选择一个调用：\n","Choose exactly one tool from this turn’s menu:\n","この手番では次のツールから1つだけ呼ぶ：\n"],
   ["{0}=整数座位号；可选：{1}{2}","{0}=integer seat number; choices: {1}{2}","{0}=整数席番号。選択肢：{1}{2}"],
+  ["{0}=整数座位号；本轮可选择的毒药目标：{1}{2}","{0}=integer seat number; poison targets available this turn: {1}{2}","{0}=整数席番号。今回選べる毒薬の対象：{1}{2}"],
   ["是","yes","はい"],
   ["否","no","いいえ"],
   ["，不能为空",", must not be empty","、空は不可"],
