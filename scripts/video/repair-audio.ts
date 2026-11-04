@@ -85,7 +85,7 @@ export async function repairAudio(directory: string, options: RepairOptions): Pr
         assert.equal(pcm.sampleRate, 24000, 'Unexpected replacement sample rate');
         const quality = inspectAudio(pcm.samples, pcm.sampleRate);
         assert.equal(quality.issues.length, 0, `Replacement failed audio inspection: ${quality.issues.map((e) => e.kind).join(', ')}`);
-        captionsFromWords(meta, quality.duration);
+        captionsFromWords(meta, quality.duration, source.locale ?? 'zh-CN');
         // Recheck both inputs after the external call, before changing any project data.
         assert.equal(audioDigest(await readFile(clip.audioFile)), inspected.digest, 'Audio changed during repair');
         assert.equal(await readFile(voicesFile, 'utf8'), voicesText, 'Voice settings changed during repair');
