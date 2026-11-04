@@ -500,13 +500,21 @@ export interface ActResult {
   error?: ApiError;
 }
 
-/** 发给提供方的工具配置快照；只保存白名单字段，不保存认证头或密钥。 */
+export interface ModelReplayRequest {
+  endpoint: string;
+  body: Record<string, unknown>;
+  binding: string;
+  timeoutSec: number;
+}
+
+/** 发给提供方的请求快照，不保存认证头或密钥。 */
 export interface ModelRequestInfo {
   apiProtocol: ApiProtocol;
   tools: unknown[];
   toolChoice?: unknown;
   /** JSON 兼容模式没有原生工具，其实际格式说明保存于此。 */
   toolInstruction?: string;
+  replay?: ModelReplayRequest;
 }
 
 export interface AuditEntry {

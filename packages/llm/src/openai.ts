@@ -5,6 +5,7 @@ import { abortedOutcome, HttpError, post, runRequest, failure } from './transpor
 import { jsonInstruction, parseAssistant, parseJson, tokenUsage } from './result';
 import type { Adapter, AdapterConfig } from './types';
 import { observeSync } from './observation';
+import { requestSnapshot } from './request-snapshot';
 
 export { redact } from './transport';
 export const chatUrl = (baseUrl: string, locale?: string) => apiUrl(baseUrl, 'chat_completions', locale);
@@ -59,7 +60,7 @@ export const openaiAdapter: Adapter = {
         };
         try {
           const encoded = observeSync(observation?.observer, request, 'request_encode', () => ({ ...body(), ...(useStream ? { stream: true } : {}) }));
-          req.onRequest?.({ apiProtocol: 'chat_completions', tools: structuredClone('tools' in encoded ? encoded.tools ?? [] : []), ...('tool_choice' in encoded ? { toolChoice: encoded.tool_choice } : {}), ...(json ? { toolInstruction: jsonInstruction(tools, req.projection?.locale ?? req.locale) } : {}) });
+          req.onRequest?.(requestSnapshot(req, url, encoded, { apiProtocol: 'chat_completions', tools: structuredClone('tools' in encoded ? encoded.tools ?? [] : []), ...('tool_choice' in encoded ? { toolChoice: encoded.tool_choice } : {}), ...(json ? { toolInstruction: jsonInstruction(tools, req.projection?.locale ?? req.locale) } : {}) }));
           const result = await post(url, encoded, headers, signal, event, req.projection?.locale ?? req.locale, observation && request ? { observer: observation.observer, request, protocol: 'chat_completions' } : undefined);
           request?.finish('success');
           return result ?? { usage, choices: [{ message: { content: acc.content || null, reasoning_content: acc.reasoning_content,

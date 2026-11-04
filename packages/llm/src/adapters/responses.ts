@@ -5,6 +5,7 @@ import { abortedOutcome, failure, HttpError, post, runRequest } from '../transpo
 import { jsonInstruction, parseAssistant, parseJson, tokenUsage } from '../result';
 import type { Adapter, AdapterConfig, TranscriptMessage } from '../types';
 import { observeSync } from '../observation';
+import { requestSnapshot } from '../request-snapshot';
 
 export function responsesInput(messages: TranscriptMessage[], config: AdapterConfig): Record<string, any>[] {
   const binding = protocolBinding({ ...config, apiProtocol: 'responses' });
@@ -51,7 +52,7 @@ export const responsesAdapter: Adapter = {
       });
       let completed: any;
       const items = new Map<number, Record<string, any>>();
-      req.onRequest?.({ apiProtocol: 'responses', tools: structuredClone(body.tools as unknown[] ?? []), toolChoice: body.tool_choice, ...(json ? { toolInstruction: jsonInstruction(req.tools, req.projection?.locale ?? req.locale) } : {}) });
+      req.onRequest?.(requestSnapshot(req, url, body, { apiProtocol: 'responses', tools: structuredClone(body.tools as unknown[] ?? []), toolChoice: body.tool_choice, ...(json ? { toolInstruction: jsonInstruction(req.tools, req.projection?.locale ?? req.locale) } : {}) }));
       const result = await post(url, body, config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}, signal, (e) => {
         if (e.type === 'error' || e.type === 'response.failed') throw new HttpError(200, JSON.stringify(e.error ?? e.response?.error ?? e));
         if (e.type === 'response.output_text.delta') onDelta({ reply: e.delta ?? '' });
