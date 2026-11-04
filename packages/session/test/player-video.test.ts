@@ -19,7 +19,7 @@ describe('玩家视角视频权限', () => {
     const own = state.players.find((p) => p.role === 'seer')!.seat;
     const ev = (seq: number, type: string, text: string, audience: GameEvent['audience'], payload: Record<string, unknown>, phase: GameEvent['phase'] = 'night'): GameEvent => ({ seq, type, text, audience, payload, day: 1, phase });
     const events = [ev(1, 'game.start', '对局开始。', 'public', {}), ev(2, 'seer.result', '查验结果。', [own], { target: 1, result: 'wolf' }), ev(3, 'witch.poison', 'PRIVATE_POISON_SECRET', [99], { target: own }), ev(4, 'review', 'OMNISCIENT_REVIEW_SECRET', 'public', { roles: state.players }), ev(5, 'game.end', '对局结束。', 'public', { result: state.result }, 'end')];
-    const record = { state, events, status: 'ended', paused: false, seats: state.players.map((p) => ({ seat: p.seat, name: p.name, controller: 'ai' })) };
+    const record = { avatarStyle: 'urban', state, events, status: 'ended', paused: false, seats: state.players.map((p) => ({ seat: p.seat, name: p.name, controller: 'ai' })) };
     await mkdir(join(data, 'rooms'), { recursive: true });
     await writeFile(join(data, 'rooms', 'synthetic.json'), JSON.stringify(record));
     const run = (file: string, args: string[], env: NodeJS.ProcessEnv) => execFileSync(process.execPath, ['--import', 'tsx', file, ...args], { cwd: root, env: { ...process.env, ...env }, stdio: 'pipe', timeout: 120000 });
@@ -27,6 +27,10 @@ describe('玩家视角视频权限', () => {
     expect(existsSync(join(data, 'local-asr', 'service-state.json'))).toBe(false);
     const dir = join(data, 'video', `synthetic-player-${own}`);
     const env = { VIDEO_DATA_DIR: data, VIDEO_ROOM: 'synthetic', VIDEO_PLAYER_SEAT: String(own), VIDEO_PROJECT_DIR: dir, VIDEO_ENCODER: 'libx264' };
+    const art = JSON.parse(await readFile(join(dir, 'art-manifest.json'), 'utf8'));
+    expect(art.theme).toBe('urban');
+    expect(art.atlas).toMatch(/avatars-urban-v1\.webp$/);
+    expect(JSON.stringify(art)).not.toMatch(/PRIVATE_POISON_SECRET|OMNISCIENT_REVIEW_SECRET|roleName|factionName/);
     const narration = JSON.parse(await readFile(join(dir, 'narration.json'), 'utf8'));
     narration.review = { status: 'reviewed', method: '合成测试核对', factsChecked: true, playerQuotesUntouched: true, futureResultsNotUsedInProcessCommentary: true };
     await writeFile(join(dir, 'narration.json'), JSON.stringify(narration));
@@ -47,7 +51,7 @@ describe('玩家视角视频权限', () => {
     expect(await readFile(join(dir, 'test-effect', '010.png'))).not.toEqual(await readFile(join(dir, 'test-effect', '035.png')));
     const frame = (time: string) => execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-ss', time, '-i', join(dir, 'segments', `${target.id}.mp4`), '-vf', `crop=150:150:${effect.x}:${effect.y}`, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { maxBuffer: 1000000 });
     expect(frame('0.2')).not.toEqual(frame('0.9'));
-    for (const name of ['source.json', 'script.json', 'plan.json', 'editorial-context.json', 'clips.json', 'timeline.json', 'output/verification.json', 'subtitles/captions.ass', 'subtitles/captions.srt', ...clips.map((c: any) => `audio/${c.id}.wav.json`)]) {
+    for (const name of ['source.json', 'script.json', 'plan.json', 'art-manifest.json', 'editorial-context.json', 'clips.json', 'timeline.json', 'output/verification.json', 'subtitles/captions.ass', 'subtitles/captions.srt', ...clips.map((c: any) => `audio/${c.id}.wav.json`)]) {
       const content = await readFile(join(dir, name), 'utf8');
       expect(content).not.toMatch(/PRIVATE_POISON_SECRET|OMNISCIENT_REVIEW_SECRET/);
     }

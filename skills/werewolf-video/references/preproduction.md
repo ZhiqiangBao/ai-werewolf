@@ -12,6 +12,7 @@
 | --- | --- | --- |
 | `plan.json`、`editorial-context.json` | 房间、身份、规则、事实与发言索引 | 阅读材料，引用发言时补读完整原文 |
 | `narration.json` | 可编辑模板，不代表已完成本局解说 | 上帝视角按 [上帝解说写作](commentary.md) 写开场、点评、收尾；玩家视角保留空 `edits` 并按 [单玩家视角制作](player-view.md) 核对授权原话 |
+| `art-manifest.json` | 选定主题、图集路径、逐席行列、外貌性别与实际声线 | 按席位核对封面人物参考；玩家视角只使用该视角获授权的事实 |
 | `voices.json` | 按主题匹配的默认声音配置与座位标签，已有文件保留 | 按[立绘与声线](character-voices.md)核对角色、音色、指令与语速并试听；原始立绘提示词随技能附带，法官和上帝分开 |
 | TTS 配置 | 沿用显式选择的适配器和模型 | 确认服务可用、凭据已配置、外发已授权；接入方法见 [批量 TTS](tts-batch.md) |
 | 主题与样品选择 | 已有美术；样品需另选节点 | 使用已确认画面，需样品时备好独立选择表 |
@@ -29,7 +30,7 @@ ffprobe -version
 
 按项目 `AGENTS.md`／`package.json` 的版本要求安装 Node.js 与 pnpm；当前仓库要求 Node.js 22.12 或更新版本。依赖未安装时运行 `pnpm install`。FFmpeg 与 FFprobe 必须能从 `PATH` 调用；如果已有可执行文件但不在 `PATH`，在同一 PowerShell 会话设置 `$env:FFMPEG_PATH` 和 `$env:FFPROBE_PATH` 为对应绝对路径。缺失工具时先停止并请用户提供安装或可用路径，不要等整局配音后才发现。`--check-only` 不检查这些程序、TTS 凭据或本地 ASR 模型是否就绪。
 
-安装／bootstrap 后、配音前检查美术资源是否已复制到 `apps/web/public/art/moon-village/`：至少要有昼夜背景、昼夜桌面和当前主题头像图集。默认主题为 `campus`，替换 `--theme` 时应核对对应的 `avatars-<theme>-v1.webp`。缺项可按[程序启动与bootstrap](automation.md#运行环境)及技能入口执行 bootstrap，再检查是否出现；不要用缺图开始整局配音。Windows 画面会尝试注册 `C:/Windows/Fonts/msyh.ttc` 与 `msyhbd.ttc`；其他系统按[硬件说明](hardware.md)选择并注册实际中文字体。若字体不存在，先解决字体回退并用短画面检查文字，不能把程序退出成功当成中文字体正确。
+安装／bootstrap 后、配音前检查美术资源是否已复制到 `apps/web/public/art/moon-village/`：至少要有昼夜背景、昼夜桌面和当前主题头像图集。先查看 `art-manifest.json` 的主题和图集路径：默认读取房间公开的 `avatarStyle`，显式 `--theme` 优先，旧存档缺失时才使用 `campus`。按清单核对对应图集；出现主题冲突或无法确认旧目录主题时使用新目录，或先明确迁移并核对声音和缓存。缺项可按[程序启动与bootstrap](automation.md#运行环境)及技能入口执行 bootstrap，再检查是否出现；不要用缺图开始整局配音。Windows 画面会尝试注册 `C:/Windows/Fonts/msyh.ttc` 与 `msyhbd.ttc`；其他系统按[硬件说明](hardware.md)选择并注册实际中文字体。若字体不存在，先解决字体回退并用短画面检查文字，不能把程序退出成功当成中文字体正确。
 
 准备出本局 `source.json` 后、任何真实 TTS 前，再按本局语言检查工作流实际会使用的工具和凭据。以下只输出可用性布尔值，不显示密钥；使用自定义 `--data-dir` 时，先把 `$env:VIDEO_DATA_DIR` 和 `$env:WEREWOLF_DATA` 设为同一绝对目录：
 
@@ -57,6 +58,7 @@ pnpm video:make --room=latest --prepare-only
 | --- | --- | --- |
 | 原始剪辑稿和事实 | `video:make --prepare-only` 导出 | 确认房间已结束、导出视角与本次授权相符；不修改事实 |
 | `editorial-context.json` | `prepare.ts` 自动生成 | 了解转折、确定点评锚点；不能拿终局信息提前写到过程里 |
+| `art-manifest.json` | 选定主题、图集路径、逐席行列、外貌性别与实际声线 | 按席位核对封面人物参考；玩家视角只使用该视角获授权的事实 |
 | `voices.json` | 默认音色表 + `plan.json` 人设 | 核对每个角色与音色，写好对应表达指令，保持跨昼夜一致 |
 | `narration.json` | 自动模板/旧编辑稿 | **亲自润色开场、关键转折和收尾**，按下面的方法写回 |
 | ASR 路由 | `source.json` 的局内语言与[音频核对操作指南](local-asr.md) | 默认 `off`，按需启用；显式 `auto` 才是 `zh`/`en` 本地 Q8、`ja` 在线 Qwen。若本次要核对，在 TTS 前确认对应模型服务或项目 Qwen ASR 凭据可用；`off` 会跳过语义核对，不得标作通过 |
@@ -252,7 +254,7 @@ pnpm video:make --room=ROOM_ID --project-dir=独立制作目录 --narration=本�
 
 完整上帝视角对局默认还需一张带个性化短标题的封面。按 [封面制作](cover.md) 先写好 `output/cover-prompt.md`，整理本局人物和画面参考，再由 agent 调用 AI 生图工具或真人在生图产品中操作。生成后检查并保存 `output/cover.png`，补全制作记录。文档提供通用提示词模板、人工操作步骤与 Codex 的可选方法；已有确认版本时直接复用。单玩家视角不使用含全知身份或行动的封面；视频程序检查通过后仍要核对本视角的交付文件。
 
-完整上帝视角的最终发布标题与简介写入同一制作目录下的 `output/publish-copy.md`，用 `# 标题`、`# 简介` 分开，交付时提供成片、封面和文案文件的链接。用户在聊天中调整用词后同步落盘，保留已经确认的措辞；备选标题不放进这份定稿。强调真人参局时按存档的座位控制方式核对，区分真人／AI操作与后期AI配音。单玩家视角不生成或复用此全桌发布文案。
+完整上帝视角的最终发布标题与简介写入同一制作目录下的 `output/publish-copy.md`，用 `# 标题`、`# 简介`，或英文 `# Title`、`# Description` 分开，交付时提供成片、封面和文案文件的链接。用户在聊天中调整用词后同步落盘，保留已经确认的措辞；备选标题不放进这份定稿。强调真人参局时按存档的座位控制方式核对，区分真人／AI操作与后期AI配音。单玩家视角不生成或复用此全桌发布文案。
 
 完整上帝视角简介固定附上每席的座位、昵称、存档模型标识或“真人”，以及本局完整规则卡，不能只写板型名称或规则摘要。`plan.cast` 提供安全的控制方式／模型字段；真人优先于闲置的模型配置，未知模型明确标“未记录”，不猜版本。先在同一制作目录的 `output/publish-copy.md` 写好最终标题与简介，再同步本局座位表和规则卡。新 PowerShell 会话不会继承 `video:make --room=...` 子进程中的房间环境；运行 `video:publish-copy` 前显式设回本次的房间、数据目录和制作目录：
 

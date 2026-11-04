@@ -43,6 +43,8 @@ await writeFile(`${projectDir}/source.json`, JSON.stringify(source, null, 2));
 await writeFile(`${projectDir}/script.json`, JSON.stringify(script, null, 2));
 await writeFile(`${projectDir}/clips.json`, JSON.stringify(clips, null, 2));
 await copyFile(`${originalDir}/voices.json`, `${projectDir}/voices.json`);
+if (existsSync(`${originalDir}/avatar-theme.json`)) await copyFile(`${originalDir}/avatar-theme.json`, `${projectDir}/avatar-theme.json`);
+if (existsSync(`${originalDir}/workflow-status.json`)) await copyFile(`${originalDir}/workflow-status.json`, `${projectDir}/workflow-status.json`);
 if (playerSeat) await copyFile(`${originalDir}/narration.json`, `${projectDir}/narration.json`);
 await writeFile(`${projectDir}/sample-selection.json`, JSON.stringify({ ...selection, roomId, reusedAudio: reused,
   clips: clips.map((c) => ({ id: c.id, sourceSeq: c.sourceSeq, part: c.part, type: c.type, presentationOnly: !!c.data.presentationOnly, text: c.text })) }, null, 2));

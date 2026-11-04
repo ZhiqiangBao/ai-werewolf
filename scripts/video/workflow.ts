@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import { startGpuMonitor } from './metrics';
 import { videoLocale } from './video-locale';
+import { bindTheme } from './avatar-theme';
 import { createHash } from 'node:crypto';
 import { asrProviderForLocale, ensureLocalAsrReady, type AsrProvider } from '../../packages/session/src/asr';
 
@@ -52,7 +53,7 @@ if (existsSync(bindingFile)) {
   await writeFile(bindingFile, JSON.stringify(binding, null, 2));
 }
 for (const key of ['--voices', '--narration', '--tts-adapter']) if (args.has(key) && !existsSync(resolve(root, args.get(key)!))) throw Error(`Missing ${key} file`);
-const theme = args.get('--theme') || 'campus'; if (!['campus', 'storybook', 'gufeng', 'fantasy', 'urban', 'future'].includes(theme)) throw Error('Unsupported avatar theme');
+const theme = await bindTheme(dir, join(roomsDir, `${room}.json`), args.get('--theme'));
 if (args.has('--video-locale')) videoLocale(undefined, args.get('--video-locale'));
 const encoderOption = args.get('--encoder') || 'auto'; if (!['auto', 'cpu', 'gpu'].includes(encoderOption)) throw Error('Unsupported encoder');
 let encoder = 'libx264';

@@ -1,7 +1,7 @@
 {
   "format": "werewolf-video-skill-bundle",
   "version": 13,
-  "pipelineFiles": 49,
+  "pipelineFiles": 50,
   "artFiles": 10,
   "artPromptFile": "assets/art/moon-village/prompts.json",
   "source": "scripts/video/",

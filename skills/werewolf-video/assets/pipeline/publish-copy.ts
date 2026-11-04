@@ -22,11 +22,22 @@ export function publicationMetadata(room: PublicationRoom, script: Pick<Script, 
 }
 
 export function withPublicationDetails(copy: string, metadata: ReturnType<typeof publicationMetadata>) {
-  if (!/^# 标题\s*$/m.test(copy) || !/^# 简介\s*$/m.test(copy)) throw Error('Publishing copy needs separate 标题 and 简介 headings');
-  const rows = metadata.seats.map((s) => `| ${s.seat}号 | ${cell(s.name)} | ${s.controller === 'human' ? '真人' : s.model ? cell(s.model) : 'AI（模型未记录）'} |`);
-  const details = [START, '## 本局座位与模型', '', '模型标识按本局存档配置列出；真人席位不展示其闲置的模型配置。', '',
-    '| 座位 | 昵称 | 模型／真人 |', '| --- | --- | --- |', ...rows, '',
-    '## 本局规则卡', '', metadata.ruleCard.replace(/\n/g, '  \n'), END].join('\n');
+  const chinese = /^# 标题[ \t]*$/m.test(copy) && /^# 简介[ \t]*$/m.test(copy);
+  const english = /^# Title[ \t]*$/im.test(copy) && /^# Description[ \t]*$/im.test(copy);
+  if (chinese === english) throw Error('Publishing copy needs separate 标题 and 简介 headings, or Title and Description headings');
+  const shared = copy.includes('<!-- werewolf-publication-models:shared -->');
+  if (shared && copy.indexOf(START) !== -1 && copy.indexOf('<!-- werewolf-publication-models:shared -->') > copy.indexOf(START) && copy.indexOf('<!-- werewolf-publication-models:shared -->') < copy.indexOf(END)) throw Error('Shared model marker must be outside publication details');
+  if (shared && (!metadata.seats.length || metadata.seats.some((s) => s.controller !== 'ai' || !s.model || s.model !== metadata.seats[0].model))) throw Error('Shared model publication requires all seats to be AI with the same recorded model');
+  const rows = metadata.seats.map((s) => english
+    ? `| ${s.seat} | ${cell(s.name)} | ${s.controller === 'human' ? 'Human' : s.model ? cell(s.model) : 'AI (model unknown)'} |`
+    : `| ${s.seat}号 | ${cell(s.name)} | ${s.controller === 'human' ? '真人' : s.model ? cell(s.model) : 'AI（模型未记录）'} |`);
+  const details = shared
+    ? [START, english ? `All ${metadata.seats.length} AI seats use ${metadata.seats[0].model} with independent conversations.` : `全部 ${metadata.seats.length} 个 AI 席位均使用 ${metadata.seats[0].model}，各自独立对话。`, '', english ? '## Match rule card' : '## 本局规则卡', '', metadata.ruleCard.replace(/\n/g, '  \n'), END].join('\n')
+    : (english
+    ? [START, '## Seats and models', '', 'Model identifiers reflect the match configuration; human seats do not show unused model settings.', '',
+      '| Seat | Name | Model / human |', '| --- | --- | --- |', ...rows, '', '## Match rule card', '', metadata.ruleCard.replace(/\n/g, '  \n'), END]
+    : [START, '## 本局座位与模型', '', '模型标识按本局存档配置列出；真人席位不展示其闲置的模型配置。', '',
+      '| 座位 | 昵称 | 模型／真人 |', '| --- | --- | --- |', ...rows, '', '## 本局规则卡', '', metadata.ruleCard.replace(/\n/g, '  \n'), END]).join('\n');
   const starts = copy.split(START).length - 1, ends = copy.split(END).length - 1;
   if (!starts && !ends) return copy.trimEnd() + '\n\n' + details + '\n';
   if (starts !== 1 || ends !== 1 || copy.indexOf(START) >= copy.indexOf(END)) throw Error('Publication details markers are malformed');

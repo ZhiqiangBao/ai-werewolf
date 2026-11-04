@@ -32,7 +32,7 @@ pnpm video:make --room=latest --prepare-only
 
 | 顺序 | 操作 | 完成标志 |
 | --- | --- | --- |
-| 1. 生成材料 | 上面的 `--prepare-only` 命令 | 本局目录有 `plan.json`、`editorial-context.json`、`narration.json`、`voices.json`；此时旁白通常是未审核模板 |
+| 1. 生成材料 | 上面的 `--prepare-only` 命令 | 本局目录有 `plan.json`、`art-manifest.json`、`editorial-context.json`、`narration.json`、`voices.json`；此时旁白通常是未审核模板 |
 | 2. 编辑与审核 | 阅读当前视角可见的事实与完整授权原话；上帝视角写开场、点评、收尾，单玩家视角只核对授权原话并保持空 `edits`；核对声线 | 完成相应视角的实际核对后在 `narration.json` 记录 `review`；原话与事实保持完整 |
 | 3. 检查是否可启动 | 下面的 `--check-only` 命令 | `output/materials-check.json` 中 `ready: true`；此步不调用 TTS |
 | 4. 制作整片 | 检查通过后执行 `--resume` | 配音、波形、字幕与原稿对照、字幕时间、渲染与视频检查通过；完整上帝视角还需封面、文案及约定的视听验收 |
@@ -96,7 +96,7 @@ node node_modules/tsx/dist/cli.mjs scripts/video/workflow.ts --room=ROOM_ID --re
 - `--encoder=cpu`：无需独立显卡；`auto` 自动尝试 NVIDIA 编码并允许软件回退；`gpu` 要求实际使用 NVENC，失败就停，不隐瞒回退。
 - `--project-dir=绝对路径`：隔离制作项目和旧片，不把样品与整片混在同一目录；导出仍写入 `--data-dir` 的 `exports`，此选项不会让源数据目录完全只读。
 - `--video-kbps=750 --max-video-kbps=1200 --audio-kbps=96`：直接限制分段和整片码率，1080p/30fps；先试做昼夜片段再据清晰度调整。
-- `--theme=campus|storybook|gufeng|fantasy|urban|future`：六套人物；更换后核对声音与人物是否相符。
+- `--theme=campus|storybook|gufeng|fantasy|urban|future`：显式指定人物主题；不指定时取房间公开的 `avatarStyle`，旧存档缺失时使用 `campus`。主题绑定制作目录；已有目录主题冲突或无法确认时停止，使用新目录，或先明确迁移并核对声线与缓存。`art-manifest.json` 列出实际图集路径、逐席行列、外貌与固定声线，可交给封面制作者。
 - `--video-locale=zh-CN|en|ja`：覆盖画面标签语言；也可设置环境变量 `VIDEO_LOCALE`。未覆盖时优先使用原局语言，旧记录缺失语言时使用 `zh-CN`。其他语言或方言可通过 `scripts/video/video-locale.ts` 的注册表扩展，并在制作进程中加载。
 - `--voices=绝对路径`、`--narration=绝对路径`：显式使用已整理的配置。
 - `--tts-provider=ID --tts-adapter=文件路径`：显式接入其他 TTS；内置仍为 `qwen-token-plan`，不自动换服务或计费线路。
@@ -127,8 +127,8 @@ node node_modules/tsx/dist/cli.mjs scripts/video/workflow.ts --room=ROOM_ID --re
 
 完整上帝视角默认交付直接编码得到的 `output/latest-match.mp4` 小体积整片、`output/cover.png` 封面与 `output/publish-copy.md` 发布文案，并提供这些文件的链接；封面缺失时补齐后再宣布整片交付完成。单玩家视角只交付该席位授权范围内的产物，不复制上帝视角封面或全桌文案。核对 `render-report.json`、`gpu-metrics.json` 和 `verification.json` 的实际编码器、大小与时长，不把短片比例当作整片实测。可附预览、字幕和时间轴，说明是否节选。样品使用独立目录和 `sample-verification.json`，不覆盖原整局。
 
-最终标题与简介保存为对应制作目录的 `output/publish-copy.md`，与成片放在一起，分别使用“标题”“简介”标题。聊天中修改文案后同步更新这个文件；交付时链接该定稿文件，不只把文案留在聊天或制作目录根部。备选标题与讨论草稿另存，不混入最终发布文案。
+最终标题与简介保存为对应制作目录的 `output/publish-copy.md`，与成片放在一起，分别使用“标题”“简介”或英文“Title”“Description”一级标题。聊天中修改文案后同步更新这个文件；交付时链接该定稿文件，不只把文案留在聊天或制作目录根部。备选标题与讨论草稿另存，不混入最终发布文案。
 
-完整上帝视角简介默认包含逐席表（座位、昵称、实际配置的模型标识或“真人”）及本局完整规则卡。真人席位即使留有模型字段也标真人；不输出密钥、端点或邀请凭证。只在完整上帝视角使用 `video:publish-copy` 从本局存档和 `script.ruleCard` 同步这两部分，保留已定稿的标题和介绍文字；准备和整片验证阶段也会自动更新已有文案文件。单玩家视角不能沿用这类全桌文案，须遵守 [单玩家视角制作](references/player-view.md) 的隐私限制。
+完整上帝视角简介默认包含逐席表（座位、昵称、实际配置的模型标识或“真人”）及本局完整规则卡。真人席位即使留有模型字段也标真人；不输出密钥、端点或邀请凭证。只在完整上帝视角使用 `video:publish-copy` 从本局存档和 `script.ruleCard` 同步这两部分，保留已定稿的标题和介绍文字；准备和整片验证阶段也会自动更新已有文案文件。若文案只需汇总全席同一模型，在自动生成区块之外写入 `<!-- werewolf-publication-models:shared -->`；程序核实每席均为 AI 且模型一致后只写一次模型，不生成逐席表，不符合条件会停止。单玩家视角不能沿用这类全桌文案，须遵守 [单玩家视角制作](references/player-view.md) 的隐私限制。
 
 为节省其他模型的上下文，优先读取 `plan.json`、`workflow-status.json`、`verification.json`。不要把原始房间文件、完整时间轴和音频元数据全部打印进上下文。发布和上传不是默认制作步骤。

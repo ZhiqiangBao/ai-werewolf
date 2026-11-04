@@ -10,6 +10,8 @@ import { palettes } from './palette';
 import { createRuleStrip, RULE_SCROLL_SPEED, RULE_VIEW } from './rule-strip';
 import { videoChapter, videoLocale, videoRole, videoText } from './video-locale';
 import { actionTargetLabel } from './video-effect';
+import { bindTheme } from './avatar-theme';
+import { dataDir, projectDir } from './project';
 
 const require = createRequire(import.meta.url);
 const { createCanvas, loadImage, GlobalFonts, Path2D } = require(process.env.VIDEO_CANVAS_MODULE || '@napi-rs/canvas');
@@ -37,7 +39,7 @@ export const sceneVersion = 'moon-village-video-v10-localized-labels';
 export async function createSceneRenderer(script: Script) {
   const locale = videoLocale(script.locale), t = (key: string, ...values: unknown[]) => videoText(locale, key, ...values);
   const art = resolve('apps/web/public/art/moon-village');
-  const theme = process.env.VIDEO_AVATAR_STYLE || 'campus';
+  const theme = await bindTheme(projectDir, resolve(dataDir, 'rooms', `${script.roomId}.json`), process.env.VIDEO_AVATAR_STYLE, true);
   const themes: Record<string, string> = { campus: '日式校园', storybook: '童话绘本', gufeng: '中式古风', fantasy: '剑与魔法', urban: '现代都市', future: '未来科技' };
   if (!themes[theme]) throw Error('Unsupported avatar theme');
   const [day, night, tableDay, tableNight, atlas] = await Promise.all(['village-day-v1.webp', 'village-night-v1.webp', 'table-day-v1.webp', 'table-night-v1.webp', `avatars-${theme}-v1.webp`].map((f) => loadImage(`${art}/${f}`)));

@@ -4,7 +4,10 @@ import { projectDir, loadScript, loadVoices, dataDir } from './project';
 import { draftNarration } from './narration';
 import { syncPublishCopy } from './publish-copy';
 import { applyCharacterVoices } from './character-voices';
+import { artManifest, bindTheme } from './avatar-theme';
+import { join } from 'node:path';
 const script = await loadScript(); await mkdir(projectDir, { recursive: true });
+const theme = await bindTheme(projectDir, join(dataDir, 'rooms', `${script.roomId}.json`), process.env.VIDEO_AVATAR_STYLE, true);
 const narrationFile = process.env.VIDEO_NARRATION_FILE || `${projectDir}/narration.json`;
 const voiceFile = process.env.VIDEO_VOICES_FILE || `${projectDir}/voices.json`;
 if (!existsSync(narrationFile)) {
@@ -13,11 +16,13 @@ if (!existsSync(narrationFile)) {
   await writeFile(narrationFile, JSON.stringify(narration, null, 2));
 }
 if (!existsSync(voiceFile)) {
-  const voices = applyCharacterVoices(await loadVoices(), script.cast, process.env.VIDEO_AVATAR_STYLE || 'campus');
+  const voices = applyCharacterVoices(await loadVoices(), script.cast, theme);
   await writeFile(voiceFile, JSON.stringify(voices, null, 2));
 }
 const narration = JSON.parse(await readFile(narrationFile, 'utf8'));
 const voices = JSON.parse(await readFile(voiceFile, 'utf8'));
+const artManifestFile = join(projectDir, 'art-manifest.json');
+await writeFile(artManifestFile, JSON.stringify(artManifest(theme, script.cast, voices), null, 2));
 const raw = script.perspective === 'god' ? JSON.parse(await readFile(`${dataDir}/rooms/${script.roomId}.json`, 'utf8')) : null;
 if (raw) await syncPublishCopy(projectDir, raw, script);
 const editorialContextFile = `${projectDir}/editorial-context.json`;
@@ -30,7 +35,7 @@ await writeFile(editorialContextFile, JSON.stringify({ roomId: script.roomId, pr
 const summary = { roomId: script.roomId, preset: script.presetName, playerCount: script.cast.length, perspective: script.perspective, playerSeat: script.playerSeat,
   playerEntries: script.chapters.flatMap((c) => c.entries).filter((e) => e.seat !== undefined).length,
   sourceCharacters: script.chapters.flatMap((c) => c.entries).reduce((s, e) => s + e.text.length, 0),
-  narrationFile, voiceFile, editorialContextFile, omittedJudgeEntries: Object.values(narration?.edits ?? {}).filter((e: any) => e?.omit).length,
+  theme, artManifestFile, narrationFile, voiceFile, editorialContextFile, omittedJudgeEntries: Object.values(narration?.edits ?? {}).filter((e: any) => e?.omit).length,
   cast: script.cast.map((c) => {
     const notes = raw?.seats?.find((s: any) => s.seat === c.seat);
     return { seat: c.seat, name: c.name, roleName: c.roleName, controller: notes?.controller ?? 'unknown', model: notes?.controller === 'human' ? null : notes?.model ?? null,
