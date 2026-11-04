@@ -89,7 +89,7 @@ function seerTool(seats: Seat[], locale: string | undefined = 'zh-CN'): ToolSpec
   return {
     name: 'seer_inspect',
     title: gameText(locale, "查验"),
-    description: gameText(locale, "预言家夜间查验时使用。target 是一名其他存活玩家，不能查自己。target 必须为整数，不能填 null；例：{\"target\":3}（须为其他存活玩家）。可以重复查验。结果只区分好人或狼人，不返回具体神职，只有你能看到。其他阶段不要调用。"),
+    description: gameText(locale, "查验 target 指定的玩家，获得好人或狼人结果。填写目标座位号，例如 {\"target\":3}。"),
     params: [seatParam('target', gameText(locale, "查验目标"), seats, undefined)],
   };
 }

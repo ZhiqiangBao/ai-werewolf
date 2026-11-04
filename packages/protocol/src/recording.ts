@@ -47,6 +47,10 @@ export function gameRecordEvents(events: GameEvent[], locale: string | undefined
     if (e.type === 'seer.skip' && actorSeat !== undefined) text = gameText(locale, "预言家{0}本夜没有查验。", actor);
     if (e.type === 'witch.save' && actorSeat !== undefined && isSeat(p.target)) text = gameText(locale, "女巫{0}对{1}号使用解药。", actor, p.target);
     if (e.type === 'witch.poison' && actorSeat !== undefined && isSeat(p.target)) text = gameText(locale, "女巫{0}对{1}号使用毒药。", actor, p.target);
+    if (e.type === 'witch.no_save' && actorSeat !== undefined) text = isSeat(p.target)
+      ? gameText(locale, "女巫{0}本夜没有对{1}号使用解药。", actor, p.target)
+      : gameText(locale, "女巫{0}本夜没有使用解药。", actor);
+    if (e.type === 'witch.no_poison' && actorSeat !== undefined) text = gameText(locale, "女巫{0}本夜没有使用毒药。", actor);
     if (e.type === 'witch.idle' && actorSeat !== undefined) text = gameText(locale, "女巫{0}本夜没有用药。", actor);
     return [{ ...e, text }];
   });

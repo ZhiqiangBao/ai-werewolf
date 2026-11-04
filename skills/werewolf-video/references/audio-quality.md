@@ -44,4 +44,4 @@ pnpm video:repair-audio --auto --audit=output/audio-audit-before.json --rebuild
 
 这些是可重复的信号检查，不能保证识别所有听感、发音或语义问题。用户指出其他异常时，核对片段与波形，保留正常对照，用发现的实际特征扩展检测器和测试；不要把某个房间的片段编号硬编码为检测规则。不能只凭检查通过就声称自己听过音频。
 
-`packages/session/test/audio-inspection.test.ts` 用真实故障特征构造合成样本，覆盖原始／降低音量后的平段、正常重音峰值、静音、反复削波、过期报告、失败候选保留和成功新种子持久化。`qwen-speech-seed.test.ts` 验证旧默认请求缓存保持兼容，并用模拟接口检查新种子，不为回归测试调用真实 TTS。
+当前自动化保留 [玩家视角视频完整合成流程](../../../packages/session/test/player-video.test.ts)，使用合成配音验证产物与缓存篡改检查；原始波形和实际听感仍需按本指南核对，不因此宣称所有音频缺陷都已覆盖。

@@ -78,12 +78,7 @@ export const guard: RoleModule = {
               params: [seatParam('target', gameText(ctx.rules.locale, "守护目标"), targetsFor(ctx, seat), gameText(ctx.rules.locale, "空守"))],
             },
           ],
-          prompt: (seat) => {
-            const last = lastOf(ctx, seat);
-            return last !== null && ctx.opt<boolean>('guard.noConsecutive')
-              ? gameText(ctx.rules.locale, "请选择今晚守护的玩家，或空守。上一晚你守护了 {0}，今晚不能再守他。", seatLabel(last, ctx.rules.locale))
-              : gameText(ctx.rules.locale, "请选择今晚守护的玩家，或空守。");
-          },
+          prompt: () => gameText(ctx.rules.locale, "请选择今晚守护的玩家，或空守。"),
           title: gameText(ctx.rules.locale, "第{0}夜 · 守卫", ctx.state.day),
           publicStage: gameText(ctx.rules.locale, "夜晚"),
         });
@@ -121,11 +116,11 @@ export const guard: RoleModule = {
   },
 };
 
-function guardTool(seats: Seat[], v: RuleSet['values'], locale: string | undefined = 'zh-CN'): ToolSpec {
+function guardTool(seats: Seat[], _v: RuleSet['values'], locale: string | undefined = 'zh-CN'): ToolSpec {
   return {
     name: 'guard_protect',
     title: gameText(locale, "守护"),
-    description: gameText(locale, "守卫夜间守护时使用。target 是今晚守护的存活玩家，null 表示空守。{0}{1}守护只挡狼刀，挡不住毒药；上一晚空守会解除连续守护限制。例：{\"target\":3} 为守3号，{\"target\":null} 为空守，目标以本轮限制为准。其他阶段不要调用。", v['guard.allowSelf'] === true ? gameText(locale, "可以守护自己。") : gameText(locale, "不能守护自己。"), v['guard.noConsecutive'] === true ? gameText(locale, "不能连续两晚守护同一人。") : ''),
+    description: gameText(locale, "守护 target 指定的玩家，或传 null 空守。例：{\"target\":3}、{\"target\":null}。"),
     params: [seatParam('target', gameText(locale, "守护目标"), seats, gameText(locale, "空守"))],
   };
 }

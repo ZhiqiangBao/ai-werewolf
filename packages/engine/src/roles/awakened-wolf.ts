@@ -21,10 +21,10 @@ const holders = (ctx: Ctx) => ctx.seatsOf('awakened_wolf');
 const action = (name: string, title: string, description: string, seats?: Seat[], locale: string | undefined = 'zh-CN'): ToolSpec => ({
   name, title, description, params: seats ? [seatParam('targetSeat', gameText(locale, "目标玩家"), seats, undefined)] : [],
 });
-const killTool = (seats: Seat[], locale: string | undefined = 'zh-CN') => action('awakened_kill', gameText(locale, "提交继承狼刀"), gameText(locale, "仅法官告知已继承刀权并询问落刀时可用。targetSeat 为今晚要刀的存活玩家真实整数座位号，例：{\"targetSeat\":3}；不透露其他狼队友。"), seats, locale);
-const emptyKill = (locale: string | undefined = 'zh-CN') => action('awakened_empty_kill', gameText(locale, "继承狼刀空刀"), gameText(locale, "本夜继承的普通狼刀不击杀任何人。填写 {}，不影响另一次模仿技能。"), undefined, locale);
-const mimicTool = (seats: Seat[], locale: string | undefined = 'zh-CN') => action('awakened_mimic', gameText(locale, "模仿一名玩家"), gameText(locale, "整局只能成功模仿一次。targetSeat 为其他存活玩家真实整数座位号，例：{\"targetSeat\":3}。本人立即获知目标真实身份；此后具体身份查验对你返回该模仿身份，你的真实身份和阵营不变。当夜结束才获得独立技能，夜间主动技能从下一夜可用，不与普通狼人互认。"), seats, locale);
-const waitTool = (locale: string | undefined = 'zh-CN') => action('awakened_wait', gameText(locale, "本夜暂不模仿"), gameText(locale, "本夜不模仿，保留整局唯一模仿机会。以后夜晚可再决定。填写 {}。"), undefined, locale);
+const killTool = (seats: Seat[], locale: string | undefined = 'zh-CN') => action('awakened_kill', gameText(locale, "提交继承狼刀"), gameText(locale, "对 targetSeat 提交继承狼刀。填写目标座位号，例如 {\"targetSeat\":3}。"), seats, locale);
+const emptyKill = (locale: string | undefined = 'zh-CN') => action('awakened_empty_kill', gameText(locale, "继承狼刀空刀"), gameText(locale, "继承狼刀选择空刀。无参数，填写 {}。"), undefined, locale);
+const mimicTool = (seats: Seat[], locale: string | undefined = 'zh-CN') => action('awakened_mimic', gameText(locale, "模仿一名玩家"), gameText(locale, "模仿 targetSeat 指定的玩家。填写目标座位号，例如 {\"targetSeat\":3}。"), seats, locale);
+const waitTool = (locale: string | undefined = 'zh-CN') => action('awakened_wait', gameText(locale, "本夜暂不模仿"), gameText(locale, "本夜不模仿。无参数，填写 {}。"), undefined, locale);
 export const awakenedWolf: RoleModule = {
   abilityCatalog: ['mirror', 'poison', 'guard', 'wolf', 'hunter', 'none'],
   id: 'awakened_wolf', name: '觉醒隐狼', faction: 'wolf', category: 'wolf', maxPerGame: 1,

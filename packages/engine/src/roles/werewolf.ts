@@ -214,13 +214,13 @@ function wolfTools(seats: Seat[], v: RuleSet['values'], locale: string | undefin
     {
       name: 'wolf_discuss',
       title: gameText(locale, "狼人密谈"),
-      description: gameText(locale, "狼人夜间密谈、且轮到你发言时使用。content 是非空字符串，只有当前存活的狼队友能看到。例：{\"content\":\"今晚建议刀3号。\"}。密谈只传达意见，正式落刀须等待法官再调用 wolf_kill。其他阶段不要调用。"),
+      description: gameText(locale, "发送狼人密谈内容。content 为非空字符串，例如 {\"content\":\"今晚建议刀3号。\"}。"),
       params: [textParam('content', gameText(locale, "密谈内容"), 1, undefined)],
     },
     {
       name: 'wolf_kill',
       title: gameText(locale, "落刀"),
-      description: gameText(locale, "普通狼人夜间落刀时使用。target 是你提交的狼刀目标，最终刀口按合刀规则决定。{0}{1}只能选择存活目标。例：{\"target\":3} 表示提交刀3号（须符合本局限制）。所有参与落刀的存活普通狼人同时提交；按法官公布的合刀规则结算，不在密谈工具里直接落刀。其他阶段不要调用。", v['wolf.allowEmpty'] === true ? gameText(locale, "传 null 表示空刀，空刀不计票。") : gameText(locale, "本局不能空刀。"), v['wolf.allowTeammateTarget'] === true ? gameText(locale, "可以刀狼队友或自己。") : gameText(locale, "不能刀狼队友或自己。")),
+      description: gameText(locale, "提交 target 指定的狼刀目标。填写目标座位号，例如 {\"target\":3}。{0}", v['wolf.allowEmpty'] === true ? gameText(locale, "传 null 表示空刀。") : ""),
       params: [seatParam('target', gameText(locale, "刀口"), seats, v['wolf.allowEmpty'] === true ? gameText(locale, "空刀") : undefined)],
     },
   ];
@@ -229,13 +229,13 @@ function wolfTools(seats: Seat[], v: RuleSet['values'], locale: string | undefin
     {
       name: 'wolf_explode',
       title: gameText(locale, "自爆"),
-      description: gameText(locale, "存活狼人按本局自爆窗口使用。{0}立刻出局并公开身份，取消当天剩余流程，后续警徽、遗言与胜负由法官结算。无参数，填写 {}。投票与夜间不能使用。", v['explode.window'] === 'interrupt' ? gameText(locale, "法官开放发言窗口时可在自己的发言或旁听中打断自爆。") : v['explode.window'] === 'speaker_only' ? gameText(locale, "仅轮到自己正常发言时可用，遗言不能用。") : gameText(locale, "本局在每段发言前专门询问，请在询问时用 wolf_explode_decision，不直接用本工具。")),
+      description: gameText(locale, "自爆出局。无参数，填写 {}。"),
       params: [],
     },
     {
       name: 'wolf_explode_decision',
       title: gameText(locale, "是否自爆"),
-      description: gameText(locale, "法官在下一段发言前或延期警长续选投票前询问是否自爆时使用。explode 必须是布尔值，true 表示自爆，false 表示不自爆。例：{\"explode\":false}。多人同时选 true 时由最小座位号执行，其余仍存活。只回答该次询问；其他阶段不要调用。"),
+      description: gameText(locale, "提交是否自爆。explode 为布尔值，true 表示自爆，false 表示不自爆，例如 {\"explode\":false}。"),
       params: [{ kind: 'boolean', name: 'explode', label: gameText(locale, "是否自爆"), trueLabel: gameText(locale, "自爆"), falseLabel: gameText(locale, "不自爆") }],
     },
   );

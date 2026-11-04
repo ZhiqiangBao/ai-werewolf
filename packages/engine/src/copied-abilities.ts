@@ -13,10 +13,10 @@ import { getRole } from './registry';
 const action = (name: string, title: string, description: string, seats?: Seat[], locale: string | undefined = 'zh-CN'): ToolSpec => ({
   name, title, description, params: seats ? [seatParam('targetSeat', gameText(locale, '目标玩家'), seats, undefined)] : [],
 });
-export const skipSkill = (locale: string | undefined = 'zh-CN') => action('awakened_skip_skill', gameText(locale, '本夜不用模仿技能'), gameText(locale, '本夜不发动模仿技能；毒药和额外爪击保留，守卫视为空守并解除连续守护限制。填写 {}。'), undefined, locale);
-export const poisonTool = (seats: Seat[], locale: string | undefined = 'zh-CN') => action('awakened_poison', gameText(locale, '使用模仿毒药'), gameText(locale, '仅模仿女巫技能已启用且毒药尚在时可用。消耗自己独立的一瓶毒药，没有解药。targetSeat 为其他存活玩家真实整数座位号，例：{"targetSeat":3}。'), seats, locale);
-export const guardTool = (seats: Seat[], locale: string | undefined = 'zh-CN') => action('awakened_guard', gameText(locale, '使用增强守护'), gameText(locale, '仅模仿守卫技能已启用时可用。targetSeat 为存活玩家真实整数座位号，例：{"targetSeat":3}。可自守，不能连续两晚守同一人；同时抵挡普通狼刀、额外爪击和毒药，不保护白天。'), seats, locale);
-export const clawTool = (seats: Seat[], locale: string | undefined = 'zh-CN') => action('awakened_claw', gameText(locale, '使用一次额外爪击'), gameText(locale, '仅模仿狼人技能已启用、已继承刀权且一次性爪击尚在时可用。targetSeat 为存活玩家真实整数座位号，例：{"targetSeat":3}。消耗爪击；按狼刀结算，可被守护挡住，与普通刀分开提交。'), seats, locale);
+export const skipSkill = (locale: string | undefined = 'zh-CN') => action('awakened_skip_skill', gameText(locale, '本夜不用模仿技能'), gameText(locale, '本夜不发动模仿技能。无参数，填写 {}。'), undefined, locale);
+export const poisonTool = (seats: Seat[], locale: string | undefined = 'zh-CN') => action('awakened_poison', gameText(locale, '使用模仿毒药'), gameText(locale, '对 targetSeat 使用模仿毒药。填写目标座位号，例如 {"targetSeat":3}。'), seats, locale);
+export const guardTool = (seats: Seat[], locale: string | undefined = 'zh-CN') => action('awakened_guard', gameText(locale, '使用增强守护'), gameText(locale, '对 targetSeat 使用增强守护。填写目标座位号，例如 {"targetSeat":3}。'), seats, locale);
+export const clawTool = (seats: Seat[], locale: string | undefined = 'zh-CN') => action('awakened_claw', gameText(locale, '使用一次额外爪击'), gameText(locale, '对 targetSeat 使用额外爪击。填写目标座位号，例如 {"targetSeat":3}。'), seats, locale);
 
 export const copiedDefinition = (role: string): string => getRole(role).copiedAbility ?? 'none';
 const mirrorTargets = (ctx: Ctx, seat: Seat, instance: AbilityInstance) => ctx.alive().filter((s) => s !== seat && !abilityState(instance, 'mirror').checks.some((c) => c.target === s));

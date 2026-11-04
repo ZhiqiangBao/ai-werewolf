@@ -8,6 +8,11 @@ import { createRequire } from 'node:module';
 
 // Offline acceptance only: never starts a server, reserves budget, or reads user rooms/keys.
 const root = process.cwd();
+// This verifier records a historical audit against its original test sources.
+// Run it from the original revision after the test suite has been consolidated.
+if (!fs.existsSync(path.join(root, 'packages/session/test/passive-validator.test.ts'))) {
+  throw new Error('此历史验证依赖已精简的旧测试；请在历史提交中运行，不能用新流程冒充原审计。');
+}
 const name = process.argv[2] ?? 'p1-rework-20261103-final';
 assert.match(name, /^[a-z0-9-]+$/);
 const output = path.join(root, 'data', 'diagnostics', name);

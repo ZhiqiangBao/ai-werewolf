@@ -149,7 +149,7 @@ function hunterTool(seats: Seat[], locale: string | undefined = 'zh-CN'): ToolSp
   return {
     name: 'hunter_shoot',
     title: gameText(locale, "开枪"),
-    description: gameText(locale, "猎人符合本局开枪条件且法官允许时使用。target 是要带走的存活玩家，null 表示放弃开枪。开枪会公开猎人身份。不能射自己。例：{\"target\":3} 为带走3号，{\"target\":null} 为放弃。是否能发动由出局原因和本局规则决定，以法官询问为准。其他阶段不要调用。"),
+    description: gameText(locale, "开枪带走 target 指定的玩家，或传 null 放弃开枪。例：{\"target\":3}、{\"target\":null}。"),
     params: [seatParam('target', gameText(locale, "开枪目标"), seats, gameText(locale, "放弃开枪"))],
   };
 }

@@ -40,7 +40,7 @@
 | `pnpm start` | 启动生产服务，网页需先构建。 |
 | `pnpm typecheck` | 检查工作区 TypeScript 类型。 |
 | `pnpm test` | 运行 Vitest 测试。 |
-| `pnpm exec vitest run packages/engine/test/visibility.test.ts` | 按文件运行相关测试，路径按本次改动调整。 |
+| `pnpm exec vitest run packages/engine/test/core-workflows.test.ts` | 按文件运行相关测试，路径按本次改动调整。 |
 | `pnpm simulate standard12 night-001` | 使用指定种子运行引擎模拟，不调用真实模型。 |
 
 - 修改代码时运行相关测试及类型检查；修改网页时补做生产构建，并在可用时检查实际页面。

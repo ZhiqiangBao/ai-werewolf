@@ -26,9 +26,7 @@ export const mirrorMaiden: RoleModule = {
         if (!actors.length) return;
         ctx.ask({
           step, actors, tools: (seat) => [mirrorTool(inspectionTargets(ctx, seat), ctx.rules.locale)],
-          prompt: () => gameText(ctx.rules.locale, ctx.rules.roles.includes('awakened_wolf')
-            ? "请选择一名其他存活且从未查验过的玩家，查验其具体身份。模仿后的觉醒隐狼会显示模仿身份。"
-            : "请选择一名其他存活且从未查验过的玩家，查验其具体身份。"),
+          prompt: () => gameText(ctx.rules.locale, "请选择本夜查验目标。"),
           title: gameText(ctx.rules.locale, "第{0}夜 · 魔镜查验", ctx.state.day), publicStage: gameText(ctx.rules.locale, "夜晚"),
         });
       },

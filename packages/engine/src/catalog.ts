@@ -3,7 +3,6 @@ import type { Seat, ToolSpec } from '@werewolf/protocol';
 import { expandActionTools } from '@werewolf/protocol';
 import { seatParam, textParam } from './tools';
 import { getRole } from './registry';
-import { weightLabel } from './text';
 import type { GameState } from './types';
 import { getAbility } from './abilities';
 
@@ -16,8 +15,8 @@ export function seatTools(state: GameState, seat: Seat): ToolSpec[] {
   if (!player) return [];
   const seats = state.players.map((p) => p.seat);
   const v = state.rules.values;
-  const tools: ToolSpec[] = [speakTool(state.rules.locale), voteTool(seats, v['vote.allowAbstain'] === true, v['vote.allowSelf'] === true, Number(v['vote.normalWeight']), Number(v['vote.sheriffWeight']), state.rules.locale)];
-  if (v['sheriff.enabled'] === true) tools.push(...sheriffTools(seats, v['vote.allowAbstain'] === true, Number(v['vote.normalWeight']), state.rules.electionVersion === 3, state.rules.locale));
+  const tools: ToolSpec[] = [speakTool(state.rules.locale), voteTool(seats, v['vote.allowAbstain'] === true, state.rules.locale)];
+  if (v['sheriff.enabled'] === true) tools.push(...sheriffTools(seats, v['vote.allowAbstain'] === true, state.rules.electionVersion === 3, state.rules.locale));
   tools.push(...(getRole(player.role).tools?.({ seats, seat, rules: state.rules }) ?? []));
   for (const id of getRole(player.role).abilityCatalog ?? []) {
     for (const tool of getAbility(id).catalog?.({ seats, seat, rules: state.rules }) ?? []) {
@@ -35,53 +34,51 @@ function speakTool(locale: string | undefined = 'zh-CN'): ToolSpec {
     name: 'speak',
     title: gameText(locale, "发言"),
     description:
-      gameText(locale, "轮到你公开发言时使用：警上发言、白天发言、PK 发言或遗言。把要说的话写入 content，content 必须是非空字符串，内容会公开给所有人；例：{\"content\":\"我认为3号可疑。\"}。一次提交即结束本段发言。其他阶段不要调用。"),
+      gameText(locale, "公开发言并结束本段发言。content 为非空发言内容；例：{\"content\":\"我认为3号可疑。\"}。"),
     params: [textParam('content', gameText(locale, "发言内容"), 1, undefined)],
   };
 }
 
-function voteTool(seats: Seat[], abstain: boolean, self: boolean, normal: number, sheriff: number, locale: string | undefined = 'zh-CN'): ToolSpec {
+function voteTool(seats: Seat[], abstain: boolean, locale: string | undefined = 'zh-CN'): ToolSpec {
   return {
     name: 'vote',
     title: gameText(locale, "放逐投票"),
     description:
-      gameText(locale, "放逐投票或 PK 投票时使用。target 是要放逐的座位号。{0}{1}只能投存活玩家。普通票记 {2} 票，警长票记 {3} 票。PK 时只可投法官列出的 PK 目标。例：{\"target\":3}，表示投3号；以当前合法目标为准。其他阶段不要调用。", abstain ? gameText(locale, "传 null 表示弃票。") : gameText(locale, "本局不能弃票。"), self ? gameText(locale, "可以投自己。") : gameText(locale, "不能投自己。"), weightLabel(normal), weightLabel(sheriff)),
+      gameText(locale, "投票放逐目标。target 为目标座位号，{0}例：{\"target\":3}。", abstain ? gameText(locale, "null 表示弃票；") : gameText(locale, "请填写座位号；")),
     params: [seatParam('target', gameText(locale, "放逐目标"), seats, abstain ? gameText(locale, "弃票") : undefined)],
   };
 }
 
-function sheriffTools(seats: Seat[], abstain: boolean, normal: number, lateWithdrawal: boolean, locale: string | undefined = 'zh-CN'): ToolSpec[] {
+function sheriffTools(seats: Seat[], abstain: boolean, lateWithdrawal: boolean, locale: string | undefined = 'zh-CN'): ToolSpec[] {
   return [
     {
       name: 'sheriff_signup',
       title: gameText(locale, "上警"),
-      description: gameText(locale, "警长竞选报名时使用。run 为 true 表示上警，false 表示不上警。例：{\"run\":true}。run 必须是布尔值。全部提交后才公开。其他阶段不要调用。"),
+      description: gameText(locale, "提交警长竞选报名选择。run 为布尔值，true 表示上警，false 表示不上警；例：{\"run\":true}。"),
       params: [{ kind: 'boolean', name: 'run', label: gameText(locale, "是否上警"), trueLabel: gameText(locale, "上警"), falseLabel: gameText(locale, "不上警") }],
     },
     {
       name: 'sheriff_withdraw',
       title: gameText(locale, "退水"),
-      description: lateWithdrawal
-        ? gameText(locale, "退出警长竞选。轮到你的普通警上发言时，可同时在 content 填公开发言，或留空；例：{\"content\":\"我退水。\"}，本段发言随即结束。其他候选人普通警上发言期间及投票前退水确认阶段也可退水，此时不能附带发言，必须填 {\"content\":\"\"}；不会结束其他人的发言。仅法官本轮允许时可用，竞选 PK 和投票开始后不能退水。")
-        : gameText(locale, "仅轮到你的普通警上竞选发言时使用，表示退出警长竞选并结束本段发言。竞选 PK 不提供退水。content 是同时公开的话，必须是字符串，可为空；例：{\"content\":\"我退水。\"}。一次只交此工具，无需另调 speak。其他阶段不要调用。"),
+      description: gameText(locale, "退出警长竞选。content 填退水发言或空字符串；例：{\"content\":\"\"}。"),
       params: [textParam('content', gameText(locale, "退水时的发言（可留空）"), 0, undefined)],
     },
     ...(lateWithdrawal ? [{
       name: 'sheriff_stay', title: gameText(locale, "继续竞选"),
-      description: gameText(locale, "仅竞选发言结束后的退水确认阶段使用，确认保留候选资格；不能附带发言。没有参数，填写 {}。全部候选人确认后开始投票，已确认的选择不能修改。"),
+      description: gameText(locale, "确认继续参加警长竞选。无参数，填写 {}。"),
       params: [],
     }] : []),
     {
       name: 'sheriff_vote',
       title: gameText(locale, "警长投票"),
-      description: gameText(locale, "警长投票或警长 PK 投票时使用。target 是候选人座位号。{0}每人 {1} 票。只允许法官当前通知有投票权的玩家提交，目标以候选名单为准。例：{\"target\":3} 表示选3号当警长，不能用 vote 代替。其他阶段不要调用。", abstain ? gameText(locale, "传 null 表示弃票。") : gameText(locale, "本局不能弃票。"), weightLabel(normal)),
+      description: gameText(locale, "投票选择警长候选人。target 为候选人座位号，{0}例：{\"target\":3}。", abstain ? gameText(locale, "null 表示弃票；") : gameText(locale, "请填写座位号；")),
       params: [seatParam('target', gameText(locale, "投给"), seats, abstain ? gameText(locale, "弃票") : undefined)],
     },
     {
       name: 'set_speak_direction',
       title: gameText(locale, "选择发言方向"),
       description:
-        gameText(locale, "你是警长且法官要求选择白天发言方向时使用。clockwise 是顺时针（号码增大），counterclockwise 是逆时针（号码减小），到末座后循环。例：{\"direction\":\"clockwise\"}。只填枚举英文值，警长在最后发言，具体首位由法官排定。其他阶段不要调用。"),
+        gameText(locale, "选择发言方向。direction 填 clockwise（顺时针）或 counterclockwise（逆时针）；例：{\"direction\":\"clockwise\"}。"),
       params: [
         {
           kind: 'choice',
@@ -97,7 +94,7 @@ function sheriffTools(seats: Seat[], abstain: boolean, normal: number, lateWithd
     {
       name: 'badge_dispose',
       title: gameText(locale, "处理警徽"),
-      description: gameText(locale, "你是警长且已出局、法官要求处理警徽时使用。target 填最终选定接收者的真实座位号，必须存活且不能是自己；不分阵营。例：最终决定交给3号，就提交 {\"target\":3}（目标以当前可移交名单为准）；决定撕毁，就提交 {\"target\":null}。提交前核对 target 与本次最终决定一致。只执行参数中的目标，不按思考文字执行。其他阶段不要调用。"),
+      description: gameText(locale, "移交或撕毁警徽。target 为接收者座位号，null 表示撕毁；例：{\"target\":3} 或 {\"target\":null}。"),
       params: [seatParam('target', gameText(locale, "移交给"), seats, gameText(locale, "撕毁警徽"))],
     },
   ];

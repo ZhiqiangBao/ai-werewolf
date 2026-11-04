@@ -1,123 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { DEAL12, TestGame } from '../../engine/test/harness';
 import type { GameEvent } from '@werewolf/protocol';
-import type { RoomRecord } from '../src/store';
-import { buildPlayerVideo } from '../src/player-video';
-import { draftNarration } from '../../../scripts/video/narration';
-import { buildClips } from '../../../scripts/video/project';
-import { assertPlayerSources } from '../../../scripts/video/integrity';
-import { speakerIdentity } from '../../../scripts/video/speaker';
-import { replay } from '../../../scripts/video/replay';
-import { actionTargetLabel, clipSkillEffect, writeSkillFrames } from '../../../scripts/video/video-effect';
-import { mkdtemp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { clipSkillEffect, writeSkillFrames } from '../../../scripts/video/video-effect';
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { resolve, join } from 'node:path';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { resolve, join, dirname } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 
 describe('玩家视角视频权限', () => {
-  it('工作流在访问房间或调用配音前拒绝无效 ASR 配置', () => {
-    const result = spawnSync(process.execPath, ['--import', 'tsx', 'scripts/video/workflow.ts', '--room=missing', '--asr-provider=unknown'], { cwd: process.cwd(), encoding: 'utf8', windowsHide: true });
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain('Unsupported ASR provider');
-    expect(result.stdout).not.toContain('VIDEO_STAGE');
-  });
-  it('玩家视角不支持自动修复时在启动前拒绝，不改项目也不调用配音', async () => {
-    const root = process.cwd(), base = resolve(root, 'data', 'player-repair-guard-tests');
-    await mkdir(base, { recursive: true });
-    const directory = await mkdtemp(join(base, 'case-')), project = join(directory, 'project');
-    await mkdir(project); await writeFile(join(project, 'existing.txt'), '保留原有内容');
-    const marker = join(directory, 'tts-called.txt'), adapter = join(directory, 'adapter.mjs');
-    await writeFile(adapter, `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'called'); export async function synthesize() { throw Error('unexpected'); }`);
-    const result = spawnSync(process.execPath, ['--import', 'tsx', 'scripts/video/workflow.ts', '--room=missing', '--player-seat=5', '--repair-audio', '--resume', `--data-dir=${directory}`, `--project-dir=${project}`, '--tts-provider=guard-test', `--tts-adapter=${adapter}`], { cwd: root, encoding: 'utf8', windowsHide: true });
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain('Player view does not support --repair-audio');
-    expect(result.stdout).not.toContain('VIDEO_STAGE');
-    expect(await readdir(project)).toEqual(['existing.txt']);
-    expect(await readFile(join(project, 'existing.txt'), 'utf8')).toBe('保留原有内容');
-    expect(existsSync(marker)).toBe(false);
-    expect(existsSync(join(directory, 'exports'))).toBe(false);
-  });
-  it('只包含本人受众、公开事实和本人身份；终局不导入全知复盘', () => {
-    const game = new TestGame({ deal: DEAL12, values: { 'sheriff.enabled': false } });
-    game.night({ kill: null, inspect: 1 });
-    const state = structuredClone(game.state);
-    state.result = { winner: 'good', winnerName: '好人', reason: '结束' };
-    const event = (seq: number, type: string, text: string, audience: GameEvent['audience'], payload: Record<string, unknown> = {}): GameEvent => ({ seq, type, text, audience, payload, day: 1, phase: 'end' });
-    const secret = 'SECRET_OTHER_SEAT', review = 'SECRET_OMNISCIENT_REVIEW';
-    const events = [...game.events, event(900, 'speech', '公开发言', 'public', { seat: 2, content: '公开发言' }), event(901, 'witch.poison', secret, [10], { target: 1 }), event(902, 'review', review, 'public', { roles: state.players }), event(903, 'game.end', '结束', 'public', { result: state.result }), event(904, 'guard.protect', '历史共享守护记录', [5, 10], { target: 1 })];
-    const record = { state, events, status: 'ended', paused: false, seats: state.players.map((p) => ({ seat: p.seat, name: p.name, controller: 'ai' })) } as unknown as RoomRecord;
-    const script = buildPlayerVideo(record, state.id, 5);
-    const serialized = JSON.stringify(script);
-    expect(serialized).not.toContain(secret);
-    expect(serialized).not.toContain(review);
-    expect(script.ruleCard).toBeUndefined();
-    expect(script.cast.filter((c) => c.role !== 'unknown').map((c) => c.seat)).toEqual([5]);
-    expect(script.events.every((e) => e.audience === 'public' || JSON.stringify(e.audience) === '[5]')).toBe(true);
-    expect(script.chapters.flatMap((c) => c.entries).some((e) => e.text === '公开发言')).toBe(true);
-    expect(script.chapters.flatMap((c) => c.entries).find((e) => e.type === 'guard.protect')?.text).toBe('历史共享守护记录');
-    expect(Object.keys(draftNarration(script).edits)).toHaveLength(0);
-    const clips = buildClips(script);
-    expect(() => assertPlayerSources(script, script, clips)).not.toThrow();
-    expect(speakerIdentity(script, { seat: 2, voiceKey: 'seat-2', type: 'speech', data: {} }).title).not.toContain(state.players[1].role);
-    expect(() => buildPlayerVideo(record, state.id, 99)).toThrow();
-  });
-  it('样片源稿不能替换身份或插入未授权片段，夜间死亡不显示未知死因', () => {
-    const game = new TestGame({ deal: DEAL12 });
-    const state = structuredClone(game.state);
-    state.result = { winner: 'good', winnerName: '好人', reason: '结束' };
-    const events: GameEvent[] = [
-      { seq: 1, type: 'dawn', text: '昨夜5号出局', audience: 'public', payload: { deaths: [5] }, day: 1, phase: 'day' },
-      { seq: 2, type: 'night.resolution', text: '毒杀', audience: [], payload: { deaths: [{ seat: 5, causes: ['poison', 'wolf'] }] }, day: 1, phase: 'night' },
-      { seq: 3, type: 'game.end', text: '结束', audience: 'public', payload: { result: state.result }, day: 1, phase: 'end' },
-    ];
-    const record = { state, events, status: 'ended', paused: false, seats: state.players.map((p) => ({ seat: p.seat, name: p.name, controller: 'ai' })) } as unknown as RoomRecord;
-    const script = buildPlayerVideo(record, state.id, 5);
-    expect(replay(script, 999).deaths.get(5)).toEqual(['night']);
-    expect(JSON.stringify(script)).not.toMatch(/poison|毒杀/);
-    const clips = buildClips(script);
-    expect(() => assertPlayerSources(script, { ...script, sample: true }, clips.slice(0, 1))).not.toThrow();
-    expect(() => assertPlayerSources(script, { ...script, sample: true }, [{ ...clips[0], text: '伪造的秘密' }])).toThrow();
-    const altered = structuredClone(script); altered.cast[0].role = 'werewolf';
-    expect(() => assertPlayerSources(script, altered, clips)).toThrow();
-    expect(actionTargetLabel('hunter.shot')).toBe('开枪目标');
-    expect(actionTargetLabel('wolf.kill.result')).toBe('狼刀目标');
-    expect(actionTargetLabel('mirror.result')).toBe('查验目标');
-    expect(actionTargetLabel('awakened.knife')).toBe('狼刀目标');
-    expect(actionTargetLabel('unrelated.target')).toBeUndefined();
-  });
-  it('已出局玩家没有后续模型上下文时仍保留之后公开事实直到终局', () => {
-    const game = new TestGame({ deal: DEAL12 });
-    const state = structuredClone(game.state), dead = state.players.find((p) => p.role === 'villager')!.seat;
-    const other = state.players.find((p) => p.role === 'villager' && p.seat !== dead)!.seat;
-    const seer = state.players.find((p) => p.role === 'seer')!.seat;
-    state.players.find((p) => p.seat === dead)!.alive = false;
-    state.result = { winner: 'good', winnerName: '好人', reason: '对局结束' };
-    const event = (seq: number, type: string, text: string, audience: GameEvent['audience'], payload: Record<string, unknown>, day: number, phase: GameEvent['phase']): GameEvent => ({ seq, type, text, audience, payload, day, phase });
-    const speech = '后续公开发言，继续讨论票型。';
-    const events = [
-      event(1, 'dawn', `${dead}号昨夜出局。`, 'public', { deaths: [dead] }, 2, 'day'),
-      event(2, 'speech', speech, 'public', { seat: other, content: speech }, 2, 'day'),
-      event(3, 'vote.result', '放逐投票结果。', 'public', { kind: 'exile', rows: [{ target: 1, weight: 2, voters: [other] }], outcome: 'exile', seat: 1 }, 2, 'day'),
-      event(4, 'seer.result', 'OTHER_SEAT_PRIVATE_CHECK', [seer], { target: 2, result: 'wolf' }, 3, 'night'),
-      event(5, 'game.end', '好人获胜。', 'public', { result: state.result }, 3, 'end'),
-      event(6, 'review', 'OMNISCIENT_REVIEW', 'public', { roles: state.players }, 3, 'end'),
-    ];
-    const record = { state, events, status: 'ended', paused: false, seats: state.players.map((p) => ({ seat: p.seat, name: p.name, controller: 'ai' })) } as unknown as RoomRecord;
-    expect(record.state!.players.find((p) => p.seat === dead)?.alive).toBe(false);
-    expect(record.threads).toBeUndefined(); expect(record.thoughts).toBeUndefined();
-    const script = buildPlayerVideo(record, state.id, dead), entries = script.chapters.flatMap((chapter) => chapter.entries);
-    expect(script.events.map((e) => e.type)).toEqual(['dawn', 'speech', 'vote.result', 'game.end']);
-    expect(entries.find((e) => e.type === 'speech')).toMatchObject({ seat: other, text: speech });
-    expect(entries.some((e) => e.type === 'vote.result')).toBe(true);
-    expect(entries.at(-1)).toMatchObject({ type: 'game.end', text: '好人获胜。' });
-    expect(entries.some((e) => e.seat === dead)).toBe(false);
-    expect(JSON.stringify(script)).not.toMatch(/OTHER_SEAT_PRIVATE_CHECK|OMNISCIENT_REVIEW|thinking|thought/);
-  });
   it('合成局贯通导出、材料、字幕、音频元数据及逐帧动画，缓存篡改会被拒绝', async () => {
     const root = process.cwd();
     const base = resolve(root, 'data', 'player-video-tests'); await mkdir(base, { recursive: true });
     const data = await mkdtemp(join(base, 'case-'));
+    try {
     const game = new TestGame({ deal: DEAL12 });
     const state = structuredClone(game.state); state.result = { winner: 'good', winnerName: '好人', reason: '游戏结束' };
     const own = state.players.find((p) => p.role === 'seer')!.seat;
@@ -217,5 +113,10 @@ describe('玩家视角视频权限', () => {
     const forged = JSON.parse(await readFile(exportFile, 'utf8')); forged.cast[0].role = 'werewolf';
     await writeFile(exportFile, JSON.stringify(forged));
     expect(() => run('scripts/video/preview.ts', [], env)).toThrow();
+    } finally {
+      const target = await realpath(data), expectedBase = await realpath(base);
+      if (dirname(target) !== expectedBase) throw new Error('测试目录不在预期位置');
+      await rm(target, { recursive: true, force: true });
+    }
   }, 180000);
 });
