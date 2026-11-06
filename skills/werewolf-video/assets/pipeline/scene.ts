@@ -35,7 +35,7 @@ const paths: Record<string, string> = {
   gavel: 'm4 9 8-7 6 7-8 7-6-7Z M11 13l10 11 M2 23h11 M4 20h7',
   sparkle: 'M13 2 16 10 24 13 16 16 13 24 10 16 2 13 10 10 13 2Z',
 };
-export const sceneVersion = 'moon-village-video-v10-localized-labels';
+export const sceneVersion = 'moon-village-video-v11-no-public-room-id';
 export async function createSceneRenderer(script: Script, options?: { theme?: string; viewLabel?: string; hideAudioPill?: boolean }) {
   const locale = videoLocale(script.locale), t = (key: string, ...values: unknown[]) => videoText(locale, key, ...values);
   const art = resolve('apps/web/public/art/moon-village');
@@ -189,7 +189,6 @@ export async function createSceneRenderer(script: Script, options?: { theme?: st
     round(1456, 866, 408, 35, 12, ui.chip); text(script.perspective === 'player' ? t('存活 {0} 人', state.alive.size) : t('存活 {0} 人     狼人 {1}     好人 {2}', state.alive.size, aliveWolves, state.alive.size - aliveWolves), 1660, 883, 17, ui.muted, false, 'center', 396);
     speakerPanel(clip, state);
     // Timestamped subtitles are burned in this empty strip by the encoder.
-    text(t('对局 {0}  ·  {1}人物', script.roomId, t(themes[theme])), 30, 1071, 12, '#c7d7d6');
     text(t(script.sample ? 'AI 配音 · 画面修改样品' : 'AI 配音 · 对局实录'), 1888, 1071, 12, '#c7d7d6', false, 'right');
     return canvas.encode('jpeg', 94);
   };
