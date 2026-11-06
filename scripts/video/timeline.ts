@@ -10,6 +10,7 @@ import { existsSync } from 'node:fs';
 import { assertAuthorizedProject } from './integrity';
 import { assertPlayerRawAudio } from './player-audio-provenance';
 import { assertPreviousAlignment, effectiveAudioAlignment, type AlignmentSummary } from './audio-alignment';
+import { englishCaptionGroups } from './english-captions';
 
 export const captionContent = (text: string) => text.replace(/[\s\p{P}\p{S}]/gu, '');
 const symbolReadings: Record<string, string> = { '+': '加', '≥': '大于等于', '≤': '小于等于', '>': '大于', '<': '小于', '=': '等于' };
@@ -36,7 +37,8 @@ function numberReading(raw: string, language: 'en' | 'ja'): string | undefined {
 function normalizedSpans(text: string, language: 'en' | 'ja') {
   const chars = [...text], normalized: string[] = [], spans: SourceSpan[] = [];
   for (let i = 0; i < chars.length;) {
-    if ((chars[i] === '-' || chars[i] === '−') && /^[0-9]$/.test(chars[i + 1] ?? '')) {
+    const dayNightConnector = language === 'en' && chars[i] === '-' && /(?:^|[^a-z])(?:day|night)$/i.test(chars.slice(0, i).join(''));
+    if ((chars[i] === '-' || chars[i] === '−') && !dayNightConnector && /^[0-9]$/.test(chars[i + 1] ?? '')) {
       for (const char of language === 'en' ? 'minus' : '負') { normalized.push(char); spans.push({ start: i, end: i + 1, numeric: true }); }
       i++; continue;
     }
@@ -143,11 +145,14 @@ export function sourceCaptionWords(meta: AudioMeta, locale = 'zh-CN') {
 }
 
 export function captionsFromWords(meta: AudioMeta, duration: number, locale = 'zh-CN') {
-  const words = sourceCaptionWords(meta, locale);
+  const sourceWords = sourceCaptionWords(meta, locale);
+  const words = new Intl.Locale(locale).language === 'en' ? englishCaptionGroups(sourceWords) : sourceWords;
   const captions: { text: string; start: number; end: number }[] = [];
   let text = '', start = 0, end = 0;
   const flush = () => { if (text.trim()) captions.push({ text, start, end: Math.min(duration, end + .12) }); text = ''; };
-  for (const w of words) {
+  if (new Intl.Locale(locale).language === 'en') {
+    for (const w of words) captions.push({ text: w.text, start: Math.max(0, w.begin_time / 1000 - .06), end: Math.min(duration, w.end_time / 1000 + .12) });
+  } else for (const w of words) {
     const leading = w.text.match(/^[，。！？；、,.!?;：:]+/)?.[0] ?? '';
     if (text && (text.length >= 23 || (leading && text.length >= 9) || w.begin_time / 1000 - end > .55)) {
       text += leading; flush();

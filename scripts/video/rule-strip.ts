@@ -13,7 +13,16 @@ export async function createRuleStrip(script: Script, phase: 'day' | 'night') {
   const measure = createCanvas(width, 1).getContext('2d'); measure.font = '22px GameCN';
   const cards = allRoleRules(script).map((card) => {
     const lines: string[] = []; let line = '';
-    for (const char of card.text) {
+    const english = new Intl.Locale(script.locale ?? 'zh-CN').language === 'en';
+    if (english) {
+      for (const paragraph of card.text.split('\n')) {
+        for (const word of paragraph.match(/\S+\s*/g) ?? []) {
+          if (line && measure.measureText(line + word.trimEnd()).width > 360) { lines.push(line.trimEnd()); line = ''; }
+          line += word;
+        }
+        if (line) lines.push(line.trimEnd()); line = '';
+      }
+    } else for (const char of card.text) {
       if (char === '\n' || (line && measure.measureText(line + char).width > 360 && !'，。！？；：、）》」'.includes(char))) {
         lines.push(line); line = char === '\n' ? '' : char;
       } else line += char;

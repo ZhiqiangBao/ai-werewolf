@@ -15,7 +15,10 @@ export function allRoleRules(script: Script, locale = videoLocale(script.locale)
     const role = getRole(id), count = script.cast.filter((c) => c.role === id).length;
     const sourceName = script.cast.find((c) => c.role === id)?.roleName ?? role.name;
     const actual = find(sourceName) || find(role.name) || (id === 'werewolf' ? find('普通狼人') || find('Ordinary Werewolves') || find('通常人狼') : '');
-    return { title: script.perspective === 'player' ? videoRole(locale, id, sourceName) : videoText(locale, '{0} · {1}人', videoRole(locale, id, sourceName), count), text: actual || videoText(locale, '默认身份简介（zh-CN）：') + role.summary, role: id };
+    const title = script.perspective === 'player' ? videoRole(locale, id, sourceName)
+      : new Intl.Locale(locale).language === 'en' ? `${videoRole(locale, id, sourceName)} · ${count} ${count === 1 ? 'player' : 'players'}`
+        : videoText(locale, '{0} · {1}人', videoRole(locale, id, sourceName), count);
+    return { title, text: actual || videoText(locale, '默认身份简介（zh-CN）：') + role.summary, role: id };
   });
   const badge = find('警徽') || find('Badge');
   if (badge) cards.push({ title: videoText(locale, '警徽与警长'), text: badge, role: 'sheriff' });

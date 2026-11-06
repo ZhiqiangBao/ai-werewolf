@@ -13,7 +13,7 @@ export const ffprobe = process.env.FFPROBE_PATH || 'ffprobe';
 export interface Cast { seat: number; name: string; role: string; roleName: string; factionName: string; voiceKey: string }
 export interface Fact { sourceSeq: number; day: number; phase: string; type: string; audience: 'public' | number[]; spoken: boolean; text: string; data: Record<string, any> }
 export interface Entry { sourceSeq: number; type: string; speaker: string; voiceKey: string; seat?: number; text: string; visibility: string; data: Record<string, any> }
-export interface Script { locale?: string; roomId: string; perspective: string; playerSeat?: number; presetName: string; status: string; ruleCard?: string; sample?: boolean; cast: Cast[]; events: Fact[]; chapters: { day: number; phase: string; title: string; entries: Entry[] }[]; result: any }
+export interface Script { englishPossessiveClips?: string[]; speechParts?: Record<string, string[]>; locale?: string; roomId: string; perspective: string; playerSeat?: number; presetName: string; status: string; ruleCard?: string; sample?: boolean; cast: Cast[]; events: Fact[]; chapters: { day: number; phase: string; title: string; entries: Entry[] }[]; result: any }
 export interface Clip extends Entry { id: string; day: number; phase: string; chapter: string; part: number; parts: number; spokenText: string; audioFile: string }
 export interface TimedClip extends Clip { frames: number; startFrame: number; audioDuration: number; audioMeta: AudioMeta; captions: { text: string; start: number; end: number }[]; envelope: number[]; normalizedAudioSha256?: string; captionAlignment?: import('./audio-alignment').AlignmentSummary }
 export async function loadScript(): Promise<Script> {
@@ -33,6 +33,7 @@ export interface VoiceCatalog {
   profiles: Record<string, VoiceProfile>;
   judgeCues?: Record<string, { instruction?: string; rate?: number }>;
   clipSeeds?: Record<string, number>;
+  clipInstructions?: Record<string, string>;
 }
 // 仅精确匹配随旧版发布的默认指令；用户编辑过的文字始终原样保留。
 const legacyVoiceInstructions: Readonly<Record<string, string>> = {
@@ -58,15 +59,17 @@ export function clipVoiceProfile(voices: VoiceCatalog, clip: Pick<Clip, 'voiceKe
   const cue = clip.voiceKey === 'judge' && clip.data.presentationOnly ? voices.judgeCues?.[clip.data.presentationKey] : undefined;
   if (cue?.instruction !== undefined && (typeof cue.instruction !== 'string' || !cue.instruction.trim())) throw Error('Invalid judge cue instruction');
   if (cue?.rate !== undefined && (!Number.isFinite(cue.rate) || cue.rate <= 0)) throw Error('Invalid judge cue rate');
+  const clipInstruction = clip.id ? voices.clipInstructions?.[clip.id] : undefined;
+  if (clipInstruction !== undefined && (typeof clipInstruction !== 'string' || !clipInstruction.trim())) throw Error('Invalid clip instruction');
   const seed = clip.id ? voices.clipSeeds?.[clip.id] : undefined;
   if (seed !== undefined && (!Number.isInteger(seed) || seed < 0 || seed > 2147483647)) throw Error('Invalid clip synthesis seed');
-  if (!cue && seed === undefined && sourceLocale === undefined) return profile;
-  let instruction = cue?.instruction ?? profile.instruction;
+  if (!cue && seed === undefined && clipInstruction === undefined && sourceLocale === undefined) return profile;
+  let instruction = clipInstruction ?? cue?.instruction ?? profile.instruction;
   if (sourceLocale !== undefined) {
     let language: string;
     try { language = new Intl.Locale(sourceLocale).language; } catch { throw Error(`Invalid source language: ${sourceLocale}`); }
     if ((language === 'en' || language === 'ja') &&
-        (cue?.instruction ? cue.instruction === legacySeerCue : instruction === legacyVoiceInstructions[clip.voiceKey])) {
+        clipInstruction === undefined && (cue?.instruction ? cue.instruction === legacySeerCue : instruction === legacyVoiceInstructions[clip.voiceKey])) {
       instruction = language === 'en'
         ? 'Speak naturally and clearly in English. Preserve the provided text exactly; do not add words.'
         : '';
@@ -88,8 +91,22 @@ function chineseNumber(n: string): string {
   const integer = v < 10 ? digits[v] : v < 20 ? '十' + (v % 10 ? digits[v % 10] : '') : v < 100 ? digits[Math.floor(v / 10)] + '十' + (v % 10 ? digits[v % 10] : '') : whole;
   return integer + (decimal ? '点' + [...decimal].map((c) => digits[Number(c)]).join('') : '');
 }
-export function spokenText(text: string, locale = 'zh-CN') {
-  if (new Intl.Locale(locale).language !== 'zh') return text;
+const englishSmall = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+const englishTens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+function englishPossessives(text: string) {
+  return text.replace(/(?<![\p{L}\p{N}])(?:0|[1-9][0-9]?)[’']s\b/gu, (token) => {
+    const n = Number(token.slice(0, -2));
+    const word = n < 20 ? englishSmall[n] : englishTens[Math.floor(n / 10)] + (n % 10 ? '-' + englishSmall[n % 10] : '');
+    return word + "'s";
+  }).replace(/\b([a-z]+s)[’'](?![a-z])/gi, '$1');
+}
+export function spokenText(text: string, locale = 'zh-CN', expandEnglishPossessives = false) {
+  const language = new Intl.Locale(locale).language;
+  if (language === 'en') {
+    const normalized = text.replace(/\bSeer\s*\/\s*Hunter\b/gi, 'Seer or Hunter').replace(/\s*(?:->|→)\s*/g, ' to ').replace(/(\d)\s*–\s*(?=\d)/g, '$1 to ');
+    return expandEnglishPossessives ? englishPossessives(normalized) : normalized;
+  }
+  if (language !== 'zh') return text;
   return text.replace(/【([^】]+)】/g, '$1。').replace(/→/g, '投给').replace(/\d+(?:\.\d+)?/g, chineseNumber).replace(/\n+/g, '。').replace(/。{2,}/g, '。');
 }
 export function splitSpeech(text: string, limit = 230, locale = 'zh-CN'): string[] {
@@ -125,10 +142,33 @@ export function splitSpeech(text: string, limit = 230, locale = 'zh-CN'): string
   if (out.join('').replace(/\s/g, '') !== text.replace(/\s/g, '')) throw Error('Speech splitting changed source text');
   return out;
 }
+/** Validate mechanical splits against original player entries without changing their text. */
+export function validateSpeechParts(script: Script, parts: unknown): asserts parts is Record<string, string[]> {
+  if (script.perspective !== 'god') throw Error('Speech parts require god view');
+  if (!parts || typeof parts !== 'object' || Array.isArray(parts)) throw Error('Invalid speech parts');
+  for (const [seq, segments] of Object.entries(parts)) {
+    const matches = script.chapters.flatMap((chapter) => chapter.entries).filter((entry) => String(entry.sourceSeq) === seq && entry.seat !== undefined && !entry.data.presentationOnly);
+    if (matches.length !== 1) throw Error(`Invalid player speech anchor ${seq}`);
+    if (!Array.isArray(segments) || !segments.length || segments.some((segment) => typeof segment !== 'string' || !segment.trim() || [...segment].length > 600)) throw Error(`Invalid speech parts for ${seq}`);
+    if (segments.join('').replace(/\s/gu, '') !== matches[0].text.replace(/\s/gu, '')) throw Error(`Speech parts differ from original speech ${seq}`);
+  }
+}
+/** Only explicit original player clips with a supported possessive may opt in. */
+export function validateEnglishPossessiveClips(script: Script, ids: unknown): asserts ids is string[] {
+  if (script.perspective !== 'god' || new Intl.Locale(script.locale ?? 'zh-CN').language !== 'en') throw Error('English possessive clips require English god view');
+  if (!Array.isArray(ids) || ids.some((id) => typeof id !== 'string') || new Set(ids).size !== ids.length) throw Error('Invalid English possessive clip IDs');
+  const clips = buildClips({ ...script, englishPossessiveClips: undefined });
+  for (const id of ids) {
+    const matches = clips.filter((clip) => clip.id === id && clip.seat !== undefined && !clip.data.presentationOnly);
+    if (matches.length !== 1 || spokenText(matches[0].text, 'en', true) === spokenText(matches[0].text, 'en')) throw Error(`Invalid English possessive clip ${id}`);
+  }
+}
 export function buildClips(script: Script): Clip[] {
+  if (script.speechParts !== undefined) validateSpeechParts(script, script.speechParts);
+  if (script.englishPossessiveClips !== undefined) validateEnglishPossessiveClips(script, script.englishPossessiveClips);
   return script.chapters.flatMap((c) => c.entries.flatMap((e) => {
-    const chunks = splitSpeech(e.text, 230, script.locale ?? 'zh-CN');
+    const chunks = e.seat !== undefined && !e.data.presentationOnly ? script.speechParts?.[String(e.sourceSeq)] ?? splitSpeech(e.text, 230, script.locale ?? 'zh-CN') : splitSpeech(e.text, 230, script.locale ?? 'zh-CN');
     return chunks.map((text, i) => ({ ...e, text, day: c.day, phase: c.phase, chapter: c.title, part: i + 1, parts: chunks.length,
-      id: `${String(e.sourceSeq).padStart(3, '0')}${e.data.presentationKey ? `-${e.data.presentationKey}` : ''}-${i + 1}`, spokenText: spokenText(text, script.locale ?? 'zh-CN'), audioFile: join(projectDir, 'audio', `${String(e.sourceSeq).padStart(3, '0')}${e.data.presentationKey ? `-${e.data.presentationKey}` : ''}-${i + 1}.wav`) }));
+      id: `${String(e.sourceSeq).padStart(3, '0')}${e.data.presentationKey ? `-${e.data.presentationKey}` : ''}-${i + 1}`, spokenText: spokenText(text, script.locale ?? 'zh-CN', script.englishPossessiveClips?.includes(`${String(e.sourceSeq).padStart(3, '0')}${e.data.presentationKey ? `-${e.data.presentationKey}` : ''}-${i + 1}`) ?? false), audioFile: join(projectDir, 'audio', `${String(e.sourceSeq).padStart(3, '0')}${e.data.presentationKey ? `-${e.data.presentationKey}` : ''}-${i + 1}.wav`) }));
   }));
 }

@@ -49,12 +49,16 @@ node node_modules/tsx/dist/cli.mjs scripts/video/synthesize.ts
 Qwen Token Plan 特例：
 
 - 保留 `qwen-token-plan` 路由和现有 Token Plan 端点；凭据优先从 `WEREWOLF_TTS_API_KEY` 读取，其次只读项目加密的 `data/models.json`。不再运行时读取 Qwen Code 全局 settings；旧安装先执行项目的 `models:migrate` 显式迁移，保留原主密钥。密钥明文不落入脚本、产物或日志。
-- 当前内置模型为 `qwen-audio-3.0-tts-plus`。使用 `input.instruction`、`word_timestamp_enabled: true` 和 SSE；语音、时间戳与结束事件都完成后才写成功缓存。
+- 完整片旧版内置默认模型为 `qwen-audio-3.0-tts-plus`，不代表新配音偏好或当前服务能力。新配音优先考虑 `qwen-audio-3.1-tts-flash` 并显式配置、确认模型与音色兼容；已完成且绑定正确的 Plus 原音继续复用，不跨模型盲用 voice ID。使用 `input.instruction`、`word_timestamp_enabled: true` 和 SSE；语音、时间戳与结束事件都完成后才写成功缓存。
 - SSE 事件按空行分块；同一事件可能有多行 JSON。最终 WAV 可能带流式长度头，应按真实 PCM 字节数重写规范头。
 - 下载服务返回的音频 URL 时，不向存储域名转发服务商 API Key，不打印带签名 URL。
 - 鉴权、额度、限流或外发审批失败应保留检查点。换标准按量密钥、端点或服务商属于另外的选择，不能自动回退。
 
 接口变化时核对 [Qwen HTTP API](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-audio-tts/http-api) 和 [Token Plan 多模态接入](https://platform.qianwenai.com/docs/token-plan/best-practices/multimodal-generation)。
+
+本机已归档的资料入口在仓库 `data/reference-library/qwen-audio/00-打开资料库.html`；`manifest.json` 记录来源和抓取日期。agent 先查看对应模型的文本控制、音色与时间戳资料，目录缺失或接口行为与归档不符时再查上面的官方来源。归档不是新版本能力保证。
+
+编辑版旁白程序的 `dashscope` 路由沿用本项目已验证的标准付费端点 `https://maas.qianwenaiapi.com/api/v1/services/audio/tts/SpeechSynthesizer`，从 `DASHSCOPE_API_KEY` 读取凭据；`token-plan` 使用既有 Token Plan 端点。此配置名称不代表可自动改用其他 DashScope 域名。完整片其他服务仍通过下面的显式适配器接入。
 
 ## 使用其他 TTS 时，具体改哪些文件
 
@@ -164,3 +168,7 @@ node node_modules/tsx/dist/cli.mjs scripts/video/synthesize.ts --prepared-clips
 5. 继续运行 `video:timeline`、小段画面渲染和视频检查，确认人物声音与字幕在最终成片仍同步。
 
 服务不提供时间戳时，先对**最终音频和对应朗读文本**做真实强制对齐，再填统一元数据；可以复用已经生成的音频。只有句级时间戳就使用真实句级字幕，若制作程序要求更细粒度则补实际对齐。音频长度、字数、估算语速和“每字平均分配”都不能冒充时间戳；本项目 `timeline.ts` 会拒绝缺失字词时间戳的正式时间轴。
+
+## 按需查询 Qwen 资料
+
+项目本机如有资料库，打开 仓库根目录下 `data/reference-library/qwen-audio/00-打开资料库.html`，结合同目录 `01-使用说明.txt` 和 manifest 按模型、端点或音色检索所需条目；资料记录获取于 2026-11-04。资料库不存在或内容可能过期时查上方官方接口文档；价格、模型能力和兼容音色以实际服务当前官方信息为准。不要把 API 手册整库复制到技能。编辑版旁白 job、情绪标签、端点选择及缓存见[编辑版制作](edited-video.md)。

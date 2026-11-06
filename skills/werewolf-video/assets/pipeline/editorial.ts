@@ -1,19 +1,21 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { projectDir, type Script } from './project';
+import { projectDir, validateSpeechParts, validateEnglishPossessiveClips, type Script } from './project';
 import { completeHosting } from './hosting';
 import type { NarrationEdit } from './narration';
 export async function editScript(source: Script): Promise<Script> {
   const file = process.env.VIDEO_NARRATION_FILE || (existsSync(`${projectDir}/narration.json`) ? `${projectDir}/narration.json` : `scripts/video/narration-${source.roomId}.json`);
   if (!existsSync(file)) return source.perspective === 'player' ? source : completeHosting(source, source);
-  const editorial = JSON.parse(await readFile(file, 'utf8')) as { roomId: string; edits: Record<string, NarrationEdit> };
+  const editorial = JSON.parse(await readFile(file, 'utf8')) as { roomId: string; edits: Record<string, NarrationEdit>; speechParts?: unknown; englishPossessiveClips?: unknown };
   if (editorial.roomId !== source.roomId) throw Error('Narration and match do not match');
   if (source.perspective === 'player') {
-    if ((editorial as { playerSeat?: number }).playerSeat !== source.playerSeat || Object.keys(editorial.edits).length) throw Error('Player view does not accept editorial narration');
+    if ((editorial as { playerSeat?: number }).playerSeat !== source.playerSeat || Object.keys(editorial.edits).length || editorial.speechParts !== undefined || editorial.englishPossessiveClips !== undefined) throw Error('Player view does not accept editorial narration');
     return source;
   }
+  if (editorial.speechParts !== undefined) validateSpeechParts(source, editorial.speechParts);
+  if (editorial.englishPossessiveClips !== undefined) validateEnglishPossessiveClips({ ...source, ...(editorial.speechParts === undefined ? {} : { speechParts: editorial.speechParts }) }, editorial.englishPossessiveClips);
   const used = new Set<string>();
-  const script: Script = { ...source, chapters: source.chapters.map((c) => ({ ...c, entries: c.entries.flatMap((e) => {
+  const script: Script = { ...source, ...(editorial.englishPossessiveClips === undefined ? {} : { englishPossessiveClips: editorial.englishPossessiveClips }), ...(editorial.speechParts === undefined ? {} : { speechParts: editorial.speechParts }), chapters: source.chapters.map((c) => ({ ...c, entries: c.entries.flatMap((e) => {
     const edit = editorial.edits[e.sourceSeq];
     if (!edit) return [e];
     if (e.seat !== undefined) throw Error('Editorial must not change player speech');

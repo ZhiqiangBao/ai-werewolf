@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { SecretBox } from '../../packages/session/src/secret';
-
-const validEnvName = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
+function validEnvName(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
+}
 
 /** 仅从项目加密模型库读取 Qwen Token Plan 凭据，不触碰用户全局 settings。 */
 export function projectQwenTokenPlanKey(): string | undefined {

@@ -85,19 +85,26 @@ export function createAudioAlignment(input: AudioAlignmentInput): ExternalAlignm
   const source = captionSpans(meta.text, input.locale), sourceChars = [...meta.text];
   assert(mapped.join('') === source.normalized && units.length === source.spans.length, 'ASR word alignment differs from the source');
   const used = new Set(rawUnits.flatMap((span) => Array.from({ length: span.last - span.first + 1 }, (_, i) => span.first + i)));
-  assert(used.size === words.length, 'An ASR word has no alignable content');
+  const hasContent = words.map((word) => Boolean(normalizedCaptionText(word.text + (word.punctuation ?? ''), input.locale)));
+  assert(words.every((_, index) => used.has(index) || !hasContent[index]), 'An ASR word has no alignable content');
   const result: Word[] = []; let at = 0, sourceOffset = 0, lastWord = -1;
   while (at < units.length) {
     let end = at + 1, first = units[at].first, last = units[at].last, sourceEnd = source.spans[at].end;
     while (end < units.length && (units[end].first <= last || source.spans[end].start < sourceEnd)) {
       last = Math.max(last, units[end].last); sourceEnd = Math.max(sourceEnd, source.spans[end].end); end++;
     }
-    assert(first === lastWord + 1 && last >= first, 'ASR word boundaries overlap or skip a word');
-    for (let i = first + 1; i <= last; i++) assert(words[i].begin_time - words[i - 1].end_time <= 1000, 'Unreliable timestamp gap inside an aligned source span');
+    assert(first > lastWord && last >= first && words.slice(lastWord + 1, first).every((_, i) => !hasContent[lastWord + 1 + i]), 'ASR word boundaries overlap or skip a word');
+    let previousContent = first;
+    for (let i = first + 1; i <= last; i++) {
+      if (hasContent[i]) {
+        assert(words[i].begin_time - words[previousContent].end_time <= 1000, 'Unreliable timestamp gap inside an aligned source span');
+        previousContent = i;
+      }
+    }
     result.push({ text: sourceChars.slice(sourceOffset, sourceEnd).join(''), begin_time: words[first].begin_time, end_time: words[last].end_time });
     lastWord = last; sourceOffset = sourceEnd; at = end;
   }
-  assert(result.length && lastWord === words.length - 1, 'Not all ASR words were consumed');
+  assert(result.length && words.slice(lastWord + 1).every((_, i) => !hasContent[lastWord + 1 + i]), 'Not all ASR words were consumed');
   result.at(-1)!.text += sourceChars.slice(sourceOffset).join('');
   assert(result.map((word) => word.text).join('') === meta.text, 'Alignment changed the original text');
   return { format: 'werewolf-external-transcript-alignment', version: 1, method: 'external-transcript', engine: response.model,

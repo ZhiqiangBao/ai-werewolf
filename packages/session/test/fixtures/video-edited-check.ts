@@ -1,0 +1,54 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { excerptSourceWords, makeEditedVideo } from '../../../../scripts/video/edited-video';
+import { buildClips } from '../../../../scripts/video/project';
+import { wavHeader } from '../../../../scripts/video/audio';
+const hash = (b: Buffer) => createHash('sha256').update(b).digest('hex');
+test('renders both formats from checked source and a different-model narrator, and rejects tampering', { timeout: 120000 }, async () => {
+  await mkdir(resolve('data'), { recursive: true });
+  const root = await mkdtemp(join(resolve('data'), 'edited-video-test-'));
+  const raw = 'Before. Hello, brave world. After.';
+  const mapped = ['Before', '. Hello', ', brave', ' world', '. After.'].map((text, i) => ({ text, begin_time: i * 100, end_time: i * 100 + 80 }));
+  const extracted = excerptSourceWords(raw, mapped, 1, 4, 'Hello, brave world.');
+  assert.equal(extracted.words.map(w => w.text).join(''), 'Hello, brave world.');
+  assert.deepEqual(extracted.words.map(w => [w.begin_time, w.end_time]), [[100, 180], [200, 280], [300, 380]]);
+  assert.equal(extracted.edgePunctuationFromSource.removedStart, '. '); assert.equal(extracted.edgePunctuationFromSource.addedEnd, '.');
+  for (const bad of ['Hello, brave wolf.', 'hello, brave world.', 'Hello; brave world.', 'Hello, brave world. After', 'Before. Hello, brave world.'])
+    assert.throws(() => excerptSourceWords(raw, mapped, 1, 4, bad), /Quote differs/);
+  try {
+    const src = join(root, 'source'); await mkdir(src); await mkdir(join(src, 'audio'));
+    const entry = { sourceSeq: 1, type: 'speech', speaker: 'Ethan', voiceKey: 'seat-1', seat: 1, text: 'Hello world.', visibility: 'public', data: {} };
+    const event = { sourceSeq: 1, day: 1, phase: 'day', type: 'speech', audience: 'public' as const, spoken: true, text: entry.text, data: {} };
+    const script = { roomId: 'synthetic', perspective: 'god', status: 'ended', locale: 'en', presetName: 'test', cast: [{ seat: 1, name: 'Ethan', role: 'villager', roleName: 'Villager', factionName: 'Good', voiceKey: 'seat-1' }], events: [event], chapters: [{ day: 1, phase: 'day', title: 'Day 1', entries: [entry] }], result: {} };
+    const source = Buffer.from(JSON.stringify(script)), clip = buildClips(script)[0];
+    await writeFile(join(src, 'source.json'), source); await writeFile(join(src, 'script.json'), source); await writeFile(join(src, 'clips.json'), JSON.stringify([clip]));
+    await writeFile(join(src, 'voices.json'), JSON.stringify({ model: 'player-model', profiles: { 'seat-1': { voice: 'player-voice', instruction: '', rate: 1 } } }));
+    await writeFile(join(src, 'avatar-theme.json'), JSON.stringify({ theme: 'urban' }));
+    const pcm = Buffer.alloc(48000); for (let i = 0; i < 24000; i++) pcm.writeInt16LE(Math.round(4000 * Math.sin(i * .087)), i * 2);
+    const wav = Buffer.concat([wavHeader(24000, 24000), pcm]); const playerFile = join(src, 'audio', `${clip.id}.wav`), narratorFile = join(root, 'narrator.wav');
+    await writeFile(playerFile, wav); await writeFile(narratorFile, wav);
+    const meta = (text: string, model: string, voice: string) => ({ model, voice, text, bytes: wav.length, sentences: [{ index: 0, text, words: [{ text: 'Hello', begin_time: 100, end_time: 340 }, { text: ' world.', begin_time: 410, end_time: 820 }] }] });
+    await writeFile(playerFile + '.json', JSON.stringify(meta(entry.text, 'player-model', 'player-voice'))); await writeFile(narratorFile + '.json', JSON.stringify(meta(entry.text, 'narrator-model', 'narrator-voice')));
+    const sourceItem = { kind: 'source', id: 'source', sourceClipId: clip.id, wordStart: 0, wordEnd: 1, quote: 'Hello', audioSha256: hash(wav), storyCard: { headline: 'A speech', focusSeats: [1] } };
+    const narrationItem = { kind: 'narration', id: 'narrator', text: entry.text, afterSourceSeq: 1, storyCard: { headline: 'The story' } };
+    const selection = { roomId: script.roomId, sourceSha256: hash(source), reviewed: true, theme: 'urban', items: [sourceItem, narrationItem] };
+    const manifest = { roomId: script.roomId, sourceSha256: hash(source), clips: [{ id: 'narrator', text: entry.text, audioFile: narratorFile, audioSha256: hash(wav), model: 'narrator-model', voice: 'narrator-voice', afterSourceSeq: 1 }] };
+    const selectionFile = join(root, 'selection.json'), manifestFile = join(root, 'narration.json'), output = join(root, 'vertical');
+    const save = (value: unknown) => writeFile(selectionFile, JSON.stringify(value)); await writeFile(manifestFile, JSON.stringify(manifest));
+    await save({ ...selection, items: [{ ...sourceItem, quote: 'Altered' }] }); await assert.rejects(makeEditedVideo(src, selectionFile, manifestFile, output, 'vertical', 'cpu'), /Quote differs/);
+    await save({ ...selection, items: [{ ...sourceItem, audioSha256: '0'.repeat(64) }] }); await assert.rejects(makeEditedVideo(src, selectionFile, manifestFile, output, 'vertical', 'cpu'), /Audio hash/);
+    await save({ ...selection, items: [sourceItem, { ...narrationItem, afterSourceSeq: 9 }] }); await assert.rejects(makeEditedVideo(src, selectionFile, manifestFile, output, 'vertical', 'cpu'), /anchor/);
+    await save(selection); await makeEditedVideo(src, selectionFile, manifestFile, output, 'vertical', 'cpu');
+    const map = JSON.parse(await readFile(join(output, 'output', 'source-map.json'), 'utf8'));
+    assert.deepEqual({ ...map.clips[0].cut, charStart: undefined, charEnd: undefined, edgePunctuationFromSource: undefined }, { wordStart: 0, wordEnd: 1, firstBeginMs: 100, lastEndMs: 340, sampleStart: 1440, sampleEnd: 9120, charStart: undefined, charEnd: undefined, edgePunctuationFromSource: undefined });
+    const verify = JSON.parse(await readFile(join(output, 'output', 'verification.json'), 'utf8')); assert.equal(verify.frames, 50); assert.equal(verify.sampleCount, 40000); assert.equal(verify.width, 1080); assert.equal(verify.audioLanguage, 'eng');
+    const master = await readFile(join(output, 'master.wav')); assert.deepEqual(master.subarray(44, 44 + 7680 * 2), pcm.subarray(1440 * 2, 9120 * 2));
+    await makeEditedVideo(src, selectionFile, manifestFile, output, 'vertical', 'cpu');
+    await save({ ...selection, review: { changed: true } }); await assert.rejects(makeEditedVideo(src, selectionFile, manifestFile, output, 'vertical', 'cpu'), /different inputs/);
+    await save(selection); const horizontal = join(root, 'horizontal'); await makeEditedVideo(src, selectionFile, manifestFile, horizontal, 'horizontal', 'cpu');
+    const horizontalVerify = JSON.parse(await readFile(join(horizontal, 'output', 'verification.json'), 'utf8')); assert.equal(horizontalVerify.frames, 50); assert.equal(horizontalVerify.width, 1920); assert.equal(horizontalVerify.height, 1080);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

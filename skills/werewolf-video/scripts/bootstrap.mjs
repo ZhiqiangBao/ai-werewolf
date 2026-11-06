@@ -50,6 +50,10 @@ for (const file of await readdir(artSource, { withFileTypes: true })) {
 }
 let packageUpdated = false;
 pkg.scripts ??= {}; pkg.devDependencies ??= {};
+if (!pkg.scripts['video:vertical']) { pkg.scripts['video:vertical'] = 'tsx scripts/video/vertical-highlight.ts'; packageUpdated = true; }
+for (const [name, script] of Object.entries({ 'video:compile-edit': 'tsx scripts/video/compile-edit.ts', 'video:narration-tts': 'tsx scripts/video/synthesize-narration.ts', 'video:edit': 'tsx scripts/video/edited-video.ts' })) {
+  if (!pkg.scripts[name]) { pkg.scripts[name] = script; packageUpdated = true; }
+}
 for (const [name, script] of Object.entries({ 'video:make': 'tsx scripts/video/workflow.ts', 'video:compress': 'tsx scripts/video/compress.ts', 'video:audit-audio': 'tsx scripts/video/audit-audio.ts', 'video:review-audio': 'tsx scripts/video/review-audio.ts', 'video:import-alignment': 'tsx scripts/video/import-audio-alignment.ts', 'video:repair-audio': 'tsx scripts/video/repair-audio.ts', 'video:publish-copy': 'tsx scripts/video/publish-copy.ts', 'asr:prepare': 'python scripts/asr/register.py', 'asr:start': 'node scripts/asr/service.mjs start', 'asr:status': 'node scripts/asr/service.mjs status', 'asr:restart': 'node scripts/asr/service.mjs restart', 'asr:stop': 'node scripts/asr/service.mjs stop' })) {
   if (!pkg.scripts[name]) { pkg.scripts[name] = script; packageUpdated = true; }
 }

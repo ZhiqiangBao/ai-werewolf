@@ -36,10 +36,10 @@ const paths: Record<string, string> = {
   sparkle: 'M13 2 16 10 24 13 16 16 13 24 10 16 2 13 10 10 13 2Z',
 };
 export const sceneVersion = 'moon-village-video-v10-localized-labels';
-export async function createSceneRenderer(script: Script) {
+export async function createSceneRenderer(script: Script, options?: { theme?: string; viewLabel?: string; hideAudioPill?: boolean }) {
   const locale = videoLocale(script.locale), t = (key: string, ...values: unknown[]) => videoText(locale, key, ...values);
   const art = resolve('apps/web/public/art/moon-village');
-  const theme = await bindTheme(projectDir, resolve(dataDir, 'rooms', `${script.roomId}.json`), process.env.VIDEO_AVATAR_STYLE, true);
+  const theme = options?.theme ?? await bindTheme(projectDir, resolve(dataDir, 'rooms', `${script.roomId}.json`), process.env.VIDEO_AVATAR_STYLE, true);
   const themes: Record<string, string> = { campus: '日式校园', storybook: '童话绘本', gufeng: '中式古风', fantasy: '剑与魔法', urban: '现代都市', future: '未来科技' };
   if (!themes[theme]) throw Error('Unsupported avatar theme');
   const [day, night, tableDay, tableNight, atlas] = await Promise.all(['village-day-v1.webp', 'village-night-v1.webp', 'table-day-v1.webp', 'table-night-v1.webp', `avatars-${theme}-v1.webp`].map((f) => loadImage(`${art}/${f}`)));
@@ -162,7 +162,7 @@ export async function createSceneRenderer(script: Script) {
       text(clip.seat ? t('{0}号 · {1}', clip.seat, script.cast.find((c) => c.seat === clip.seat)?.name) : t(clip.voiceKey === 'commentator' ? '上帝解说' : '法官播报'), CX, top + 77, 26, ui.text, true, 'center', 340);
       text(t(ending ? '对局已结束' : clip.data.systemFallback ? '系统托管 · 非模型自主发言' : clip.type === 'hosting.choice' ? '行动转述 · 依据对局记录' : clip.type === 'wolf.chat' ? (script.perspective === 'player' ? '狼队密谈' : '狼队密谈 · 上帝观众可见') : clip.seat ? '正在发言' : clip.data.presentationKey === 'vote-open' ? '请投票 · 结果尚未公布' : '对局进行中'), CX, top + 112, 17, ui.muted, false, 'center', 360);
     }
-    round(594, voting ? layout.waveY : 588, 240, 40, 14, ui.panel, ui.borderSoft);
+    if (!options?.hideAudioPill) round(594, voting ? layout.waveY : 588, 240, 40, 14, ui.panel, ui.borderSoft);
   }
   return async function draw(clip: TimedClip) {
     const state = replay(script, clip.data.replayThrough ?? clip.sourceSeq), isNight = clip.phase === 'night';
@@ -173,7 +173,7 @@ export async function createSceneRenderer(script: Script) {
     round(28, 25, 1864, 80, 26, ui.panel, ui.borderSoft);
     icon('wolf', 50, 40, 51, ui.accent); text(t('月影议事厅'), 116, 63, 29, ui.text, true, 'left', 208); text(script.presetName, 333, 64, 21, ui.muted, false, 'left', 390);
     round(760, 42, 210, 44, 20, ui.chip, ui.borderSoft); icon(isNight ? 'moon' : 'sun', 778, 51, 25, ui.accent); text(videoChapter(locale, clip.day, clip.phase, clip.chapter), 869, 64, 22, ui.text, true, 'center', 145);
-    icon('eye', 1457, 51, 28, ui.accent); text(script.perspective === 'player' ? t('{0}号玩家视角', script.playerSeat) : t(script.sample ? '上帝视角 · 非连续节选样品' : '上帝视角 · 完整对局'), 1500, 64, 22, ui.text, false, 'left', 370);
+    icon('eye', 1457, 51, 28, ui.accent); text(options?.viewLabel ?? (script.perspective === 'player' ? t('{0}号玩家视角', script.playerSeat) : t(script.sample ? '上帝视角 · 非连续节选样品' : '上帝视角 · 完整对局')), 1500, 64, 22, ui.text, false, 'left', 370);
     round(28, 126, 1375, 799, 30, ui.panelSoft, ui.borderSoft);
     const tw = 1042, th = tw * tableDay.height / tableDay.width; g.save(); g.shadowBlur = 32; g.shadowColor = '#07131a99'; g.shadowOffsetY = 20;
     g.drawImage(isNight ? tableNight : tableDay, CX - tw / 2, CY - th / 2 + 10, tw, th); g.restore();

@@ -45,3 +45,43 @@ pnpm video:repair-audio --auto --audit=output/audio-audit-before.json --rebuild
 这些是可重复的信号检查，不能保证识别所有听感、发音或语义问题。用户指出其他异常时，核对片段与波形，保留正常对照，用发现的实际特征扩展检测器和测试；不要把某个房间的片段编号硬编码为检测规则。不能只凭检查通过就声称自己听过音频。
 
 当前自动化保留 [玩家视角视频完整合成流程](../../../packages/session/test/player-video.test.ts)，使用合成配音验证产物与缓存篡改检查；原始波形和实际听感仍需按本指南核对，不因此宣称所有音频缺陷都已覆盖。
+
+## narration.json 中的受限分段与读音选项
+
+需要机械拆分长玩家发言或修正英语所有格读音时，可在项目 narration.json 顶层（与 roomId、edits 同级）按需添加以下字段；不要把它们写进 edits：
+
+~~~~json
+{
+  "roomId": "本局 ID",
+  "edits": {},
+  "speechParts": {
+    "40": ["<原始玩家发言的连续第一段>", "<同一发言的连续第二段>"]
+  },
+  "englishPossessiveClips": ["040-1"]
+}
+~~~~
+
+- speechParts 是 sourceSeq 到字符串数组的映射，仅用于上帝视角的原始玩家发言机械分段；key 必须是该发言有效的 sourceSeq，其他来源会被拒绝。每段必须非空且最多 600 个字符；按顺序拼接各段、忽略所有空白后，必须与原始发言逐字相同（同样忽略空白）。不可增删、换序或改写玩家用词。
+- englishPossessiveClips 是 narration 顶层的 clip ID 列表，仅用于上帝视角、英语对局中指定的原始玩家发言片段。示例中的 40、040-1 和原话占位内容都要替换成本局实际值。它只改生成的朗读文本，不改原始 entry：无前导零的独立 0–99 数字所有格按英文读数展开，例如 5's 变成 five's；词尾为 s 的复数所有格去掉末尾撇号，例如 wolves' 读作 wolves；it's 保持不变。无适用转换的 ID、未知或重复 ID、非英语或玩家视角都会被拒绝。
+- 这两项仅授权上述机械处理，不是任意调整玩家原话的许可。speechParts 可能改变 clips.json 中的分段、clip ID 和相应缓存路径；任何变更前，备份 narration.json、clips.json，以及受影响片段的 WAV、同名 JSON 元数据和 .alignment.json sidecar。新音频产生后，旧 sidecar 若仍绑定旧音频就不能沿用；保留备份，将旧 sidecar 移出活动文件名，再按当前音频重新核验。其他成功音频缓存不要改动或清空。
+
+修改后先在仓库根目录运行：
+~~~~powershell
+pnpm video:make --room=ROOM_ID --check-only
+~~~~
+
+确认 output/materials-check.json 中 ready 为 true。该步骤停在配音前检查，不调用 TTS；报告未就绪时按 issues 修正并再次检查。
+
+只有 TTS 服务调用已获授权后，再让视频流程处理变化片段：
+~~~~powershell
+pnpm video:make --room=ROOM_ID --resume --through=timeline
+~~~~
+
+当前 Qwen TTS 会复用缓存键匹配且 WAV 完整的片段缓存；缓存键包含请求文本、模型和音色参数。输入改变的片段只有在不存在有效匹配缓存时才会重新合成；其他成功音频缓存保持原样。确认 synthesis-status.json 成功，再检查 WAV、同名元数据的实际词时间及 timeline.json 中的字幕边界；不要删除其他成功缓存。若词时不可靠或 sidecar 失效，先取得与当前原音绑定的可靠字时再继续。若要交付更新后的成片，再执行完整工作流：
+~~~~powershell
+pnpm video:make --room=ROOM_ID --resume
+~~~~
+
+重新渲染并验证；不要只替换 WAV。
+
+生成的 narration.json、音频和对齐 sidecar 属于本局制作材料；不要把玩家原话复制到 tracked 文档或公开报告。
