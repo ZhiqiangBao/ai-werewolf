@@ -1,11 +1,12 @@
 {
   "format": "werewolf-video-skill-bundle",
-  "version": 17,
+  "version": 18,
   "pipelineFiles": 57,
   "artFiles": 10,
   "artPromptFile": "assets/art/moon-village/prompts.json",
   "source": "scripts/video/",
   "features": [
+    "decoded-still-frame-reuse",
     "scene-boundary-transitions",
     "upload-quality-default",
     "lossless-scene-plates",
@@ -50,5 +51,5 @@
     "native-compact-export",
     "strict-gpu-encoding"
   ],
-  "generatedAt": "2026-11-06T09:59:05.254Z"
+  "generatedAt": "2026-11-06T10:19:07.958Z"
 }
