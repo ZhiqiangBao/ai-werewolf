@@ -47,6 +47,16 @@ const frameChoices = [
 for (const { name, clip } of frameChoices) {
   execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', '-ss', String(clip.startFrame / FPS + Math.min(1, clip.audioDuration / 2)), '-i', 'output/latest-match.mp4', '-frames:v', '1', `output/review/${name}.jpg`], { cwd: projectDir, windowsHide: true, stdio: 'inherit' });
 }
+// Review actual decoded frames around speaker switches; middle-of-clip stills miss transient blur.
+const switches = timeline.clips.map((clip, i) => ({ clip, before: timeline.clips[i - 1] }))
+  .filter(({ clip, before }) => before && before.voiceKey !== clip.voiceKey && before.phase === clip.phase && before.chapter === clip.chapter);
+const switchChoices = [...new Set([switches.find(s => s.clip.phase === 'night'), switches.find(s => s.clip.phase === 'day'), ...switches.slice(0, 2)].filter(s => !!s))];
+const switchFrames = switchChoices.map(({ clip }, i) => {
+  const firstFrame = Math.max(0, clip.startFrame - 4), count = Math.min(20, timeline.clips.at(-1)!.startFrame + timeline.clips.at(-1)!.frames - firstFrame);
+  const pattern = `output/review/switch-${String(i + 1).padStart(2, '0')}-%02d.png`;
+  execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', '-ss', String(firstFrame / FPS), '-i', 'output/latest-match.mp4', '-frames:v', String(count), '-start_number', '0', pattern], { cwd: projectDir, windowsHide: true, stdio: 'inherit' });
+  return { clip: clip.id, switchFrame: clip.startFrame, firstFrame, count, files: pattern.replace('output/', '') };
+});
 await writeFile(`${projectDir}/output/preview-selection.json`, JSON.stringify({ description: script.perspective === 'player' ? '玩家视角非连续节选，用于检查可见事件、发言、票型与终局' : '非连续节选，用于检查夜间、玩家、上帝、票型与终局（如选段含终局）', duration: frames / FPS, clips: clips.map((c) => ({ id: c.id, sourceSeq: c.sourceSeq, type: c.type })),
-  reviewFrames: frameChoices.map(({ name, clip }) => ({ file: `review/${name}.jpg`, clip: clip.id })) }, null, 2));
+  reviewFrames: frameChoices.map(({ name, clip }) => ({ file: `review/${name}.jpg`, clip: clip.id })), speakerSwitchFrames: switchFrames }, null, 2));
 console.log(JSON.stringify({ preview: `${projectDir}/output/workflow-preview.mp4`, durationSeconds: frames / FPS, sampledFrames: frameChoices.length }));

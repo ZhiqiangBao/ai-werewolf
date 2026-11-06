@@ -10,6 +10,8 @@ import { inspectAudio } from './audio-inspection';
 import { effectiveAudioAlignment } from './audio-alignment';
 import { captionsFromWords, captionContent, sourceCaptionWords, srtDocument } from './timeline';
 import { isPlayerSpeech, avatarWaveFrame, verticalScene, type StoryCard } from './vertical-scene';
+import { encodingSettings, videoEncodingArgs } from './encoding';
+import { sceneTransition, sceneFadeFilters } from './transitions';
 
 const hash = (b: Buffer | string) => createHash('sha256').update(b).digest('hex');
 interface Item { id: string; quote: string; factReview: string; audioReview: string; excerptNote: string; audioSha256: string; wordStart?: number; wordEnd?: number; story?: StoryCard }
@@ -106,8 +108,11 @@ export async function makeVertical(sourcePath: string, selectionPath: string, ou
     chosen.push({ clip, pcm: selectedPcm, frames, captions: selectedCaptions, item, alignment: choice.summary ?? { method: 'provider' }, cut });
   }
   assert(totalFrames / 30 <= 120, 'Selection exceeds 120 seconds');
+  const encoding = encodingSettings({ ...process.env, VIDEO_ENCODER: encoder === 'gpu' ? 'h264_nvenc' : 'libx264', VIDEO_REQUIRE_GPU: encoder === 'gpu' ? '1' : '0' });
+  const scenes = chosen.map(c => ({ ...c.clip, frames: c.frames }));
   // Exclusive directory creation protects all prior artifacts, including failed attempts.
   await mkdir(output, { recursive: false }); await mkdir(join(output, 'output')); await mkdir(join(output, 'review'));
+  await writeFile(join(output, 'encoding-settings.json'), JSON.stringify(encoding, null, 2));
   let start = 0; const pcmParts: Buffer[] = [], cues: {text: string; start: number; end: number}[] = [], map = [];
   for (let i = 0; i < chosen.length; i++) {
     const c = chosen[i], stem = String(i).padStart(3, '0');
@@ -122,18 +127,18 @@ export async function makeVertical(sourcePath: string, selectionPath: string, ou
       for (let frame = 0; frame < c.frames; frame++)
         await writeFile(join(output, 'rings', stem, `${String(frame).padStart(6, '0')}.png`), avatarWaveFrame(c.pcm, frame));
     }
-    const codec = encoder === 'gpu' ? ['-c:v','h264_nvenc','-preset','p4'] : ['-c:v','libx264','-preset','veryfast','-threads','2'];
-    const fade = `fade=t=in:start_frame=0:nb_frames=4,fade=t=out:start_frame=${Math.max(0, c.frames - 4)}:nb_frames=4,ass=${stem}.ass`;
+    const codec = videoEncodingArgs(encoding);
+    const fade = [`ass=${stem}.ass`, ...sceneFadeFilters(sceneTransition(scenes[i], scenes[i - 1], scenes[i + 1]), c.frames)].join(',');
     const visual = speaking
       ? ['-framerate','30','-i',`rings/${stem}/%06d.png`,'-filter_complex',`[0:v][1:v]overlay=130:370:shortest=1,${fade}[v]`,'-map','[v]']
       : ['-vf', fade];
-    await run(process.env.FFMPEG_PATH || 'ffmpeg', ['-hide_banner','-loglevel','error','-n','-loop','1','-framerate','30','-i',`${stem}.png`,...visual,'-frames:v',String(c.frames),...codec,'-b:v','1800k','-maxrate','2000k','-bufsize','4000k','-pix_fmt','yuv420p','-r','30',`${stem}.mp4`], output);
+    await run(process.env.FFMPEG_PATH || 'ffmpeg', ['-hide_banner','-loglevel','error','-n','-loop','1','-framerate','30','-i',`${stem}.png`,...visual,'-frames:v',String(c.frames),...codec,'-r','30',`${stem}.mp4`], output);
     console.log(JSON.stringify({ rendered: i + 1, total: chosen.length, clip: c.clip.id }));
   }
   const pcm = Buffer.concat(pcmParts); await writeFile(join(output, 'master.wav'), Buffer.concat([wavHeader(pcm.length / 2, 24000), pcm]));
   await writeFile(join(output, 'list.ffconcat'), 'ffconcat version 1.0\n' + chosen.map((_, i) => `file '${String(i).padStart(3, '0')}.mp4'`).join('\n') + '\n');
   await writeFile(join(output, 'output', 'subtitles.srt'), srtDocument(cues));
-  await run(process.env.FFMPEG_PATH || 'ffmpeg', ['-hide_banner','-loglevel','error','-n','-f','concat','-safe','0','-i','list.ffconcat','-i','master.wav','-map','0:v','-map','1:a','-c:v','copy','-c:a','aac','-b:a','96k','-movflags','+faststart','output/highlight-vertical.mp4'], output);
+  await run(process.env.FFMPEG_PATH || 'ffmpeg', ['-hide_banner','-loglevel','error','-n','-f','concat','-safe','0','-i','list.ffconcat','-i','master.wav','-map','0:v','-map','1:a','-c:v','copy','-c:a','aac','-b:a',`${encoding.audioKbps}k`,'-movflags','+faststart','output/highlight-vertical.mp4'], output);
   for (let i = 0; i < chosen.length; i++) {
     const cue = chosen[i].captions[0], at = map[i].startFrame / 30 + (cue.start + cue.end) / 2;
     await run(process.env.FFMPEG_PATH || 'ffmpeg', ['-hide_banner','-loglevel','error','-n','-ss',String(at),'-i','output/highlight-vertical.mp4','-frames:v','1',`review/${String(i).padStart(3, '0')}-${chosen[i].clip.id}.png`], output);
@@ -148,7 +153,7 @@ export async function makeVertical(sourcePath: string, selectionPath: string, ou
     bytes: (await stat(join(output, 'output', 'highlight-vertical.mp4'))).size, theme: selection.theme,
     excerpts: chosen.map(({ item, cut }) => ({ id: item.id, excerptNote: item.excerptNote, ...(cut ? { cut } : {}) })),
     frames: totalFrames, sampleCount: pcm.length / 2, encoder: encoder === 'gpu' ? 'h264_nvenc' : 'libx264',
-    subjectiveListening: 'not-checked', transition: 'four-frame fade out and four-frame fade in; audio unchanged',
+    encoding, subjectiveListening: 'not-checked', transition: 'hard cuts within scenes; four-frame fades only at phase or chapter boundaries; audio unchanged',
     speechWaves: 'player speech only; selected PCM RMS and spectral bands drive a locally undulating continuous outer contour; silence suppressed',
     videoDuration: video.duration, audioDuration: audio.duration,
     videoSha256: hash(await readFile(join(output, 'output', 'highlight-vertical.mp4'))),

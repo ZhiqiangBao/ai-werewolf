@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -12,6 +13,20 @@ import { buildClips } from '../../../../scripts/video/project';
 import { wavHeader } from '../../../../scripts/video/audio';
 import { isPlayerSpeech } from '../../../../scripts/video/vertical-scene';
 const hash = (s: Buffer) => createHash('sha256').update(s).digest('hex');
+// Compare decoded pixels with the actual source plate; a four-frame fade starts at black.
+function assertNoFadeAtStart(plate: string, segment: string) {
+  const decode = (file: string, frames: number) => execFileSync(process.env.FFMPEG_PATH || 'ffmpeg', [
+    '-hide_banner', '-loglevel', 'error', '-i', file, '-frames:v', String(frames),
+    '-vf', 'scale=64:64,format=gray', '-f', 'rawvideo', 'pipe:1',
+  ], { windowsHide: true });
+  const average = (pixels: Buffer) => pixels.reduce((sum, value) => sum + value, 0) / pixels.length;
+  const reference = average(decode(plate, 1)), decoded = decode(segment, 5);
+  assert.equal(decoded.length, 5 * 64 * 64);
+  const means = Array.from({ length: 5 }, (_, i) => average(decoded.subarray(i * 4096, (i + 1) * 4096)));
+  assert(reference > 10, 'Fixture plate must be bright enough to detect a fade');
+  assert(means.every(value => value > reference * .55), `Unexpected dark frame: plate=${reference}, frames=${means}`);
+  assert(Math.max(...means) - Math.min(...means) < reference * .25 + 3, `Brightness changes across switch: ${means}`);
+}
 test('reviewed portrait is bound to original samples and nonuniform word times', { timeout: 120000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'vertical-test-'));
   try {
@@ -101,7 +116,8 @@ test('reviewed portrait is bound to original samples and nonuniform word times',
     const cutMaster = await readFile(join(rangeOut, 'master.wav'));
     assert.deepEqual(cutMaster.subarray(44, 44 + 11760 * 2), pcm.subarray(8880 * 2, 20640 * 2));
     assert.match(await readFile(join(rangeOut, 'output', 'subtitles.srt'), 'utf8'), /world\./);
-    const nextEntry = { ...entry, sourceSeq: 2 };
+    const nextEntry = { ...entry, sourceSeq: 2, speaker: 'Judge', voiceKey: 'judge', seat: undefined };
+    await writeFile(join(src, 'voices.json'), JSON.stringify({ model: 'synthetic', profiles: { 'seat-1': { voice: 'test-voice', instruction: '', rate: 1 }, judge: { voice: 'test-voice', instruction: '', rate: 1 } } }));
     const twoScript = { ...script, chapters: [{ ...script.chapters[0], entries: [entry, nextEntry] }] };
     const twoSource = Buffer.from(JSON.stringify(twoScript)), twoClips = buildClips(twoScript);
     await writeFile(join(src, 'source.json'), twoSource); await writeFile(join(src, 'script.json'), twoSource);
@@ -111,6 +127,8 @@ test('reviewed portrait is bound to original samples and nonuniform word times',
     await save({ ...selection, sourceSha256: hash(twoSource), clips: [selection.clips[0], { ...selection.clips[0], id: twoClips[1].id }] });
     const twoOut = join(root, 'two-output'); await makeVertical(src, plan, twoOut, 'cpu');
     const twoVerification = JSON.parse(await readFile(join(twoOut, 'output', 'verification.json'), 'utf8'));
+    assert.equal(twoVerification.encoding.profile, 'upload');
+    for (const stem of ['000', '001']) assertNoFadeAtStart(join(twoOut, `${stem}.png`), join(twoOut, `${stem}.mp4`));
     assert.equal(twoVerification.frames, 72); assert.equal(twoVerification.sampleCount, 72 * 800);
     assert(Math.abs(Number(twoVerification.videoDuration) - Number(twoVerification.audioDuration)) <= 1 / 30 + .05);
     const twoMaster = await readFile(join(twoOut, 'master.wav'));

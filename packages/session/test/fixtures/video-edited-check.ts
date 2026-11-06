@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -7,6 +8,20 @@ import { excerptSourceWords, makeEditedVideo } from '../../../../scripts/video/e
 import { buildClips } from '../../../../scripts/video/project';
 import { wavHeader } from '../../../../scripts/video/audio';
 const hash = (b: Buffer) => createHash('sha256').update(b).digest('hex');
+// Compare decoded pixels with the actual source plate; a four-frame fade starts at black.
+function assertNoFadeAtStart(plate: string, segment: string) {
+  const decode = (file: string, frames: number) => execFileSync(process.env.FFMPEG_PATH || 'ffmpeg', [
+    '-hide_banner', '-loglevel', 'error', '-i', file, '-frames:v', String(frames),
+    '-vf', 'scale=64:64,format=gray', '-f', 'rawvideo', 'pipe:1',
+  ], { windowsHide: true });
+  const average = (pixels: Buffer) => pixels.reduce((sum, value) => sum + value, 0) / pixels.length;
+  const reference = average(decode(plate, 1)), decoded = decode(segment, 5);
+  assert.equal(decoded.length, 5 * 64 * 64);
+  const means = Array.from({ length: 5 }, (_, i) => average(decoded.subarray(i * 4096, (i + 1) * 4096)));
+  assert(reference > 10, 'Fixture plate must be bright enough to detect a fade');
+  assert(means.every(value => value > reference * .55), `Unexpected dark frame: plate=${reference}, frames=${means}`);
+  assert(Math.max(...means) - Math.min(...means) < reference * .25 + 3, `Brightness changes across switch: ${means}`);
+}
 test('renders both formats from checked source and a different-model narrator, and rejects tampering', { timeout: 120000 }, async () => {
   await mkdir(resolve('data'), { recursive: true });
   const root = await mkdtemp(join(resolve('data'), 'edited-video-test-'));
@@ -44,11 +59,18 @@ test('renders both formats from checked source and a different-model narrator, a
     await save(selection); await makeEditedVideo(src, selectionFile, manifestFile, output, 'vertical', 'cpu');
     const map = JSON.parse(await readFile(join(output, 'output', 'source-map.json'), 'utf8'));
     assert.deepEqual({ ...map.clips[0].cut, charStart: undefined, charEnd: undefined, edgePunctuationFromSource: undefined }, { wordStart: 0, wordEnd: 1, firstBeginMs: 100, lastEndMs: 340, sampleStart: 1440, sampleEnd: 9120, charStart: undefined, charEnd: undefined, edgePunctuationFromSource: undefined });
-    const verify = JSON.parse(await readFile(join(output, 'output', 'verification.json'), 'utf8')); assert.equal(verify.frames, 50); assert.equal(verify.sampleCount, 40000); assert.equal(verify.width, 1080); assert.equal(verify.audioLanguage, 'eng');
+    const verify = JSON.parse(await readFile(join(output, 'output', 'verification.json'), 'utf8')); assert.equal(verify.encoding.profile, 'upload'); for (const stem of ['000', '001']) assertNoFadeAtStart(join(output, 'segments', `${stem}.png`), join(output, 'segments', `${stem}.mp4`)); assert.equal(verify.frames, 50); assert.equal(verify.sampleCount, 40000); assert.equal(verify.width, 1080); assert.equal(verify.audioLanguage, 'eng');
     const master = await readFile(join(output, 'master.wav')); assert.deepEqual(master.subarray(44, 44 + 7680 * 2), pcm.subarray(1440 * 2, 9120 * 2));
     await makeEditedVideo(src, selectionFile, manifestFile, output, 'vertical', 'cpu');
+    const originalProfile = process.env.VIDEO_ENCODING_PROFILE;
+    try {
+      process.env.VIDEO_ENCODING_PROFILE = 'compact';
+      await assert.rejects(makeEditedVideo(src, selectionFile, manifestFile, output, 'vertical', 'cpu'), /different inputs or settings/);
+    } finally {
+      if (originalProfile === undefined) delete process.env.VIDEO_ENCODING_PROFILE; else process.env.VIDEO_ENCODING_PROFILE = originalProfile;
+    }
     await save({ ...selection, review: { changed: true } }); await assert.rejects(makeEditedVideo(src, selectionFile, manifestFile, output, 'vertical', 'cpu'), /different inputs/);
     await save(selection); const horizontal = join(root, 'horizontal'); await makeEditedVideo(src, selectionFile, manifestFile, horizontal, 'horizontal', 'cpu');
-    const horizontalVerify = JSON.parse(await readFile(join(horizontal, 'output', 'verification.json'), 'utf8')); assert.equal(horizontalVerify.frames, 50); assert.equal(horizontalVerify.width, 1920); assert.equal(horizontalVerify.height, 1080);
+    const horizontalVerify = JSON.parse(await readFile(join(horizontal, 'output', 'verification.json'), 'utf8')); for (const stem of ['000', '001']) assertNoFadeAtStart(join(horizontal, 'segments', `${stem}.png`), join(horizontal, 'segments', `${stem}.mp4`)); assert.equal(horizontalVerify.frames, 50); assert.equal(horizontalVerify.width, 1920); assert.equal(horizontalVerify.height, 1080);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

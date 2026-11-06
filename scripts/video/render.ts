@@ -9,6 +9,7 @@ import { createRuleStrip, RULE_SCROLL_SPEED, RULE_VIEW } from './rule-strip';
 import { voteCardLayout } from './geometry';
 import { projectDir, ffmpeg, FPS, type Script, type TimedClip } from './project';
 import { encodingSettings, videoEncodingArgs } from './encoding';
+import { sceneTransition, sceneFadeFilters } from './transitions';
 import { assertAuthorizedProject, assertPlayerAudio } from './integrity';
 import { clipSkillEffect, videoEffectVersion, writeSkillFrames } from './video-effect';
 import { videoAudioLanguage } from './video-locale';
@@ -30,8 +31,7 @@ const clips = only ? timeline.clips.filter((c) => c.id === only) : timeline.clip
 if (!clips.length) throw Error('No requested clip');
 const settings = encodingSettings(), encoder = settings.encoder;
 const renderStarted = Date.now();
-const encodingIdentity = { ...settings, format: 'native-compact-v1' };
-await writeFile(`${projectDir}/encoding-settings.json`, JSON.stringify(encodingIdentity, null, 2));
+const encodingIdentity = { ...settings, format: 'native-export-v2' };
 async function run(args: string[], logFile: string) {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(ffmpeg, ['-hide_banner', '-loglevel', 'warning', '-y', ...args], { cwd: projectDir, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -43,15 +43,14 @@ let cursor = 0, complete = 0;
 async function worker() {
   const draw = await createSceneRenderer(script);
   while (cursor < clips.length) {
-    const clip = clips[cursor++], image = await draw(clip), plate = join(projectDir, 'plates', `${clip.id}.jpg`);
+    const clip = clips[cursor++], image = await draw(clip), plate = join(projectDir, 'plates', `${clip.id}.png`);
     await writeFile(plate, image);
     if (preview) { console.log(`plate ${clip.id}`); continue; }
     const ass = await readFile(`${projectDir}/subtitles/${clip.id}.ass`, 'utf8');
     const rules = ruleStrips[clip.phase === 'night' ? 'night' : 'day'];
     const effect = clipSkillEffect(script, clip);
     const index = timeline.clips.findIndex(c => c.id === clip.id), before = timeline.clips[index - 1], after = timeline.clips[index + 1];
-    const change = (other: TimedClip | undefined) => !other || other.voiceKey !== clip.voiceKey || other.phase !== clip.phase;
-    const transition = { fadeIn: change(before), fadeOut: change(after), frames: 4 };
+    const transition = sceneTransition(clip, before, after);
     const cacheKey = createHash('sha256').update(image).update(rules.png).update(ass).update(clip.audioMeta.cacheKey).update(sceneVersion).update(videoEffectVersion).update(JSON.stringify(effect)).update(JSON.stringify(encodingIdentity)).update(JSON.stringify({ frames: clip.frames, startFrame: clip.startFrame, ruleSpeed: RULE_SCROLL_SPEED, ruleView: RULE_VIEW, transition })).digest('hex');
     const output = `${projectDir}/segments/${clip.id}.mp4`, marker = output + '.json';
     let cached = false;
@@ -65,10 +64,10 @@ async function worker() {
       const waveColor = (clip.phase === 'night' ? palettes.night : palettes.day).wave.replace('#', '0x');
       const waveY = clip.type === 'vote.result' ? voteCardLayout(clip.data.rows?.length ?? 0).waveY + 4 : 592;
       const effectFilter = effect ? `[board][3:v]overlay=${effect.x}:${effect.y}:eof_action=pass[effect];` : '';
-      const fades = `${transition.fadeIn ? ',fade=t=in:start_frame=0:nb_frames=4' : ''}${transition.fadeOut ? `,fade=t=out:start_frame=${Math.max(0, clip.frames - 4)}:nb_frames=4` : ''}`;
+      const fades = sceneFadeFilters(transition, clip.frames).map(filter => `,${filter}`).join('');
       const filter = `[1:a]apad=pad_dur=1,showwaves=s=230x32:mode=cline:rate=${FPS}:colors=${waveColor}:scale=sqrt:draw=full,format=rgba,colorkey=0x000000:0.01:0.01[wave];[2:v]crop=${RULE_VIEW.width}:${RULE_VIEW.height}:0:'mod((t+${clip.startFrame / FPS})*${RULE_SCROLL_SPEED},${rules.cycleHeight})'[rules];[0:v][rules]overlay=${RULE_VIEW.x}:${RULE_VIEW.y}:shortest=1[board];${effectFilter}[${effect ? 'effect' : 'board'}][wave]overlay=599:${waveY}:shortest=1,ass=subtitles/${clip.id}.ass${fades}[v]`;
       const videoArgs = videoEncodingArgs(settings);
-      const encode = (options: string[]) => run(['-threads', '1', '-loop', '1', '-framerate', String(FPS), '-i', `plates/${clip.id}.jpg`, '-i', `audio-normalized/${clip.id}.wav`, '-loop', '1', '-framerate', String(FPS), '-i', `plates/rules-${clip.phase === 'night' ? 'night' : 'day'}.png`, ...(effect ? ['-framerate', String(FPS), '-i', `animations/${clip.id}/%03d.png`] : []), '-filter_complex_threads', '1', '-filter_complex', filter,
+      const encode = (options: string[]) => run(['-threads', '1', '-loop', '1', '-framerate', String(FPS), '-i', `plates/${clip.id}.png`, '-i', `audio-normalized/${clip.id}.wav`, '-loop', '1', '-framerate', String(FPS), '-i', `plates/rules-${clip.phase === 'night' ? 'night' : 'day'}.png`, ...(effect ? ['-framerate', String(FPS), '-i', `animations/${clip.id}/%03d.png`] : []), '-filter_complex_threads', '1', '-filter_complex', filter,
         '-map', '[v]', '-an', '-frames:v', String(clip.frames), '-r', String(FPS), ...options, `segments/${clip.id}.partial.mp4`], output + '.log');
       let actualEncoder = encoder;
       const started = Date.now();
@@ -110,7 +109,9 @@ await run(['-f', 'concat', '-safe', '0', '-i', 'segments.ffconcat', '-i', 'maste
   '-map', '0:v:0', '-map', '1:a:0', '-map_metadata', '2', '-map_chapters', '2', '-c:v', 'copy', '-c:a', 'aac', '-b:a', `${settings.audioKbps}k`,
   '-metadata:s:a:0', `language=${videoAudioLanguage(script.locale)}`, '-movflags', '+faststart', 'output/latest-match.partial.mp4'], `${projectDir}/output/mux.log`);
 await rename(`${projectDir}/output/latest-match.partial.mp4`, `${projectDir}/output/latest-match.mp4`);
+await writeFile(`${projectDir}/encoding-settings.json`, JSON.stringify(encodingIdentity, null, 2));
 await writeFile(`${projectDir}/output/render-report.json`, JSON.stringify({ ...encodingIdentity, elapsedSeconds: (Date.now() - renderStarted) / 1000,
-  durationSeconds: timeline.duration, bytes: (await stat(`${projectDir}/output/latest-match.mp4`)).size, compactFromFirstEncode: true, videoReencodedAtMux: false,
+  durationSeconds: timeline.duration, bytes: (await stat(`${projectDir}/output/latest-match.mp4`)).size, compactFromFirstEncode: settings.profile === 'compact', videoReencodedAtMux: false,
+  transition: 'hard cuts within scenes; four-frame fades only at phase or chapter boundaries',
   ...(source.perspective === 'player' ? { viewHash, masterSha256, videoSha256: createHash('sha256').update(await readFile(`${projectDir}/output/latest-match.mp4`)).digest('hex') } : {}) }, null, 2));
 console.log(JSON.stringify({ video: `${projectDir}/output/latest-match.mp4`, duration: timeline.duration, frames: timeline.frames }));

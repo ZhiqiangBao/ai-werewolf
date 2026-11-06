@@ -35,7 +35,7 @@ const paths: Record<string, string> = {
   gavel: 'm4 9 8-7 6 7-8 7-6-7Z M11 13l10 11 M2 23h11 M4 20h7',
   sparkle: 'M13 2 16 10 24 13 16 16 13 24 10 16 2 13 10 10 13 2Z',
 };
-export const sceneVersion = 'moon-village-video-v11-no-public-room-id';
+export const sceneVersion = 'moon-village-video-v12-lossless-plates';
 export async function createSceneRenderer(script: Script, options?: { theme?: string; viewLabel?: string; hideAudioPill?: boolean }) {
   const locale = videoLocale(script.locale), t = (key: string, ...values: unknown[]) => videoText(locale, key, ...values);
   const art = resolve('apps/web/public/art/moon-village');
@@ -190,6 +190,6 @@ export async function createSceneRenderer(script: Script, options?: { theme?: st
     speakerPanel(clip, state);
     // Timestamped subtitles are burned in this empty strip by the encoder.
     text(t(script.sample ? 'AI 配音 · 画面修改样品' : 'AI 配音 · 对局实录'), 1888, 1071, 12, '#c7d7d6', false, 'right');
-    return canvas.encode('jpeg', 94);
+    return canvas.encode('png');
   };
 }

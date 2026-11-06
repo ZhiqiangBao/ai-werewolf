@@ -54,18 +54,20 @@ agent 分别写高光和精华，按原事件顺序选择可追溯原话，围�
 完整稿材料、声音和授权就绪后，agent 在仓库根目录执行：
 
 ```powershell
-pnpm video:make --room=ROOM_ID --resume
+pnpm video:make --room=ROOM_ID --encoding-profile=upload --resume
 ```
 
-如要求独立识别，显式加入适合本局的 `--asr-provider=auto|local|qwen-token-plan|mimo-token-plan`，具体限制和补对齐选项见[音频核对指南](references/local-asr.md)。默认 `off` 不能声称独立听写已完成。`--resume` 重做门禁并复用有效缓存；先看 `workflow-status.json` 与对应阶段报告，再针对失败原因修正。完整片的编码器、码率、阶段与主题选项见[制作前准备](references/preproduction.md)、[硬件](references/hardware.md)和[压缩](references/compression.md)。
+完整片默认使用 `upload` 编码配置；只有明确需要小体积本地副本时才选 `--encoding-profile=compact`。可用 `--video-quality=N` 覆盖编码质量值；NVENC 使用该值，CPU 路线使用 `N - 2` 作为 CRF。参数和实际码率限制见[上传画质与体积控制](references/compression.md)。
 
-高光与精华按[编辑版制作](references/edited-video.md)先验证选段，再对每个格式使用独立输出目录合成。进度 JSON 的 `rendered`、`total` 与 `cached` 显示执行进展；成功后查看 `output/verification.json`、`source-map.json`、`subtitles.srt` 和 MP4。相同输入身份且缓存通过校验才复用；输入、格式或编码器改变应使用新输出目录。编码失败先读日志，核实 FFmpeg 和所选编码器；GPU 失败不谎报成功。不要清理正在运行的渲染。
+如要求独立识别，显式加入适合本局的 `--asr-provider=auto|local|qwen-token-plan|mimo-token-plan`，具体限制和补对齐选项见[音频核对指南](references/local-asr.md)。默认 `off` 不能声称独立听写已完成。`--resume` 重做门禁并复用有效缓存；先看 `workflow-status.json` 与对应阶段报告，再针对失败原因修正。完整片默认采用 `upload` 配置；编码器、profile、质量覆盖和实际码率限制见[制作前准备](references/preproduction.md)、[硬件](references/hardware.md)和[上传画质与体积控制](references/compression.md)。
 
-程序验证只是机械检查。agent 对四套各自检查抽帧、完整播放、字幕语义分组、遮挡、角色和事实状态、转场及音画同步；独立 reviewer 审核每套叙事，精华横竖分别核对布局。听审独立记录，`subjectiveListening: not-checked` 不能当作通过。无法播放或听审时如实标未检查，问题回对应稿、音频或布局修复并重验，不把短样片测试扩大为整片验收。玩家视角额外核验权限和身份显示。
+高光与精华按[编辑版制作](references/edited-video.md)先验证选段，再对每个格式使用独立输出目录合成。进度 JSON 的 `rendered`、`total` 与 `cached` 显示执行进展；成功后查看 `output/verification.json`、`source-map.json`、`subtitles.srt` 和 MP4。相同输入身份且缓存通过校验才复用；输入、格式、编码器、编码配置或源画面改变时使用新输出目录，避免旧片段和新成片混淆。编码失败先读日志，核实 FFmpeg 和所选编码器；GPU 失败不谎报成功。不要清理正在运行的渲染。
+
+程序验证只是机械检查。agent 对四套各自检查抽帧、完整播放、字幕语义分组、遮挡、角色和事实状态、转场及音画同步；在人物切换与真实 phase/chapter 边界抽取切点前后的连续帧，暂停逐帧检查字幕小字和画面细节，不能只检查场景中间的静态帧。具体抽帧方法见[上传画质与体积控制](references/compression.md#画面转场与清晰度检查)。人物切换及同一 phase/chapter 内的场景变化使用硬切；只有真实 phase/chapter 边界使用 4 帧淡出、4 帧淡入。独立 reviewer 审核每套叙事，精华横竖分别核对布局。听审独立记录，`subjectiveListening: not-checked` 不能当作通过。无法播放或听审时如实标未检查，问题回对应稿、音频或布局修复并重验，不把短样片测试扩大为整片验收。玩家视角额外核验权限和身份显示。
 
 ## 5. 封面、文案和交付
 
-视频画面及发布标题、简介不额外添加房间号。房间号用于内部选局、来源校验和制作配置；检查交付文案与画面，删去手写的 `Room:` 行和旧页脚中的编号。
+视频画面及发布标题、简介不额外添加房间号。房间号用于内部选局、来源校验和制作配置；检查交付文案与画面，删去手写的 `Room:` 行和旧页脚中的编号。若成片仍含旧页脚或发现源画面模糊，修改场景源后用新导出目录重渲染，并复用已核验音频；不要在交付 MP4 上运行 `delogo` 或再次压缩整片。代码更新不会自动修复已经发布到 YouTube 的旧视频。
 
 每套成片各有与目标语言一致的封面、标题与简介；本次要求全英语时四套均用英文。按[封面制作](references/cover.md)制作和检查缩略图可读性、角色与权限，按各版内容写对应简介。完整上帝视角按[制作前准备](references/preproduction.md)和现有 `video:publish-copy` 约定核对席位与规则；单玩家遵守权限。生成服务需已有授权，程序不会自动生成封面。未完成的画面、听感或叙事审阅单列状态，不宣称完成。
 

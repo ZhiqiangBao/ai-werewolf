@@ -14,11 +14,13 @@ import { wrapEnglishCaption } from './english-captions';
 import { avatarWaveFrame, isPlayerSpeech, verticalScene, type StoryCard } from './vertical-scene';
 import { createSceneRenderer, sceneVersion } from './scene';
 import { readJob } from './compile-edit';
+import { encodingSettings, videoEncodingArgs } from './encoding';
+import { sceneTransition, sceneFadeFilters } from './transitions';
 
 const require = createRequire(import.meta.url);
 const { createCanvas, loadImage } = require(process.env.VIDEO_CANVAS_MODULE || '@napi-rs/canvas');
 const hash = (data: Buffer | string) => createHash('sha256').update(data).digest('hex');
-const version = 'edited-video-v2-streamed-wave';
+const version = 'edited-video-v3-scene-cuts-upload';
 type Cue = { text: string; start: number; end: number };
 type SourceItem = { kind: 'source'; id: string; sourceClipId: string; wordStart: number; wordEnd: number; quote: string; audioSha256: string; timingSha256?: string; storyCard?: StoryCard };
 type NarrationItem = { kind: 'narration'; id: string; text: string; afterSourceSeq: number; storyCard?: StoryCard };
@@ -152,7 +154,7 @@ export async function makeEditedVideo(sourcePath: string, selectionPath: string,
       assert(typeof entry.model === 'string' && entry.model && typeof entry.voice === 'string' && entry.voice, 'Narration model or voice missing');
       assert(narrationManifestPath, 'Narration manifest is required for narration');
       file = resolve(dirname(resolve(narrationManifestPath)), entry.audioFile); expectedText = item.text; expectedHash = entry.audioSha256; model = entry.model; voice = entry.voice;
-      clip = { id: item.id, sourceSeq: event.sourceSeq, type: 'editorial.narration', speaker: 'Narrator', voiceKey: 'commentator', text: item.text, spokenText: item.text, visibility: 'public', data: { replayThrough: event.sourceSeq }, day: event.day, phase: event.phase, chapter: '', part: 1, parts: 1, audioFile: file };
+      clip = { id: item.id, sourceSeq: event.sourceSeq, type: 'editorial.narration', speaker: 'Narrator', voiceKey: 'commentator', text: item.text, spokenText: item.text, visibility: 'public', data: { replayThrough: event.sourceSeq }, day: event.day, phase: event.phase, chapter: script.chapters.find(chapter => chapter.day === event.day && chapter.phase === event.phase)?.title ?? `${event.phase} ${event.day}`, part: 1, parts: 1, audioFile: file };
     }
     const bytes = await readFile(file), actualHash = hash(bytes); assert(/^[a-f0-9]{64}$/.test(expectedHash) && actualHash === expectedHash, 'Audio hash mismatch');
     const meta = JSON.parse(await readFile(file + '.json', 'utf8')); assert.equal(meta.model, model, 'Audio model mismatch'); assert.equal(meta.voice, voice, 'Audio voice mismatch'); assert.equal(meta.text, expectedText, 'Audio text mismatch'); assert.equal(meta.bytes, bytes.length, 'Audio byte count mismatch');
@@ -175,11 +177,14 @@ export async function makeEditedVideo(sourcePath: string, selectionPath: string,
   }
   assert(totalFrames / 30 <= 720, 'Selection exceeds 720 seconds');
   if (options?.validateOnly) { console.log(JSON.stringify({ validated: selected.length, frames: totalFrames, durationSeconds: totalFrames / 30 })); return; }
-  const identity = hash(JSON.stringify({ version, sceneVersion, format, encoder, source: hash(sourceBytes), selection: hash(selectionBytes), narration: hash(narrationBytes), clips: selected.map(c => ({ audio: c.audioSha256, alignment: c.alignment, cut: c.cut })) }));
+  const encoding = encodingSettings({ ...process.env, VIDEO_ENCODER: encoder === 'gpu' ? 'h264_nvenc' : 'libx264', VIDEO_REQUIRE_GPU: encoder === 'gpu' ? '1' : '0' });
+  const scenes = selected.map(c => ({ ...c.clip, frames: c.frames }));
+  const identity = hash(JSON.stringify({ version, sceneVersion, format, encoder, encoding, source: hash(sourceBytes), selection: hash(selectionBytes), narration: hash(narrationBytes), clips: selected.map(c => ({ audio: c.audioSha256, alignment: c.alignment, cut: c.cut })) }));
   await mkdir(output, { recursive: true }); const identityFile = join(output, 'identity.json');
   try { const old = JSON.parse(await readFile(identityFile, 'utf8')); assert.equal(old.identity, identity, 'Output directory belongs to different inputs or settings'); }
   catch (e: any) { if (e.code !== 'ENOENT') throw e; const existing = await import('node:fs/promises').then(fs => fs.readdir(output)); assert(existing.length === 0, 'Output directory is not empty'); await writeFile(identityFile, JSON.stringify({ identity }, null, 2), { flag: 'wx' }); }
   await mkdir(join(output, 'segments'), { recursive: true }); await mkdir(join(output, 'output'), { recursive: true });
+  await writeFile(join(output, 'encoding-settings.json'), JSON.stringify(encoding, null, 2));
   const draw = format === 'horizontal' ? await createSceneRenderer(script, { theme: selection.theme, viewLabel: 'GOD VIEW · HIGHLIGHTS', hideAudioPill: true }) : undefined;
   const parts: Buffer[] = [], allCues: Cue[] = [], mapping: unknown[] = []; let startFrame = 0;
   for (const [i, c] of selected.entries()) {
@@ -189,12 +194,12 @@ export async function makeEditedVideo(sourcePath: string, selectionPath: string,
     await writeFile(join(output, plate), image); await writeFile(join(output, sub), subtitles);
     let cached = false; try { const saved = JSON.parse(await readFile(marker, 'utf8')); cached = saved.key === key && saved.sha256 === hash(await readFile(join(output, segment))); } catch { /* missing or stale */ }
     if (!cached) {
-      const partial = `segments/${stem}.partial.mp4`, fade = `fade=t=in:start_frame=0:nb_frames=4,fade=t=out:start_frame=${Math.max(0, c.frames - 4)}:nb_frames=4,ass=${sub}`;
-      const codec = encoder === 'gpu' ? ['-c:v', 'h264_nvenc', '-preset', 'p4'] : ['-c:v', 'libx264', '-preset', 'veryfast', '-threads', '2'];
+      const partial = `segments/${stem}.partial.mp4`, fade = [`ass=${sub}`, ...sceneFadeFilters(sceneTransition(scenes[i], scenes[i - 1], scenes[i + 1]), c.frames)].join(',');
+      const codec = videoEncodingArgs(encoding);
       const base = ['-hide_banner', '-loglevel', 'error', '-y', '-loop', '1', '-framerate', '30', '-i', plate];
       const wave = format === 'vertical' && isPlayerSpeech(c.clip);
       const visual = wave ? ['-f', 'image2pipe', '-framerate', '30', '-vcodec', 'png', '-i', 'pipe:0', '-filter_complex_threads', '1', '-filter_complex', `[0:v][1:v]overlay=130:370:shortest=1,${fade}[v]`, '-map', '[v]'] : ['-vf', fade];
-      const args = [...base, ...visual, '-an', '-frames:v', String(c.frames), ...codec, '-b:v', format === 'vertical' ? '2200k' : '3500k', '-pix_fmt', 'yuv420p', '-r', '30', partial];
+      const args = [...base, ...visual, '-an', '-frames:v', String(c.frames), ...codec, '-r', '30', partial];
       if (wave) await renderWave(args, output, c.pcm, c.frames); else await run(args, output);
       await rename(join(output, partial), join(output, segment)); await writeFile(marker, JSON.stringify({ key, sha256: hash(await readFile(join(output, segment))) }));
     }
@@ -207,14 +212,14 @@ export async function makeEditedVideo(sourcePath: string, selectionPath: string,
   await writeFile(join(output, 'segments.ffconcat'), 'ffconcat version 1.0\n' + selected.map((_, i) => `file 'segments/${String(i).padStart(3, '0')}.mp4'`).join('\n') + '\n');
   await writeFile(join(output, 'output', 'subtitles.srt'), srtDocument(allCues));
   const final = `output/highlights-${format}.mp4`, partialFinal = `output/highlights-${format}.partial.mp4`;
-  await run(['-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', 'segments.ffconcat', '-i', 'master.wav', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', '-metadata:s:a:0', 'language=eng', '-movflags', '+faststart', partialFinal], output);
+  await run(['-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', 'segments.ffconcat', '-i', 'master.wav', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', `${encoding.audioKbps}k`, '-metadata:s:a:0', 'language=eng', '-movflags', '+faststart', partialFinal], output);
   await rename(join(output, partialFinal), join(output, final));
   const probe = await new Promise<any>((ok, fail) => { const p = spawn(process.env.FFPROBE_PATH || 'ffprobe', ['-v', 'error', '-show_streams', '-of', 'json', final], { cwd: output, windowsHide: true }); let text = '', err = ''; p.stdout.on('data', b => { text += b; }); p.stderr.on('data', b => { err += b; }); p.on('error', fail); p.on('close', code => code === 0 ? ok(JSON.parse(text)) : fail(Error(err))); });
   const video = probe.streams.find((s: any) => s.codec_type === 'video'), audio = probe.streams.find((s: any) => s.codec_type === 'audio');
   assert(video.width === (format === 'vertical' ? 1080 : 1920) && video.height === (format === 'vertical' ? 1920 : 1080) && Number(video.nb_frames) === totalFrames && video.r_frame_rate === '30/1', 'Video frame verification failed');
   assert(audio?.tags?.language === 'eng' && Math.abs(Number(video.duration) - Number(audio.duration)) <= 1 / 30 + .05, 'Audio/video verification failed');
   await writeFile(join(output, 'output', 'source-map.json'), JSON.stringify({ roomId: source.roomId, sourceSha256: hash(sourceBytes), identity, clips: mapping }, null, 2));
-  await writeFile(join(output, 'output', 'verification.json'), JSON.stringify({ identity, format, frames: totalFrames, sampleCount: pcm.length / 2, width: video.width, height: video.height, fps: 30, encoder, audioLanguage: 'eng', videoSha256: hash(await readFile(join(output, final))), bytes: (await stat(join(output, final))).size, audioGain: 1, transition: 'four-frame fades, 5 frames silence padding', subjectiveListening: 'not-checked' }, null, 2));
+  await writeFile(join(output, 'output', 'verification.json'), JSON.stringify({ identity, format, encoding, frames: totalFrames, sampleCount: pcm.length / 2, width: video.width, height: video.height, fps: 30, encoder, audioLanguage: 'eng', videoSha256: hash(await readFile(join(output, final))), bytes: (await stat(join(output, final))).size, audioGain: 1, transition: 'hard cuts within scenes; four-frame fades only at phase or chapter boundaries; 5 frames silence padding', subjectiveListening: 'not-checked' }, null, 2));
 }
 if (process.argv[1]?.replace(/\\/g, '/').endsWith('/edited-video.ts')) {
   const opt = (name: string) => process.argv.find(x => x.startsWith(`--${name}=`))?.slice(name.length + 3);

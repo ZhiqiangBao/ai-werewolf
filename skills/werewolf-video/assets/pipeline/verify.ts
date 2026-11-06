@@ -48,7 +48,7 @@ for (const c of timeline.clips) {
   assert.equal(pcm.sampleRate, SAMPLE_RATE); assert.equal(pcm.samples.length, c.frames * SAMPLE_RATE / FPS);
   const segment = JSON.parse(await readFile(`${projectDir}/segments/${c.id}.mp4.json`, 'utf8'));
   assert.equal(segment.frames, c.frames); actualEncoders.add(segment.encoder);
-  compactFromFirstEncode &&= segment.encoding?.format === 'native-compact-v1';
+  compactFromFirstEncode &&= segment.encoding?.format === 'native-compact-v1' || (segment.encoding?.format === 'native-export-v2' && segment.encoding.profile === 'compact');
   if (settings.strictGpu) assert.equal(segment.encoder, 'h264_nvenc', `GPU encoding was not used for ${c.id}`);
   const log = await readFile(`${projectDir}/segments/${c.id}.mp4.log`, 'utf8');
   assert(!/corrupt|invalid data|error while/i.test(log), `Encoding problem in ${c.id}`);

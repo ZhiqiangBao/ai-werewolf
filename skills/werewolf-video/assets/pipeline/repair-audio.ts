@@ -131,10 +131,13 @@ export async function rebuildAudioVideo(directory: string) {
   const encoding = existsSync(settingsFile) ? JSON.parse(await readFile(settingsFile, 'utf8')) : {};
   const script = JSON.parse(await readFile(join(directory, 'script.json'), 'utf8')) as Script;
   const env = { ...process.env, VIDEO_ROOM: script.roomId, VIDEO_PROJECT_DIR: directory,
+    VIDEO_ENCODING_PROFILE: encoding.profile ?? (encoding.format === 'native-compact-v1' ? 'compact' : 'upload'),
     ...(encoding.encoder ? { VIDEO_ENCODER: encoding.encoder } : {}),
-    ...(encoding.strictGpu ? { VIDEO_REQUIRE_GPU: '1' } : {}),
+    VIDEO_REQUIRE_GPU: encoding.strictGpu ? '1' : '0',
     ...(encoding.videoKbps ? { VIDEO_BITRATE_KBPS: String(encoding.videoKbps) } : {}),
     ...(encoding.maxVideoKbps ? { VIDEO_MAXRATE_KBPS: String(encoding.maxVideoKbps) } : {}),
+    ...(encoding.bufferKbits ? { VIDEO_BUFFER_KBITS: String(encoding.bufferKbits) } : {}),
+    ...(encoding.quality ? { VIDEO_QUALITY: String(encoding.quality) } : {}),
     ...(encoding.audioKbps ? { VIDEO_AUDIO_KBPS: String(encoding.audioKbps) } : {}) };
   const video = join(directory, 'output/latest-match.mp4');
   if (existsSync(video)) {

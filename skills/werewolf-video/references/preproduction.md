@@ -191,6 +191,8 @@ pnpm video:make --room=latest --prepare-only
 
 字幕只占底栏右侧文字区，水平与垂直居中，不再在顶部另放发言者文字。1080p 当前底栏为 `(28,942,1864,111)`，文字区为 `(454,956,1410,83)`、中心 `(1159,998)`；头像与文字区由细线分开。`geometry.ts` 的 `subtitleLayout` 是场景与 ASS 共用坐标，`speaker.ts` 选择真实玩家或主持身份，`timeline.ts` 输出居中字幕。调整位置时同步这些模块，抽看最终编码后的画面，不能只看未烧字幕的底图。
 
+进入整局渲染前，先检查代表性昼夜场景、人物切换和真实 phase/chapter 边界。对每类切换点抽取切点前后连续帧，暂停逐帧查看字幕小字、技能卡、号码和细边缘；只看场景中间的静态帧无法发现切换瞬间的淡黑或糊字。具体抽帧方法见[上传画质与体积控制](compression.md#画面转场与清晰度检查)。人物或同一 phase/chapter 内的场景变更应硬切，只有真实边界采用 4 帧淡出、4 帧淡入。
+
 完整上帝视角的画面样品优先覆盖长昵称与两位数编号的玩家、法官、上帝点评、昼夜两种主题和“行动转述”标记。需要共同评价画面时先交付带声音的独立样品，按用户反馈确定画面，再启动整局；制作整片时复用已确认的样品配音缓存。
 
 用户只要样品时，先做独立目录和显式选择表，不先合成整局。选段应覆盖本次需要看的现象，例如夜间询问/选择/确认、上警标志、白天发言、警长决定顺序、投票邀请与结果；缺少的阶段不能用随便截取前五分钟代替。
@@ -236,19 +238,21 @@ pnpm video:make --room=ROOM_ID --check-only --encoder=cpu
 检查本局 `output/materials-check.json` 的 `ready` 和 `issues`。未通过时按缺项修改，不通过提前填写审核状态绕过。检查通过后，确认 TTS 的服务、账号和外发范围已有授权，再启动整片：
 
 ```powershell
-pnpm video:make --room=ROOM_ID --resume
+pnpm video:make --room=ROOM_ID --encoding-profile=upload --resume
 ```
+
+完整片默认使用 `upload` 编码配置；只有明确需要小体积本地副本时才选 `--encoding-profile=compact`。不要只为网页预览选低码率后直接交付上传版。
 
 这两个命令默认使用本局目录的 `narration.json` 与 `voices.json`。使用独立制作目录或外部材料时，检查与正式制作均传入同样的 `--project-dir`、`--narration`、`--voices`。例如：
 
 ```powershell
 pnpm video:make --room=ROOM_ID --project-dir=独立制作目录 --narration=本局旁白文件 --voices=本局声音表 --check-only --encoder=cpu
-pnpm video:make --room=ROOM_ID --project-dir=独立制作目录 --narration=本局旁白文件 --voices=本局声音表 --encoder=auto --resume
+pnpm video:make --room=ROOM_ID --project-dir=独立制作目录 --narration=本局旁白文件 --voices=本局声音表 --encoder=auto --encoding-profile=upload --resume
 ```
 
-之后程序完成合成、真实时间轴、直接小体积画面、预览和检查。没有 NVIDIA 或用户选择 CPU 时显式用 `--encoder=cpu`；强制 `gpu` 失败时不隐瞒回退。新版本可用 `--project-dir=独立目录` 保存，已有原片不覆盖。遇到鉴权/额度/审批失败，保留成功缓存并报告实际障碍，不重复请求或自动换付费服务。样品模式只跑样品，不暗中制作整局。
+正式渲染后，程序完成合成、真实时间轴、逐段编码、预览和检查。没有 NVIDIA 或用户选择 CPU 时显式用 `--encoder=cpu`；强制 `gpu` 失败时不隐瞒回退。改变编码配置或源画面时使用新的 `--project-dir=独立目录`，并引用原项目已经核验的 WAV 和元数据；不覆盖已有成片，也不重新合成可复用的配音。遇到鉴权/额度/审批失败，保留成功缓存并报告实际障碍，不重复请求或自动换付费服务。样品模式只跑样品，不暗中制作整局。
 
-检查最终文件的夜间、白天发言、警长选择和投票帧，试听一个法官与一个人物；确认字清楚、标志不挡头像、投票结果不早于邀请、昼夜主题一致。默认交付 `output/latest-match.mp4` 小体积视频与字幕，说明实测时长、大小、是否节选和实际编码器；不主动生成大母版。内容已结束不代表允许上传公开平台，发布另按用户指示。
+检查最终文件的夜间、白天发言、警长选择和投票帧，试听一个法官与一个人物；确认字清楚、标志不挡头像、投票结果不早于邀请、昼夜主题一致。还要围绕人物切换和真实 phase/chapter 边界抽取连续帧，暂停逐帧检查切点附近的字幕和细节；不要只看静态中间帧。默认交付 `output/latest-match.mp4` 的 `upload` 配置视频与字幕，说明实测时长、大小、是否节选和实际编码器。代码更新不会修改已经发布到 YouTube 的旧视频；如需修复旧成片，先从源画面和已核验音频生成新的导出，再按用户指示处理发布。内容已结束不代表允许上传公开平台，发布另按用户指示。
 
 ## 第六阶段：制作封面并整理发布材料
 

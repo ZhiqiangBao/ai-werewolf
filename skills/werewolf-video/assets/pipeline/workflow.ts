@@ -7,14 +7,22 @@ import { startGpuMonitor } from './metrics';
 import { videoLocale } from './video-locale';
 import { bindTheme } from './avatar-theme';
 import { createHash } from 'node:crypto';
+import { encodingSettings } from './encoding';
 import { asrProviderForLocale, ensureLocalAsrReady, type AsrProvider } from '../../packages/session/src/asr';
 
 const root = resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const args = new Map(process.argv.slice(2).map((a) => { const i = a.indexOf('='); return [a.slice(0, i < 0 ? undefined : i), i < 0 ? 'true' : a.slice(i + 1)]; }));
 const stages = ['export', 'plan', 'preflight', 'tts', 'audit-audio', 'review-audio', 'timeline', 'render', 'preview', 'verify'] as const;
-const supported = new Set(['--help', '--room', '--player-seat', '--prepare-only', '--check-only', '--through', '--encoder', '--theme', '--video-locale', '--voices', '--narration', '--data-dir', '--project-dir', '--resume', '--repair-audio', '--tts-provider', '--tts-adapter', '--video-kbps', '--max-video-kbps', '--audio-kbps', '--asr-provider', '--asr-aliases', '--alignment-provider']);
+const supported = new Set(['--help', '--room', '--player-seat', '--prepare-only', '--check-only', '--through', '--encoder', '--encoding-profile', '--video-quality', '--theme', '--video-locale', '--voices', '--narration', '--data-dir', '--project-dir', '--resume', '--repair-audio', '--tts-provider', '--tts-adapter', '--video-kbps', '--max-video-kbps', '--audio-kbps', '--asr-provider', '--asr-aliases', '--alignment-provider']);
 for (const key of args.keys()) if (!supported.has(key)) throw Error(`Unknown option ${key}`);
-if (args.has('--help')) { console.log('video:make --room=latest|ID [--player-seat=N] [--prepare-only | --check-only] [--through=STAGE] [--data-dir=DIR] [--project-dir=DIR] [--encoder=auto|cpu|gpu] [--video-locale=zh-CN|en|ja] [--repair-audio] [--asr-provider=auto|local|qwen-token-plan|mimo-token-plan|off] [--asr-aliases=FILE] [--alignment-provider=qwen-token-plan] [--theme=campus|storybook|gufeng|fantasy|urban|future] [--voices=FILE] [--narration=FILE] [--tts-provider=ID --tts-adapter=FILE]\nASR is off by default; enable it explicitly or review selected clips when needed. Local model files must already be installed.'); process.exit(0); }
+if (args.has('--help')) { console.log('video:make --room=latest|ID [--player-seat=N] [--prepare-only | --check-only] [--through=STAGE] [--data-dir=DIR] [--project-dir=DIR] [--encoder=auto|cpu|gpu] [--encoding-profile=upload|compact] [--video-quality=15..40] [--video-kbps=N --max-video-kbps=N] [--video-locale=zh-CN|en|ja] [--repair-audio] [--asr-provider=auto|local|qwen-token-plan|mimo-token-plan|off] [--asr-aliases=FILE] [--alignment-provider=qwen-token-plan] [--theme=campus|storybook|gufeng|fantasy|urban|future] [--voices=FILE] [--narration=FILE] [--tts-provider=ID --tts-adapter=FILE]\nASR is off by default; enable it explicitly or review selected clips when needed. Local model files must already be installed.'); process.exit(0); }
+encodingSettings({ ...process.env,
+  ...(args.has('--encoding-profile') ? { VIDEO_ENCODING_PROFILE: args.get('--encoding-profile')! } : {}),
+  ...(args.has('--video-quality') ? { VIDEO_QUALITY: args.get('--video-quality')! } : {}),
+  ...(args.has('--video-kbps') ? { VIDEO_BITRATE_KBPS: args.get('--video-kbps')! } : {}),
+  ...(args.has('--max-video-kbps') ? { VIDEO_MAXRATE_KBPS: args.get('--max-video-kbps')! } : {}),
+  ...(args.has('--audio-kbps') ? { VIDEO_AUDIO_KBPS: args.get('--audio-kbps')! } : {}),
+});
 if (args.has('--prepare-only') && args.has('--check-only')) throw Error('Choose --prepare-only or --check-only');
 if (args.has('--player-seat') && args.has('--repair-audio')) throw Error('Player view does not support --repair-audio; use a new player project and synthesize its audio again');
 const requestedAsr = args.get('--asr-provider') || 'off';
@@ -67,6 +75,8 @@ const env = { ...process.env, WEREWOLF_DATA: dataRoot, VIDEO_DATA_DIR: dataRoot,
   VIDEO_PLAYER_SEAT: playerSeat || '',
   ...(args.has('--video-locale') ? { VIDEO_LOCALE: args.get('--video-locale')! } : {}),
   VIDEO_REQUIRE_GPU: encoderOption === 'gpu' ? '1' : '0',
+  ...(args.has('--encoding-profile') ? { VIDEO_ENCODING_PROFILE: args.get('--encoding-profile')! } : {}),
+  ...(args.has('--video-quality') ? { VIDEO_QUALITY: args.get('--video-quality')! } : {}),
   ...(args.has('--video-kbps') ? { VIDEO_BITRATE_KBPS: args.get('--video-kbps')! } : {}),
   ...(args.has('--max-video-kbps') ? { VIDEO_MAXRATE_KBPS: args.get('--max-video-kbps')! } : {}),
   ...(args.has('--audio-kbps') ? { VIDEO_AUDIO_KBPS: args.get('--audio-kbps')! } : {}),
