@@ -177,6 +177,7 @@ export function buildRuleCard(rules: RuleSet): string {
     : gameText(rules.locale, "法官从昨夜出局玩家中随机选择一人作为发言依据");
   if (sheriff) L.push(gameText(rules.locale, "· 有警长时的白天发言顺序：警长选择顺时针（座位号增大）或逆时针（座位号减小）；从警长座位之后沿所选方向遇到的第一名存活玩家开始，存活玩家依次发言，警长最后发言。"));
   L.push(gameText(rules.locale, "· 没有警长时的白天发言顺序：法官随机选择并公布顺时针或逆时针方向。昨夜有人出局时，{0}；法官沿所选方向从发言依据座位之后寻找第一名存活玩家作为起点。昨夜无人出局时，法官从存活玩家中随机选择起点。", anchor));
+  L.push(gameText(rules.locale, "· 白天普通讨论按法官公布的顺序逐席进行；每名玩家在本段讨论中完成一次公开发言后，本段发言资格即告用尽，不能再次发言。平票后的补充发言、警长竞选发言和遗言均属于另行开启的发言阶段，是否可以发言以法官当前通知为准。"));
   L.push(gameText(rules.locale, "· 放逐投票：存活玩家同时秘密投票，票齐后公开谁投了谁{0}{1}，超时未投记为弃票。", v['vote.allowSelf'] ? gameText(rules.locale, "，可以投自己") : gameText(rules.locale, "，不能投自己"), v['vote.allowAbstain'] ? gameText(rules.locale, "，可以弃票") : ''));
   L.push(gameText(rules.locale, has('idiot')
     ? "· 放逐结果：最高票玩家被放逐并出局；如果最高票玩家是白痴，按上文白痴例外处理。"
