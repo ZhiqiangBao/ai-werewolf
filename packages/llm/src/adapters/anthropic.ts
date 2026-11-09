@@ -5,7 +5,6 @@ import { abortedOutcome, failure, HttpError, post, runRequest } from '../transpo
 import { jsonInstruction, parseAssistant, parseJson, tokenUsage } from '../result';
 import type { Adapter, AdapterConfig, TranscriptMessage } from '../types';
 import { observeSync } from '../observation';
-import { requestSnapshot } from '../request-snapshot';
 
 export function anthropicInput(messages: TranscriptMessage[], config: AdapterConfig) {
   const binding = protocolBinding({ ...config, apiProtocol: 'anthropic_messages' });
@@ -64,7 +63,7 @@ export const anthropicAdapter: Adapter = {
       const argumentsByIndex = new Map<number, string>();
       let message: any;
       let stopped = false;
-      req.onRequest?.(requestSnapshot(req, url, body, { apiProtocol: 'anthropic_messages', tools: structuredClone(body.tools as unknown[] ?? []), toolChoice: body.tool_choice, ...(json ? { toolInstruction: jsonInstruction(req.tools, req.projection?.locale ?? req.locale) } : {}) }));
+      req.onRequest?.({ apiProtocol: 'anthropic_messages', tools: structuredClone(body.tools as unknown[] ?? []), toolChoice: body.tool_choice, ...(json ? { toolInstruction: jsonInstruction(req.tools, req.projection?.locale ?? req.locale) } : {}) });
       const result = await post(url, body, {
         ...(config.apiKey ? { 'x-api-key': config.apiKey } : {}), 'anthropic-version': '2023-06-01',
       }, signal, (e) => {
