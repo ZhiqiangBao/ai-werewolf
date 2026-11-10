@@ -30,10 +30,16 @@ export async function loadScript(): Promise<Script> {
 }
 export interface VoiceCatalog {
   model: string;
+  theme?: string;
+  themeVoiceBindings?: Record<string, string>;
+  endpoint?: string;
+  apiKeyEnv?: string;
+  flashVoiceBindings?: Record<string, string>;
   profiles: Record<string, VoiceProfile>;
   judgeCues?: Record<string, { instruction?: string; rate?: number }>;
   clipSeeds?: Record<string, number>;
   clipInstructions?: Record<string, string>;
+  clipVolumes?: Record<string, number>;
 }
 // 仅精确匹配随旧版发布的默认指令；用户编辑过的文字始终原样保留。
 const legacyVoiceInstructions: Readonly<Record<string, string>> = {
@@ -63,7 +69,9 @@ export function clipVoiceProfile(voices: VoiceCatalog, clip: Pick<Clip, 'voiceKe
   if (clipInstruction !== undefined && (typeof clipInstruction !== 'string' || !clipInstruction.trim())) throw Error('Invalid clip instruction');
   const seed = clip.id ? voices.clipSeeds?.[clip.id] : undefined;
   if (seed !== undefined && (!Number.isInteger(seed) || seed < 0 || seed > 2147483647)) throw Error('Invalid clip synthesis seed');
-  if (!cue && seed === undefined && clipInstruction === undefined && sourceLocale === undefined) return profile;
+  const clipVolume = clip.id ? voices.clipVolumes?.[clip.id] : undefined;
+  if (clipVolume !== undefined && (!Number.isFinite(clipVolume) || clipVolume < 0 || clipVolume > 100)) throw Error('Invalid clip synthesis volume');
+  if (!cue && seed === undefined && clipInstruction === undefined && clipVolume === undefined && sourceLocale === undefined) return profile;
   let instruction = clipInstruction ?? cue?.instruction ?? profile.instruction;
   if (sourceLocale !== undefined) {
     let language: string;
@@ -76,9 +84,9 @@ export function clipVoiceProfile(voices: VoiceCatalog, clip: Pick<Clip, 'voiceKe
     }
     const languageHints = profile.locale === sourceLocale && profile.languageHints?.length
       ? profile.languageHints : [language === 'yue' ? 'zh' : language];
-    return { ...profile, instruction, rate: cue?.rate ?? profile.rate, locale: sourceLocale, languageHints, ...(seed === undefined ? {} : { seed }) };
+    return { ...profile, instruction, rate: cue?.rate ?? profile.rate, locale: sourceLocale, languageHints, ...(clipVolume === undefined ? {} : { volume: clipVolume }), ...(seed === undefined ? {} : { seed }) };
   }
-  return { ...profile, instruction, rate: cue?.rate ?? profile.rate, ...(seed === undefined ? {} : { seed }) };
+  return { ...profile, instruction, rate: cue?.rate ?? profile.rate, ...(clipVolume === undefined ? {} : { volume: clipVolume }), ...(seed === undefined ? {} : { seed }) };
 }
 export async function loadVoices(): Promise<VoiceCatalog> {
   const file = process.env.VIDEO_VOICES_FILE;

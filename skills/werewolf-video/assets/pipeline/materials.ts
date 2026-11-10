@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { buildClips, clipVoiceProfile, loadScript, projectDir, type Script, type VoiceCatalog } from './project';
 import { editScript } from './editorial';
 import { assertPlayerSources } from './integrity';
+import { voiceCatalogIssues } from './tts-config';
 
 const object = (value: unknown): value is Record<string, any> => !!value && typeof value === 'object' && !Array.isArray(value);
 const text = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
@@ -34,10 +35,13 @@ export function materialIssues(source: Script, narration: unknown, voices: Voice
     }
   }
   if (!text(voices?.model) || !object(voices?.profiles)) issues.push('声音表缺少 model 或 profiles');
+  if (voices?.model && object(voices?.profiles)) issues.push(...voiceCatalogIssues(voices));
   for (const key of new Set(['judge', 'commentator', ...source.cast.map((cast) => cast.voiceKey)])) {
     const profile = voices?.profiles?.[key];
-    if (!profile || !text(profile.voice) || !Number.isFinite(profile.rate) || profile.rate <= 0 || typeof profile.instruction !== 'string') {
-      issues.push(`音色 ${key} 缺失或 voice／rate／instruction 无效`);
+    if (!profile || !text(profile.voice) || !Number.isFinite(profile.rate) || profile.rate <= 0 ||
+      (profile.volume !== undefined && (!Number.isFinite(profile.volume) || profile.volume < 0 || profile.volume > 100)) ||
+      typeof profile.instruction !== 'string') {
+      issues.push(`音色 ${key} 缺失或 voice／rate／volume／instruction 无效`);
     }
   }
   return issues;

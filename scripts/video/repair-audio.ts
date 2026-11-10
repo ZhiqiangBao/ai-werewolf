@@ -71,6 +71,9 @@ export async function repairAudio(directory: string, options: RepairOptions): Pr
     const voicesFile = join(directory, 'voices.json');
     const voicesText = await readFile(voicesFile, 'utf8'), voices = JSON.parse(voicesText) as VoiceCatalog;
     const profile = clipVoiceProfile(voices, clip, source.locale ?? 'zh-CN'), entry: RepairEntry = { id, status: 'pending', oldDigest: inspected.digest, attempts: [] };
+    const originalMeta = JSON.parse(await readFile(clip.audioFile + '.json', 'utf8')) as { voice?: string; model?: string };
+    assert.equal(originalMeta.voice, profile.voice, `Existing audio voice differs from current seat voice for ${id}`);
+    if (originalMeta.model !== undefined) assert.equal(originalMeta.model, voices.model, `Existing audio model differs from voices.json for ${id}`);
     report.entries.push(entry); await persist();
     const folder = join(runDirectory, id); await mkdir(folder, { recursive: true });
     for (let attempt = 1; attempt <= attempts; attempt++) {

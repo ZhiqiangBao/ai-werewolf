@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { projectDir, loadScript, loadVoices, dataDir } from './project';
 import { draftNarration } from './narration';
 import { syncPublishCopy } from './publish-copy';
-import { applyCharacterVoices } from './character-voices';
+import { applyCharacterVoices, themeVoiceBindings } from './character-voices';
 import { artManifest, bindTheme } from './avatar-theme';
 import { selectVoiceCatalogModel } from './tts-config';
 import { join } from 'node:path';
@@ -21,10 +21,28 @@ if (!existsSync(voiceFile)) {
   const base = applyCharacterVoices(await loadVoices(), script.cast, theme);
   const voices = requestedTtsModel ? selectVoiceCatalogModel(base, requestedTtsModel) : base;
   await writeFile(voiceFile, JSON.stringify(voices, null, 2));
-} else if (requestedTtsModel) {
+} else {
   const current = JSON.parse(await readFile(voiceFile, 'utf8'));
-  const voices = selectVoiceCatalogModel(current, requestedTtsModel);
-  await writeFile(voiceFile, JSON.stringify(voices, null, 2));
+  const originalCurrent = JSON.stringify(current);
+  const enrollmentFile = join(projectDir, 'voice-enrollment.json');
+  if (requestedTtsModel === 'qwen-audio-3.1-tts-flash' && existsSync(enrollmentFile)) {
+    const enrollment = JSON.parse(await readFile(enrollmentFile, 'utf8')) as { model?: string; voices?: Record<string, { voice?: string; status?: string }> };
+    if (enrollment.model === requestedTtsModel) {
+      current.model = requestedTtsModel;
+      for (const [key, entry] of Object.entries(enrollment.voices ?? {})) {
+        if (entry.status === 'OK' && entry.voice && current.profiles?.[key]) {
+          current.flashVoiceBindings ??= {};
+          current.flashVoiceBindings[key] = entry.voice;
+          current.profiles[key] = { ...current.profiles[key], voice: entry.voice };
+        }
+      }
+    }
+  }
+  const expectedBindings = themeVoiceBindings(theme, script.cast);
+  const bindingsMatch = current.theme === theme && JSON.stringify(current.themeVoiceBindings ?? {}) === JSON.stringify(expectedBindings);
+  const themed = bindingsMatch ? current : applyCharacterVoices(current, script.cast, theme);
+  const voices = requestedTtsModel && themed.model !== requestedTtsModel ? selectVoiceCatalogModel(themed, requestedTtsModel) : themed;
+  if (JSON.stringify(voices) !== originalCurrent) await writeFile(voiceFile, JSON.stringify(voices, null, 2));
 }
 const narration = JSON.parse(await readFile(narrationFile, 'utf8'));
 const voices = JSON.parse(await readFile(voiceFile, 'utf8'));

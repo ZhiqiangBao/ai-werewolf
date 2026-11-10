@@ -8,19 +8,26 @@ export type { VoiceProfile, Word, AudioMeta } from './tts-types';
 
 // The user authorized Token Plan. Never silently switch to a pay-as-you-go key.
 const ENDPOINT = 'https://token-plan.maas.qianwenaiapi.com/api/v1/services/audio/tts/SpeechSynthesizer';
+export function qwenCacheKey(endpoint: string, model: string, input: unknown): string {
+  return createHash('sha256').update(JSON.stringify({ endpoint, model, input })).digest('hex');
+}
 export async function synthesizeQwen(text: string, profile: VoiceProfile, model: string, output: string, options?: { signal?: AbortSignal; endpoint?: string; apiKey?: string }): Promise<AudioMeta> {
   options?.signal?.throwIfAborted();
-  const explicit = options?.endpoint !== undefined || options?.apiKey !== undefined;
-  const endpoint = options?.endpoint ?? ENDPOINT;
+  const configuredEndpoint = process.env.VIDEO_TTS_ENDPOINT?.trim() || undefined;
+  const configuredKeyEnv = process.env.VIDEO_TTS_API_KEY_ENV?.trim() || undefined;
+  const configuredKey = process.env.VIDEO_TTS_API_KEY || (configuredKeyEnv ? process.env[configuredKeyEnv] : undefined);
+  const explicit = options?.endpoint !== undefined || options?.apiKey !== undefined || configuredEndpoint !== undefined;
+  const endpoint = options?.endpoint ?? configuredEndpoint ?? ENDPOINT;
   if (explicit) {
     const url = new URL(endpoint);
-    if (!options?.apiKey || !options.endpoint || !['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw Error('Explicit Qwen TTS endpoint and key are required');
+    if (!(options?.apiKey ?? configuredKey) || !['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw Error('Explicit Qwen TTS endpoint and key are required');
   }
   const seed = profile.seed ?? 31415;
   if (!Number.isInteger(seed) || seed < 0 || seed > 2147483647) throw Error('Invalid Qwen synthesis seed');
   const input = { text, voice: profile.voice, format: 'wav', sample_rate: 24000, rate: profile.rate,
+    ...(profile.volume === undefined ? {} : { volume: profile.volume }),
     ...(profile.instruction.trim() ? { instruction: profile.instruction } : {}), language_hints: profile.languageHints ?? [profile.locale?.split('-')[0] ?? 'zh'], word_timestamp_enabled: true, seed };
-  const cacheKey = createHash('sha256').update(JSON.stringify(explicit ? { endpoint, model, input } : { model, input })).digest('hex');
+  const cacheKey = qwenCacheKey(endpoint, model, input);
   try {
     const meta = JSON.parse(await readFile(output + '.json', 'utf8')) as AudioMeta;
     const bytes = await readFile(output);
@@ -30,8 +37,8 @@ export async function synthesizeQwen(text: string, profile: VoiceProfile, model:
   const reused = await reuseAudio(cacheKey, output);
   options?.signal?.throwIfAborted();
   if (reused) return reused;
-  const apiKey = explicit ? options!.apiKey : process.env.WEREWOLF_TTS_API_KEY || projectQwenTokenPlanKey();
-  if (explicit ? !apiKey : !apiKey?.startsWith('sk-sp-')) throw Error('Qwen Token Plan key is unavailable');
+  const apiKey = explicit ? options?.apiKey ?? configuredKey : process.env.WEREWOLF_TTS_API_KEY || projectQwenTokenPlanKey();
+  if (explicit ? !apiKey : !apiKey?.startsWith('sk-sp-')) throw Error('Qwen TTS key is unavailable');
   const response = await fetch(endpoint, { method: 'POST', ...(explicit ? { redirect: 'error' as const } : {}),
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'X-DashScope-SSE': 'enable' },
     body: JSON.stringify({ model, input }), signal: options?.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(240000)]) : AbortSignal.timeout(240000) });

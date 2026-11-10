@@ -55,14 +55,38 @@ export const characterVoices = {
   ],
 } as const;
 
+export type AvatarTheme = keyof typeof characterVoices;
+
+export function characterGender(theme: string, seat: number): Character['gender'] {
+  const characters = characterVoices[theme as AvatarTheme];
+  const character = characters?.[seat - 1];
+  if (!character) throw Error(`Missing character binding for ${theme} seat ${seat}`);
+  return character.gender;
+}
+
+export function themeVoiceBindings(theme: string, cast: Cast[]): Record<string, string> {
+  if (!Object.hasOwn(characterVoices, theme)) throw Error(`Unsupported avatar theme: ${theme}`);
+  const characters: readonly Character[] = characterVoices[theme as keyof typeof characterVoices];
+  return Object.fromEntries(cast.map((c) => {
+    const character = characters[c.seat - 1];
+    if (!character) throw Error(`Missing character for ${theme} seat ${c.seat}`);
+    return [c.voiceKey, `qwen-audio-3.0-tts-plus-${character.voice}`];
+  }));
+}
+
 export function applyCharacterVoices(voices: VoiceCatalog, cast: Cast[], theme: string): VoiceCatalog {
   if (!Object.hasOwn(characterVoices, theme)) throw Error(`Unsupported avatar theme: ${theme}`);
   const characters: readonly Character[] = characterVoices[theme as keyof typeof characterVoices];
-  const result: VoiceCatalog = { ...voices, profiles: { ...voices.profiles } };
+  const bindings = themeVoiceBindings(theme, cast);
+  const result: VoiceCatalog = { ...voices, theme, themeVoiceBindings: bindings, profiles: { ...voices.profiles } };
   for (const c of cast) {
     const character = characters[c.seat - 1];
     if (!character || !voices.profiles[c.voiceKey]) throw Error(`A voice profile is required for ${c.voiceKey}`);
-    result.profiles[c.voiceKey] = { voice: `qwen-audio-3.0-tts-plus-${character.voice}`, label: `${c.seat}号 ${c.name}`, rate: 1.04, instruction: '' };
+    const previous = voices.profiles[c.voiceKey];
+    const voice = voices.model === 'qwen-audio-3.1-tts-flash' && voices.flashVoiceBindings?.[c.voiceKey]
+      ? voices.flashVoiceBindings[c.voiceKey]
+      : `qwen-audio-3.0-tts-plus-${character.voice}`;
+    result.profiles[c.voiceKey] = { ...previous, voice, label: `${c.seat}号 ${c.name}`, rate: previous.rate ?? 1.04, instruction: previous.instruction ?? '' };
   }
   return result;
 }

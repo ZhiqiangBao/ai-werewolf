@@ -9,13 +9,14 @@ import { bindTheme } from './avatar-theme';
 import { createHash } from 'node:crypto';
 import { encodingSettings } from './encoding';
 import { asrProviderForLocale, ensureLocalAsrReady, type AsrProvider } from '../../packages/session/src/asr';
+import { environmentForTtsModel } from './tts-config';
 
 const root = resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const args = new Map(process.argv.slice(2).map((a) => { const i = a.indexOf('='); return [a.slice(0, i < 0 ? undefined : i), i < 0 ? 'true' : a.slice(i + 1)]; }));
 const stages = ['export', 'plan', 'preflight', 'tts', 'audit-audio', 'review-audio', 'timeline', 'render', 'preview', 'verify'] as const;
-const supported = new Set(['--help', '--room', '--player-seat', '--prepare-only', '--check-only', '--through', '--encoder', '--encoding-profile', '--video-quality', '--theme', '--video-locale', '--voices', '--narration', '--data-dir', '--project-dir', '--resume', '--repair-audio', '--tts-provider', '--tts-adapter', '--video-kbps', '--max-video-kbps', '--audio-kbps', '--asr-provider', '--asr-aliases', '--alignment-provider']);
+const supported = new Set(['--help', '--room', '--player-seat', '--prepare-only', '--check-only', '--through', '--encoder', '--encoding-profile', '--video-quality', '--theme', '--video-locale', '--voices', '--narration', '--data-dir', '--project-dir', '--resume', '--repair-audio', '--tts-provider', '--tts-adapter', '--tts-model', '--video-kbps', '--max-video-kbps', '--audio-kbps', '--asr-provider', '--asr-aliases', '--alignment-provider']);
 for (const key of args.keys()) if (!supported.has(key)) throw Error(`Unknown option ${key}`);
-if (args.has('--help')) { console.log('video:make --room=latest|ID [--player-seat=N] [--prepare-only | --check-only] [--through=STAGE] [--data-dir=DIR] [--project-dir=DIR] [--encoder=auto|cpu|gpu] [--encoding-profile=upload|compact] [--video-quality=15..40] [--video-kbps=N --max-video-kbps=N] [--video-locale=zh-CN|en|ja] [--repair-audio] [--asr-provider=auto|local|qwen-token-plan|mimo-token-plan|off] [--asr-aliases=FILE] [--alignment-provider=qwen-token-plan] [--theme=campus|storybook|gufeng|fantasy|urban|future] [--voices=FILE] [--narration=FILE] [--tts-provider=ID --tts-adapter=FILE]\nASR is off by default; enable it explicitly or review selected clips when needed. Local model files must already be installed.'); process.exit(0); }
+if (args.has('--help')) { console.log('video:make --room=latest|ID [--player-seat=N] [--prepare-only | --check-only] [--through=STAGE] [--data-dir=DIR] [--project-dir=DIR] [--encoder=auto|cpu|gpu] [--encoding-profile=upload|compact] [--video-quality=15..40] [--video-kbps=N --max-video-kbps=N] [--video-locale=zh-CN|en|ja] [--repair-audio] [--tts-model=qwen-audio-3.0-tts-plus|qwen-audio-3.1-tts-flash] [--tts-provider=ID --tts-adapter=FILE] [--asr-provider=auto|local|qwen-token-plan|mimo-token-plan|off] [--asr-aliases=FILE] [--alignment-provider=qwen-token-plan] [--theme=campus|storybook|gufeng|fantasy|urban|future] [--voices=FILE] [--narration=FILE]\nASR is off by default; enable it explicitly or review selected clips when needed. Local model files must already be installed.'); process.exit(0); }
 encodingSettings({ ...process.env,
   ...(args.has('--encoding-profile') ? { VIDEO_ENCODING_PROFILE: args.get('--encoding-profile')! } : {}),
   ...(args.has('--video-quality') ? { VIDEO_QUALITY: args.get('--video-quality')! } : {}),
@@ -26,6 +27,8 @@ encodingSettings({ ...process.env,
 if (args.has('--prepare-only') && args.has('--check-only')) throw Error('Choose --prepare-only or --check-only');
 if (args.has('--player-seat') && args.has('--repair-audio')) throw Error('Player view does not support --repair-audio; use a new player project and synthesize its audio again');
 const requestedAsr = args.get('--asr-provider') || 'off';
+const requestedTtsModel = args.get('--tts-model');
+if (requestedTtsModel) environmentForTtsModel(requestedTtsModel);
 if (!['auto', 'local', 'qwen-token-plan', 'mimo-token-plan', 'off'].includes(requestedAsr)) throw Error('Unsupported ASR provider');
 const alignmentProvider = args.get('--alignment-provider');
 if (alignmentProvider && alignmentProvider !== 'qwen-token-plan') throw Error('Unsupported alignment provider');
@@ -71,6 +74,31 @@ if (encoderOption !== 'cpu') {
 }
 const last = args.has('--prepare-only') ? 'plan' : args.has('--check-only') ? 'preflight' : args.get('--through') || 'verify';
 if (!stages.includes(last as any)) throw Error('Invalid final stage');
+const statusFile = `${dir}/workflow-status.json`;
+const resumeRequested = args.has('--resume');
+let previousReport: { roomId?: string; encoder?: string; theme?: string; completed?: string[]; asr?: { requestedProvider?: string }; requestedTtsModel?: string | null } | undefined;
+if (resumeRequested && existsSync(statusFile)) {
+  const savedReport = JSON.parse(await readFile(statusFile, 'utf8')) as NonNullable<typeof previousReport>;
+  previousReport = savedReport;
+  if (savedReport.roomId !== room || savedReport.encoder !== encoder || savedReport.theme !== theme) {
+    throw Error('Cannot resume: room, encoder, or theme differs from the previous workflow checkpoint');
+  }
+  if (savedReport.asr?.requestedProvider !== undefined && savedReport.asr.requestedProvider !== requestedAsr) {
+    throw Error('Cannot resume: ASR provider differs from the previous workflow checkpoint');
+  }
+  if (savedReport.requestedTtsModel !== undefined && savedReport.requestedTtsModel !== (requestedTtsModel ?? null)) {
+    throw Error('Cannot resume: TTS model differs from the previous workflow checkpoint');
+  }
+}
+const completedBeforeResume = resumeRequested ? [...(previousReport?.completed ?? [])] : [];
+const completedSet = new Set(completedBeforeResume);
+let resumeStartIndex = 0;
+while (resumeStartIndex < stages.length && completedSet.has(stages[resumeStartIndex])) resumeStartIndex++;
+if (completedBeforeResume.some((stage) => !stages.includes(stage as typeof stages[number]))) throw Error('Cannot resume: workflow checkpoint contains an unknown stage');
+if (completedBeforeResume.some((stage) => stages.indexOf(stage as typeof stages[number]) >= resumeStartIndex)) {
+  throw Error('Cannot resume: workflow checkpoint is not contiguous');
+}
+const selectedTtsEnv = requestedTtsModel ? environmentForTtsModel(requestedTtsModel) : {};
 const env = { ...process.env, WEREWOLF_DATA: dataRoot, VIDEO_DATA_DIR: dataRoot, VIDEO_ROOM: room, VIDEO_PROJECT_DIR: dir, VIDEO_AVATAR_STYLE: theme, VIDEO_ENCODER: encoder,
   VIDEO_PLAYER_SEAT: playerSeat || '',
   ...(args.has('--video-locale') ? { VIDEO_LOCALE: args.get('--video-locale')! } : {}),
@@ -82,18 +110,20 @@ const env = { ...process.env, WEREWOLF_DATA: dataRoot, VIDEO_DATA_DIR: dataRoot,
   ...(args.has('--audio-kbps') ? { VIDEO_AUDIO_KBPS: args.get('--audio-kbps')! } : {}),
   VIDEO_TTS_PROVIDER: args.get('--tts-provider') || process.env.VIDEO_TTS_PROVIDER || 'qwen-token-plan',
   ...(args.get('--tts-adapter') ? { VIDEO_TTS_ADAPTER: resolve(root, args.get('--tts-adapter')!) } : {}),
+  ...selectedTtsEnv,
   VIDEO_VOICES_FILE: resolve(root, args.get('--voices') || `${dir}/voices.json`),
   VIDEO_NARRATION_FILE: resolve(root, args.get('--narration') || `${dir}/narration.json`) };
 // Do not put credentials or the raw room document into workflow reports.
-const report: { roomId: string; encoder: string; theme: string; completed: string[]; status: string; error?: string; asr: { requestedProvider: string; effectiveProvider?: string; locale?: string; audioSemanticReview: string; report?: string; alignmentProvider?: string; failedClipIds?: string[]; recognitionRequests?: number; alignmentRequests?: number } } = { roomId: room, encoder, theme, completed: [], status: 'running', asr: { requestedProvider: requestedAsr, audioSemanticReview: requestedAsr === 'off' ? 'not-checked-explicitly-disabled' : 'pending', ...(alignmentProvider ? { alignmentProvider } : {}) } };
-await writeFile(`${dir}/workflow-status.json`, JSON.stringify(report, null, 2));
+const report: { roomId: string; encoder: string; theme: string; requestedTtsModel: string | null; completed: string[]; status: string; error?: string; asr: { requestedProvider: string; effectiveProvider?: string; locale?: string; audioSemanticReview: string; report?: string; alignmentProvider?: string; failedClipIds?: string[]; recognitionRequests?: number; alignmentRequests?: number } } = { roomId: room, encoder, theme, requestedTtsModel: requestedTtsModel ?? null, completed: completedBeforeResume, status: 'running', asr: { requestedProvider: requestedAsr, audioSemanticReview: requestedAsr === 'off' ? 'not-checked-explicitly-disabled' : 'pending', ...(alignmentProvider ? { alignmentProvider } : {}) } };
+await writeFile(statusFile, JSON.stringify(report, null, 2));
 const run = (file: string, extra: string[] = []) => new Promise<void>((ok, fail) => {
   const child = spawn(process.execPath, ['--import', 'tsx', file, ...extra], { cwd: root, env, windowsHide: true, stdio: 'inherit' });
   child.on('error', fail); child.on('close', (code) => code === 0 ? ok() : fail(Error(`${file} stopped with code ${code}`)));
 });
 let stopMonitor: Awaited<ReturnType<typeof startGpuMonitor>> | undefined;
 try {
-  for (const stage of stages) {
+  for (let stageIndex = resumeStartIndex; stageIndex < stages.length; stageIndex++) {
+    const stage = stages[stageIndex];
     console.log(`VIDEO_STAGE ${stage} ${room}`);
     if (stage === 'render') stopMonitor = await startGpuMonitor(`${dir}/gpu-metrics.json`);
     if (stage === 'export') {
@@ -152,10 +182,10 @@ try {
     else await run(`scripts/video/${stage === 'tts' ? 'synthesize' : stage}.ts`);
     if (stage === 'verify' && !playerSeat) await run('scripts/video/publish-copy.ts', ['--if-exists']);
     if (stage === 'render' && stopMonitor) { await stopMonitor(); stopMonitor = undefined; }
-    report.completed.push(stage); await writeFile(`${dir}/workflow-status.json`, JSON.stringify(report, null, 2));
+    report.completed.push(stage); await writeFile(statusFile, JSON.stringify(report, null, 2));
     if (stage === last) break;
   }
   report.status = last === 'verify' ? 'complete' : 'checkpoint';
 } catch (error) { report.status = 'failed'; report.error = error instanceof Error ? error.message : 'Unknown workflow error'; process.exitCode = 1; }
-finally { if (stopMonitor) await stopMonitor(); await writeFile(`${dir}/workflow-status.json`, JSON.stringify(report, null, 2)); }
+finally { if (stopMonitor) await stopMonitor(); await writeFile(statusFile, JSON.stringify(report, null, 2)); }
 console.log(JSON.stringify(report, null, 2));

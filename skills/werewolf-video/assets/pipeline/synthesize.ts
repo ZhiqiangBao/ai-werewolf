@@ -8,6 +8,16 @@ import assert from 'node:assert/strict';
 import { preparePlayerAudio } from './player-audio-provenance';
 
 const prepared = process.argv.includes('--prepared-clips');
+const voiceKeysArg = process.argv.find((arg) => arg.startsWith('--voice-keys='));
+const clipsArg = process.argv.find((arg) => arg.startsWith('--clips='));
+const selectedVoiceKeys = voiceKeysArg
+  ? voiceKeysArg.slice('--voice-keys='.length).split(',').map((value) => value.trim()).filter(Boolean)
+  : undefined;
+const selectedClipIds = clipsArg
+  ? clipsArg.slice('--clips='.length).split(',').map((value) => value.trim()).filter(Boolean)
+  : undefined;
+if (selectedVoiceKeys && !selectedVoiceKeys.length) throw Error('--voice-keys requires at least one voice key');
+if (selectedClipIds && !selectedClipIds.length) throw Error('--clips requires at least one clip ID');
 const source: Script = prepared ? JSON.parse(await readFile(`${projectDir}/source.json`, 'utf8')) : await loadScript();
 if (prepared && (process.env.VIDEO_PLAYER_SEAT || source.perspective === 'player')) {
   assert.equal(source.perspective, 'player', 'Mixed player and god view artifacts');
@@ -15,7 +25,24 @@ if (prepared && (process.env.VIDEO_PLAYER_SEAT || source.perspective === 'player
 }
 const script: Script = prepared ? JSON.parse(await readFile(`${projectDir}/script.json`, 'utf8')) : await editScript(source);
 const voices: VoiceCatalog = prepared ? JSON.parse(await readFile(`${projectDir}/voices.json`, 'utf8')) : await loadVoices();
+const requestedModel = process.env.VIDEO_TTS_MODEL?.trim();
+if (requestedModel && requestedModel !== voices.model) throw Error(`TTS model ${requestedModel} does not match voices.json model ${voices.model}`);
 const clips = prepared ? JSON.parse(await readFile(`${projectDir}/clips.json`, 'utf8')) as ReturnType<typeof buildClips> : buildClips(script);
+const synthesisClips = clips.filter((clip) =>
+  (!selectedVoiceKeys || selectedVoiceKeys.includes(clip.voiceKey)) &&
+  (!selectedClipIds || selectedClipIds.includes(clip.id)));
+if (selectedVoiceKeys) {
+  const availableVoiceKeys = new Set(clips.map((clip) => clip.voiceKey));
+  const unknownVoiceKeys = selectedVoiceKeys.filter((key) => !availableVoiceKeys.has(key));
+  if (unknownVoiceKeys.length) throw Error(`Unknown voice key(s): ${unknownVoiceKeys.join(', ')}`);
+  if (!synthesisClips.length) throw Error('No clips match --voice-keys');
+}
+if (selectedClipIds) {
+  const availableClipIds = new Set(clips.map((clip) => clip.id));
+  const unknownClipIds = selectedClipIds.filter((id) => !availableClipIds.has(id));
+  if (unknownClipIds.length) throw Error(`Unknown clip ID(s): ${unknownClipIds.join(', ')}`);
+  if (!synthesisClips.length) throw Error('No clips match --clips');
+}
 assertPlayerSources(source, script, clips);
 if (!process.argv.includes('--plan-only')) {
   const materials = await inspectMaterials(source, voices);
@@ -27,20 +54,22 @@ await writeFile(`${projectDir}/source.json`, JSON.stringify(source, null, 2));
 await writeFile(`${projectDir}/voices.json`, JSON.stringify(voices, null, 2));
 await writeFile(`${projectDir}/clips.json`, JSON.stringify(clips, null, 2));
 if (process.argv.includes('--plan-only')) {
-  console.log(JSON.stringify({ roomId: script.roomId, clips: clips.length, characters: clips.reduce((s, c) => s + c.spokenText.length, 0),
+  console.log(JSON.stringify({ roomId: script.roomId, clips: synthesisClips.length, totalClips: clips.length,
+    ...(selectedVoiceKeys ? { voiceKeys: selectedVoiceKeys } : {}), ...(selectedClipIds ? { clipIds: selectedClipIds } : {}),
+    characters: synthesisClips.reduce((s, c) => s + c.spokenText.length, 0),
     originalPlayerEntries: source.chapters.flatMap((c) => c.entries).filter((e) => e.seat !== undefined).length,
-    hostingChoices: clips.filter((c) => c.type === 'hosting.choice').length, planOnly: true }));
+    hostingChoices: synthesisClips.filter((c) => c.type === 'hosting.choice').length, planOnly: true }));
   process.exit(0);
 }
 const recordPlayerAudio = await preparePlayerAudio(source, voices, clips);
 let cursor = 0, complete = 0;
 const fatal = (reason: string) => /401|403|429|key is unavailable|quota|insufficient|billing/i.test(reason);
 const errors: { id: string; reason: string }[] = [];
-console.log(JSON.stringify({ roomId: script.roomId, sourceEntries: script.chapters.reduce((s, c) => s + c.entries.length, 0), clips: clips.length, characters: clips.reduce((s, c) => s + c.spokenText.length, 0), model: voices.model }));
+console.log(JSON.stringify({ roomId: script.roomId, sourceEntries: script.chapters.reduce((s, c) => s + c.entries.length, 0), clips: synthesisClips.length, totalClips: clips.length, ...(selectedVoiceKeys ? { voiceKeys: selectedVoiceKeys } : {}), ...(selectedClipIds ? { clipIds: selectedClipIds } : {}), characters: synthesisClips.reduce((s, c) => s + c.spokenText.length, 0), model: voices.model }));
 async function worker() {
-  while (cursor < clips.length) {
+  while (cursor < synthesisClips.length) {
     if (errors.some((e) => fatal(e.reason))) break;
-    const clip = clips[cursor++];
+    const clip = synthesisClips[cursor++];
     const profile = clipVoiceProfile(voices, clip, source.locale ?? 'zh-CN');
     let done = false;
     for (let attempt = 0; attempt < 3 && !done; attempt++) {
@@ -49,7 +78,7 @@ async function worker() {
         const meta = await synthesizeSpeech(clip.spokenText, profile, voices.model, clip.audioFile);
         if (recordPlayerAudio) await recordPlayerAudio(clip, meta);
         complete++; done = true;
-        console.log(JSON.stringify({ complete, total: clips.length, clip: clip.id, voice: clip.voiceKey, seconds: Math.round((Date.now() - start) / 1000), bytes: meta.bytes, words: meta.sentences.reduce((s, x) => s + x.words.length, 0) }));
+        console.log(JSON.stringify({ complete, total: synthesisClips.length, clip: clip.id, voice: clip.voiceKey, seconds: Math.round((Date.now() - start) / 1000), bytes: meta.bytes, words: meta.sentences.reduce((s, x) => s + x.words.length, 0) }));
       } catch (error) {
         const reason = error instanceof Error ? error.message : 'Unknown synthesis error';
         console.log(JSON.stringify({ clip: clip.id, attempt: attempt + 1, error: reason }));
@@ -61,5 +90,5 @@ async function worker() {
   }
 }
 await Promise.all([worker(), worker(), worker()]);
-await writeFile(`${projectDir}/synthesis-status.json`, JSON.stringify({ complete, total: clips.length, errors }, null, 2));
+await writeFile(`${projectDir}/synthesis-status.json`, JSON.stringify({ complete, total: synthesisClips.length, ...(selectedVoiceKeys ? { voiceKeys: selectedVoiceKeys } : {}), ...(selectedClipIds ? { clipIds: selectedClipIds } : {}), errors }, null, 2));
 if (errors.length) process.exitCode = 1;

@@ -25,6 +25,7 @@ export async function synthesizeQwen(text: string, profile: VoiceProfile, model:
   const seed = profile.seed ?? 31415;
   if (!Number.isInteger(seed) || seed < 0 || seed > 2147483647) throw Error('Invalid Qwen synthesis seed');
   const input = { text, voice: profile.voice, format: 'wav', sample_rate: 24000, rate: profile.rate,
+    ...(profile.volume === undefined ? {} : { volume: profile.volume }),
     ...(profile.instruction.trim() ? { instruction: profile.instruction } : {}), language_hints: profile.languageHints ?? [profile.locale?.split('-')[0] ?? 'zh'], word_timestamp_enabled: true, seed };
   const cacheKey = qwenCacheKey(endpoint, model, input);
   try {

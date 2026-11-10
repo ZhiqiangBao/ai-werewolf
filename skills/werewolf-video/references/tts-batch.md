@@ -46,6 +46,20 @@ node node_modules/tsx/dist/cli.mjs scripts/video/synthesize.ts
 
 需要先查看实际外发清单时，运行 `synthesize.ts --plan-only`；它先做原话/行动来源校验，再保存本局 `source.json`、`script.json`、`clips.json` 和声音表，不调用服务。根据完整请求缓存键区分复用与新增台词；若新增内容超出现有外发授权，只列新增部分供用户审阅。
 
+## 模型切换与新声线
+
+模型切换是一次新的制作决定。制作执行者先在项目记录目标模型、端点和授权，再运行准备阶段并检查 `materials-check.json`。`voices.json.model`、每个 profile 的 `voice`、`voice-enrollment.json` 和音频元数据必须指向同一目标模型。只为修复破音或词时问题时，不传 `--tts-model`，也不运行会重写声音表的准备步骤。
+
+每个座位在一个项目中只保留一个 `voice`。音频不通过时锁定当前 `voices.json`，按座位或片段重新合成。按座位补音频使用 `synthesize.ts --prepared-clips --voice-keys=seat-1,seat-4`，按片段补音频使用 `video:repair-audio --clips=片段ID --max-attempts=1`。连续削波时可在 `voices.json.clipVolumes` 为失败片段设置 0 到 100 的 `volume`，保持同一 voice ID 并让缓存键包含该参数。成功后重新执行音频审计和时间轴检查。不要把另一条系统声线写入 profile，也不要把新声线的音频与旧声线混在同一座位中。
+
+目标模型没有当前人物可用的对应声线时，制作执行者先确认确实要切换模型，再为缺少绑定的座位创建目标模型声线。例如 Flash 设计声线使用：
+
+```powershell
+pnpm video:voice-enroll --project-dir=项目目录 --model=qwen-audio-3.1-tts-flash --design --seats=1,4 --prefix=项目前缀
+```
+
+程序把返回的 voice ID、目标模型、人物性别、主题和创建时间写入 `voice-enrollment.json`，并同步 `voices.json.flashVoiceBindings`。创建成功后必须重新合成该座位的全部片段，再运行波形、字幕、时间轴和听感检查。创建接口失败、目标模型不支持或授权不完整时停止，不自动改用兼容声线。`DASHSCOPE_API_KEY` 只从已获授权的运行环境读取，密钥不写入材料或日志。
+
 同一对局从样品扩展为整片时，可把 `VIDEO_AUDIO_CACHE_DIRS` 设为已有音频目录绝对路径的 JSON 数组，例如 `'["D:/项目/data/video/ROOM/audio","D:/项目/data/video/ROOM/sample/audio"]'`。内置 Qwen 适配器在发请求前按完整缓存键查找，检查字节数与 WAV 头，复用音频和真实时间戳；不能仅凭文字相同而复用另一角色声音。其他 TTS 适配器可在计算自己的完整请求键后调用 `audio-cache.ts` 的 `reuseAudio`，不同服务/端点须进入键中。
 
 Qwen Token Plan 特例：
@@ -58,7 +72,7 @@ Qwen Token Plan 特例：
 
 接口变化时核对 [Qwen HTTP API](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-audio-tts/http-api) 和 [Token Plan 多模态接入](https://platform.qianwenai.com/docs/token-plan/best-practices/multimodal-generation)。
 
-本机已归档的资料入口在仓库 `data/reference-library/qwen-audio/00-打开资料库.html`；`manifest.json` 记录来源和抓取日期。agent 先查看对应模型的文本控制、音色与时间戳资料，目录缺失或接口行为与归档不符时再查上面的官方来源。归档不是新版本能力保证。
+本机已归档的资料入口在仓库 `data/reference-library/qwen-audio/00-打开资料库.html`；`manifest.json` 记录来源和抓取日期。制作执行者先查看对应模型的文本控制、音色与时间戳资料，目录缺失或接口行为与归档不符时再查上面的官方来源。归档不是新版本能力保证。
 
 编辑版旁白程序的 `dashscope` 路由沿用本项目已验证的标准付费端点 `https://maas.qianwenaiapi.com/api/v1/services/audio/tts/SpeechSynthesizer`，从 `DASHSCOPE_API_KEY` 读取凭据；`token-plan` 使用既有 Token Plan 端点。此配置名称不代表可自动改用其他 DashScope 域名。完整片其他服务仍通过下面的显式适配器接入。
 

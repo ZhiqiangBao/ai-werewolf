@@ -5,7 +5,7 @@ await mkdir(new URL('assets/pipeline/', skill), { recursive: true });
 await mkdir(new URL('assets/art/moon-village/', skill), { recursive: true });
 // Keep the installable bundle self-contained even when this checkout shares speech
 // code with live playback. Older target checkouts may not have session/src/speech.
-files.push('character-voices.ts', 'avatar-theme.ts', 'english-captions.ts', 'edited-video.ts', 'compile-edit.ts', 'synthesize-narration.ts', 'transitions.ts');
+files.push('character-voices.ts', 'avatar-theme.ts', 'english-captions.ts', 'edited-video.ts', 'compile-edit.ts', 'synthesize-narration.ts', 'transitions.ts', 'tts-config.ts', 'voice-enroll.ts', 'generate-voice-references.ts');
 const speechSources = new Map([['audio.ts', 'audio.ts'], ['audio-cache.ts', 'audio-cache.ts'], ['qwen.ts', 'qwen.ts'], ['tts-types.ts', 'types.ts'], ['project-models.ts', '../project-models.ts']]);
 for (const name of files) {
   const speech = speechSources.get(name), destination = new URL(`assets/pipeline/${name}`, skill);
