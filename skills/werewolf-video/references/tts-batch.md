@@ -1,6 +1,6 @@
 # 批量 TTS：调用现有服务与扩展制作程序
 
-适用于多人物、多片段配音。以下把通用批量机制和服务商协议分开：现有程序内置 Qwen Token Plan；其他 TTS 通过显式适配器接入，不会因为配置失败而自动更换服务或计费线路。这里的接口说明不是额外的外发授权，调用范围仍以用户已有授权为准。
+适用于多人物、多片段配音。以下把通用批量机制和服务商协议分开：现有程序通过 `--tts-model` 选择已注册的 Qwen 模型、端点、凭据环境和兼容音色；其他 TTS 通过显式适配器接入，不会因为配置失败而自动更换服务或计费线路。这里的接口说明不是额外的外发授权，调用范围仍以用户已有授权为准。
 
 ## 先确定输入与交付契约
 
@@ -28,8 +28,10 @@
 准备并审核剪辑稿和声音表后，在仓库根目录运行：
 
 ```powershell
-pnpm video:make --room=ID --through=tts --resume
+pnpm video:make --room=ID --tts-model=qwen-audio-3.1-tts-flash --through=tts --resume
 ```
+
+`--tts-model=qwen-audio-3.1-tts-flash` 会自动选择兼容的 `_v3.1` 系统音色、DashScope TTS 端点和 `DASHSCOPE_API_KEY`；`--tts-model=qwen-audio-3.0-tts-plus` 保持旧 Token Plan 路线。省略参数时沿用项目已有声音表和凭据回退。模型、端点和音色是运行配置；旁白、节选、故事卡和审核仍写在本局内容稿中。
 
 完整工作流会先准备剪辑稿，再只合成缺失或缓存过期的片段。已有项目单独补音频可运行：
 
@@ -49,7 +51,7 @@ node node_modules/tsx/dist/cli.mjs scripts/video/synthesize.ts
 Qwen Token Plan 特例：
 
 - 保留 `qwen-token-plan` 路由和现有 Token Plan 端点；凭据优先从 `WEREWOLF_TTS_API_KEY` 读取，其次只读项目加密的 `data/models.json`。不再运行时读取 Qwen Code 全局 settings；旧安装先执行项目的 `models:migrate` 显式迁移，保留原主密钥。密钥明文不落入脚本、产物或日志。
-- 完整片旧版内置默认模型为 `qwen-audio-3.0-tts-plus`，不代表新配音偏好或当前服务能力。新配音优先考虑 `qwen-audio-3.1-tts-flash` 并显式配置、确认模型与音色兼容；已完成且绑定正确的 Plus 原音继续复用，不跨模型盲用 voice ID。使用 `input.instruction`、`word_timestamp_enabled: true` 和 SSE；语音、时间戳与结束事件都完成后才写成功缓存。
+- 完整片旧版内置默认模型为 `qwen-audio-3.0-tts-plus`，不代表新配音偏好或当前服务能力。新配音优先考虑 `qwen-audio-3.1-tts-flash`，由模型注册表选择兼容音色；已完成且绑定正确的 Plus 原音继续复用，不跨模型盲用 voice ID。使用 `input.instruction`、`word_timestamp_enabled: true` 和 SSE；语音、时间戳与结束事件都完成后才写成功缓存。
 - SSE 事件按空行分块；同一事件可能有多行 JSON。最终 WAV 可能带流式长度头，应按真实 PCM 字节数重写规范头。
 - 下载服务返回的音频 URL 时，不向存储域名转发服务商 API Key，不打印带签名 URL。
 - 鉴权、额度、限流或外发审批失败应保留检查点。换标准按量密钥、端点或服务商属于另外的选择，不能自动回退。

@@ -5,18 +5,25 @@ import { draftNarration } from './narration';
 import { syncPublishCopy } from './publish-copy';
 import { applyCharacterVoices } from './character-voices';
 import { artManifest, bindTheme } from './avatar-theme';
+import { selectVoiceCatalogModel } from './tts-config';
 import { join } from 'node:path';
 const script = await loadScript(); await mkdir(projectDir, { recursive: true });
 const theme = await bindTheme(projectDir, join(dataDir, 'rooms', `${script.roomId}.json`), process.env.VIDEO_AVATAR_STYLE, true);
 const narrationFile = process.env.VIDEO_NARRATION_FILE || `${projectDir}/narration.json`;
 const voiceFile = process.env.VIDEO_VOICES_FILE || `${projectDir}/voices.json`;
+const requestedTtsModel = process.env.VIDEO_TTS_MODEL;
 if (!existsSync(narrationFile)) {
   const example = `scripts/video/narration-${script.roomId}.json`;
   const narration = script.perspective === 'god' && existsSync(example) ? JSON.parse(await readFile(example, 'utf8')) : draftNarration(script);
   await writeFile(narrationFile, JSON.stringify(narration, null, 2));
 }
 if (!existsSync(voiceFile)) {
-  const voices = applyCharacterVoices(await loadVoices(), script.cast, theme);
+  const base = applyCharacterVoices(await loadVoices(), script.cast, theme);
+  const voices = requestedTtsModel ? selectVoiceCatalogModel(base, requestedTtsModel) : base;
+  await writeFile(voiceFile, JSON.stringify(voices, null, 2));
+} else if (requestedTtsModel) {
+  const current = JSON.parse(await readFile(voiceFile, 'utf8'));
+  const voices = selectVoiceCatalogModel(current, requestedTtsModel);
   await writeFile(voiceFile, JSON.stringify(voices, null, 2));
 }
 const narration = JSON.parse(await readFile(narrationFile, 'utf8'));

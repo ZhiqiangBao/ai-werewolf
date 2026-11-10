@@ -16,7 +16,7 @@ Windows 读取微软雅黑字体。其他系统应在 `scene.ts` 的字体注册
 
 | 程序 | 输入 → 输出 |
 | --- | --- |
-| workflow.ts | 最新已结束房间/指定 ID → 材料准备、检查及后续视频流水线；解说写作、封面和文案由制作者完成 |
+| workflow.ts | 最新已结束房间/指定 ID → 材料准备、检查及后续视频流水线；`--tts-model` 自动选择 TTS 端点、凭据环境和兼容音色；解说写作、封面和文案由制作者完成 |
 | export-video.ts / player-video.ts | 指定席位 → `projectSeat` 权限投影、去除终局 `review`、仅保留本人身份的独立视频记录 |
 | prepare.ts / narration.ts | 原始剪辑稿 → 旁白取舍、声音表、plan.json |
 | materials.ts / preflight.ts | 实际解说稿、声音表与源记录 → 配音前检查、output/materials-check.json；不调用外部服务 |
@@ -79,12 +79,13 @@ type TimedClip = Clip & { startFrame: number; frames: number;
 通用接入与修改步骤见 [批量 TTS](tts-batch.md)；不要通过替换 Qwen 端点假装兼容所有服务商。
 
 - Token Plan 端点：`https://token-plan.maas.qianwenaiapi.com/api/v1/services/audio/tts/SpeechSynthesizer`。
-- 当前已验证模型 `qwen-audio-3.0-tts-plus`，凭据须为已授权的套餐密钥；不自动换标准计费 Key。
+- 模型选择通过 `workflow.ts --tts-model=qwen-audio-3.1-tts-flash|qwen-audio-3.0-tts-plus` 进入注册表。注册表同时决定端点、凭据环境和兼容系统音色；3.0 未显式选择时继续使用 `projectQwenTokenPlanKey()` 回退，不因 3.1 路由配置误设为 explicit。
+- 当前 Token Plan 默认端点用于 `qwen-audio-3.0-tts-plus`；3.1 Flash 使用已验证的 DashScope TTS 端点和 `DASHSCOPE_API_KEY`。两条路线不会静默互换计费凭据。
 - 请求使用 `input.instruction`（单数）、`word_timestamp_enabled: true` 和 SSE。音色必须属于当前模型。
 - SSE 按空行分事件，不按每一行独立 JSON 解析；实际响应可包含多行 JSON。收集句子、字词时间和完成事件，完成后下载完整 WAV。
 - 下载媒体时不向存储域名转发 API Key；不把带签名 URL、音频 base64 或密钥打印到上下文。
 - 提供方 WAV 可能保留流式长度头。读实际 PCM，再写规范头和实际长度，避免编码器误报损坏或时长。
-- 缓存键包括模型、原朗读文本、音色、指令、语速、采样率、种子。音频和元数据完整一致才复用，临时文件成功后原子重命名。
+- 缓存键包括实际端点、模型、原朗读文本、音色、指令、语速、采样率、种子。音频和元数据完整一致才复用，临时文件成功后原子重命名；切换模型或端点不会误命中旧音频。
 - 鉴权、额度、429 等停止批次；普通片段失败有限次重试。恢复时重新运行同一命令，只补缺失片段。
 
 官方接口与模型变化时查 [Token Plan 接入](https://platform.qianwenai.com/docs/token-plan/best-practices/multimodal-generation)、[TTS API](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-audio-tts/http-api)、[音色清单](https://platform.qianwenai.com/docs/developer-guides/speech/voice-list/qwen-audio-tts)。无需每次重新抓取几百个音色；预置音色有效时直接复用。

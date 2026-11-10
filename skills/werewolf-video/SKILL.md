@@ -43,9 +43,9 @@ agent 分别写高光和精华，按原事件顺序选择可追溯原话，围�
 
 ## 3. 配音、转写与时间对齐
 
-完整片按[批量配音](references/tts-batch.md)准备 `voices.json`，编辑版按[编辑版制作](references/edited-video.md)的旁白 job 显式指定端点、模型和兼容音色。未来新配音优先 `qwen-audio-3.1-tts-flash`；已完成且绑定正确的 Plus 原音继续复用，不因偏好变化重配。模型、端点和音色需实际兼容，不把 Plus 的 voice ID 盲目用于 Flash。agent 保持每个角色固定声线，以完整句或自然段合成，按语义选择情绪指令并核对样音；音色目录和模型能力按[声线](references/character-voices.md)及[配音参考](references/tts-batch.md)核实。
+完整片的 TTS 模型、端点、凭据环境和兼容音色属于运行配置，由 `--tts-model=qwen-audio-3.1-tts-flash|qwen-audio-3.0-tts-plus` 参数和模型注册表自动选择；不要求手工重写 `voices.json`。默认不传参数时保持已有项目配置和旧的 3.0 Plus 回退。编辑版按[编辑版制作](references/edited-video.md)的旁白 job 显式指定端点、模型和兼容音色。新配音优先 `qwen-audio-3.1-tts-flash`；已完成且绑定正确的 Plus 原音继续复用，不因偏好变化重配。模型、端点和音色需实际兼容，不把 Plus 的 voice ID 盲目用于 Flash。agent 保持每个角色固定声线，以完整句或自然段合成，按语义选择情绪指令并核对样音；音色目录和模型能力按[声线](references/character-voices.md)及[配音参考](references/tts-batch.md)核实。
 
-先按批量配音指南执行到 `--through=tts`，取得完整稿原音；原音检查、转写和词时通过后，按编辑版指南编译已经审核的高光和精华稿，再用旁白 job 合成各自新增解说，并对新增音频执行同样检查。完整稿原音已可用时直接复用，不能为编译选段重复付费生成。渲染前应同时具备原音、编译后的 selection 和该版旁白 manifest。
+先按批量配音指南执行到 `--through=tts`，例如 `pnpm video:make --room=ROOM_ID --tts-model=qwen-audio-3.1-tts-flash --through=tts --resume`，取得完整稿原音；原音检查、转写和词时通过后，按编辑版指南编译已经审核的高光和精华稿，再用旁白 job 合成各自新增解说，并对新增音频执行同样检查。完整稿原音已可用时直接复用，不能为编译选段重复付费生成。渲染前应同时具备原音、编译后的 selection 和该版旁白 manifest。
 
 若需要独立 ASR，执行前确认其授权和可用性；[音频核对指南](references/local-asr.md)说明本地模型注册、在线路线和别名。对照原稿、独立转写和原音处理 `needs-review`，只接受已核对的专名别名。用服务真实词时或可靠对齐生成字幕；`alignment-required` 时按指南取得可靠边界，中文缺少可靠字时则停止。转写内容、时间对齐和主观听感分开记录。破音按[音频质量](references/audio-quality.md)定点修复，重配完整句段并重新检查，不只改 sidecar。服务鉴权、额度或限流出错保留检查点，不自动切换付费线路或盲目重试。
 
