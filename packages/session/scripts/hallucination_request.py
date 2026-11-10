@@ -149,10 +149,15 @@ def parse_output(protocol, data):
     return text, call
 
 
+def emit_result(value):
+    sys.stdout.buffer.write(json.dumps(value, ensure_ascii=False).encode("utf-8"))
+    sys.stdout.buffer.write(b"\n")
+
+
 def main():
-    request = json.load(sys.stdin)
     started = time.time()
     try:
+        request = json.loads(sys.stdin.buffer.read().decode("utf-8"))
         body, headers = build_body(request)
         encoded = json.dumps(body, ensure_ascii=False).encode("utf-8")
         headers["Content-Type"] = "application/json"
@@ -163,13 +168,13 @@ def main():
         result = {"status": "completed", "text": text, "latencyMs": round((time.time() - started) * 1000), "responseModel": data.get("model")}
         if call is not None:
             result["call"] = call
-        print(json.dumps(result, ensure_ascii=False))
+        emit_result(result)
     except urllib.error.HTTPError:
-        print(json.dumps({"status": "failed", "failureKind": "http", "error": "HTTP request failed", "text": "", "latencyMs": round((time.time() - started) * 1000)}))
+        emit_result({"status": "failed", "failureKind": "http", "error": "HTTP request failed", "text": "", "latencyMs": round((time.time() - started) * 1000)})
     except TimeoutError:
-        print(json.dumps({"status": "failed", "failureKind": "timeout", "error": "Request timed out", "text": "", "latencyMs": round((time.time() - started) * 1000)}))
+        emit_result({"status": "failed", "failureKind": "timeout", "error": "Request timed out", "text": "", "latencyMs": round((time.time() - started) * 1000)})
     except Exception:
-        print(json.dumps({"status": "failed", "failureKind": "network", "error": "Request failed", "text": "", "latencyMs": round((time.time() - started) * 1000)}))
+        emit_result({"status": "failed", "failureKind": "network", "error": "Request failed", "text": "", "latencyMs": round((time.time() - started) * 1000)})
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AuditEntry } from '@werewolf/protocol';
 import { exampleCandidate, exampleCase, exampleTools } from '../src/diagnostics/hallucination-example';
-import { blindReview, digest, executePlan, freezeAudit, labelTemplate, planRun, report, systemText, verifyCase, type FrozenCase, type Labels, type Target, type TrialOutput } from '../src/diagnostics/hallucination';
+import { blindReview, digest, executePlan, freezeAudit, improvementSummary, labelTemplate, planRun, report, systemText, verifyCase, type FrozenCase, type Labels, type Target, type TrialOutput } from '../src/diagnostics/hallucination';
 
 const directories: string[] = [];
 afterEach(() => { vi.restoreAllMocks(); for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true }); });
@@ -53,6 +53,16 @@ describe('semantic hallucination workflow', () => {
     const frozen = exampleCase(); const plan = planRun(frozen, [target()], 1, exampleCandidate);
     const run = { ...plan.run, complete: true, trials: [{ id: 'model-a:original:1', targetId: 'model-a', variant: 'original' as const, repeat: 1, inputHash: 'x', output: { status: 'failed' as const, failureKind: 'timeout', text: '', latencyMs: 1 } }] };
     expect(report(frozen, run)).toContain('不可估计');
+  });
+
+  it('records target-error and candidate deltas in the structured improvement summary', () => {
+    const frozen = exampleCase(); const plan = planRun(frozen, [target()], 1, exampleCandidate);
+    const run = { ...plan.run, complete: true, trials: plan.jobs.map((job, index) => ({ id: job.id, targetId: job.target.id, variant: job.variant, repeat: job.repeat, inputHash: 'x', output: { status: 'completed' as const, text: '', call: { tool: 'record_facts', args: { seat: index } }, latencyMs: 1 } })) };
+    const labels: Labels = { runHash: digest(run), labels: run.trials.map((trial) => ({ trialId: trial.id, verdict: trial.variant === 'original' ? 'target_error' as const : 'pass' as const, evidence: ['固定夹具证据'] })) };
+    const summary = improvementSummary(frozen, run, labels) as { rows: { variant: string; targetErrorRate: number | null }[]; paired: { candidateMinusOriginalTargetErrorRate: number | null }[] };
+    expect(summary.rows.find((row) => row.variant === 'original')?.targetErrorRate).toBe(1);
+    expect(summary.rows.find((row) => row.variant === 'candidate')?.targetErrorRate).toBe(0);
+    expect(summary.paired[0].candidateMinusOriginalTargetErrorRate).toBe(-1);
   });
 
   it('writes a synthetic case that can be reviewed without network access', () => {

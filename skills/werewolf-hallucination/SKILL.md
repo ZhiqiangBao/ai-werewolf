@@ -49,7 +49,17 @@ node skills/werewolf-hallucination/scripts/run.mjs compare --case=data/diagnosti
 
 核对计划后在新目录加 `--live`。调用数是模型数 × 两个提示词版本 × 重复次数。多个模型都接收同一语义上下文；各自的协议转换只是发送手段，不是实验变量。候选文件只能描述要验证的通用澄清，不能写入本案例答案或策略要求。
 
-运行结束后先阅读 `blind-review.json`，再填写 `labels.json`；完成标注后才查看 `run.json` 中的模型和版本信息。中断时不要盲目补跑，先确认已记录试验和服务端状态。
+每个响应返回后必须立即记录，再发出下一次请求。脚本会在运行目录创建 `trial-records.jsonl`，每条结果一行，包含 `caseHash`、试验 ID、模型目标、`original`/`candidate` 版本、重复编号、输入哈希、状态、输出、失败类型、耗时和 `reviewStatus: pending`；不写入请求正文、消息、工具定义、密钥或原生续接数据。`run.json` 仍是汇总状态，但不能代替这份逐条日志。中断时先核对 `trial-records.jsonl` 行数、`run.json.trials.length` 和 `blind-review.json`，不得用新请求覆盖未核对的结果目录；缺失响应标为失败或未判定，不补写模型输出。
+
+多模型实验要在同一冻结案例上同时列出所有目标模型，并在结果表中按“模型 × 提示词版本”分别统计完整响应数、目标错误数、通过数和失败数。跨轮次或跨版本比较前，先记录每一轮的候选文本哈希、模型清单、重复次数和固定种子；分母只包含已完成人工标注的完整响应，不能把失败请求当成通过，也不能把不同样本量的原始计数直接比较。
+
+运行结束后先逐条阅读 `trial-records.jsonl` 和 `blind-review.json`，再填写 `labels.json`；完成标注后运行 `summary`，把目标错误、通过、失败、未判定及候选相对原版的错误率变化保存为结构化 `improvement.json`，再查看 `run.json` 中的模型和版本信息。每一轮实验都必须保留自己的 `trial-records.jsonl`、`labels.json` 和 `improvement.json`，不能只在最终报告里口头汇总。报告前核对逐条日志行数等于已记录试验数，并把每轮实验数据汇总到比较表。中断时不要盲目补跑，先确认已记录试验和服务端状态。
+
+标注后生成改善记录：
+
+```powershell
+node skills/werewolf-hallucination/scripts/run.mjs summary --case=data/diagnostics/hallucination/case-01/case.json --run=data/diagnostics/hallucination/case-01-compare/run.json --labels=data/diagnostics/hallucination/case-01-compare/labels.json --output=data/diagnostics/hallucination/case-01-compare/improvement-final.json
+```
 
 ## 标注与报告
 

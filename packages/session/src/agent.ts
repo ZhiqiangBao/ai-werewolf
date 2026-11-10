@@ -3,7 +3,7 @@ import { actionMenu, eventPurpose, gameRecordEvents, type GameEvent, type Seat, 
 import { migrateTranscript, type TranscriptMessage } from '@werewolf/llm';
 
 /** 旁听轮次调用了工具时，原样退回。不执行。 */
-export const NOT_TOOL_TURN = '不是工具调用轮次，请勿调用。';
+export const NOT_TOOL_TURN = '不是你的轮次，请勿调用工具';
 
 export interface SeatThread {
   locale?: string;
@@ -170,8 +170,9 @@ export function eventToMessage(
       hint.nextSeat === me &&
       ((wolf && hint.nextStep === 'wolf.discuss') || (!wolf && hint.nextStep === 'speech'));
     const tail = latestTalk && hint.cue && (yours || hint.cue.interruptTools?.[me]?.length)
-      ? cueTail(hint.cue, me) : turnSuffix(wolf ? 'wolf' : speechKind(e), yours, wolf, hint.locale);
-    return { role: 'user', name: String(speaker), content: gameText(hint.locale, "{0}（玩家原话）：\n「{1}」\n{2}", speechMark(e, speaker, hint.locale), content, tail) };
+      ? cueTail(hint.cue, me) : '';
+    const body = gameText(hint.locale, "{0}（玩家原话）：\n「{1}」", speechMark(e, speaker, hint.locale), content);
+    return { role: 'user', name: String(speaker), content: tail ? `${body}\n${tail}` : body };
   }
   const invite = inviteKind(e);
   if (invite) {

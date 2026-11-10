@@ -54,7 +54,7 @@ async function probe(model: (typeof targets)[number]) {
     const messages = structuredClone(history);
     if (purpose === 'listen') messages[messages.length - 1] = {
       role: 'user', name: String(speech.payload.seat),
-      content: `第${speech.day}天${speech.payload.seat}号发言：${speech.payload.content}\n不是你的发言轮次，不要调用工具。`,
+      content: `第${speech.day}天${speech.payload.seat}号发言：${speech.payload.content}`,
     };
     const started = Date.now();
     let firstDeltaMs: number | undefined;

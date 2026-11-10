@@ -177,7 +177,7 @@ export function buildRuleCard(rules: RuleSet): string {
     : gameText(rules.locale, "法官从昨夜出局玩家中随机选择一人作为发言依据");
   if (sheriff) L.push(gameText(rules.locale, "· 有警长时的白天发言顺序：警长选择顺时针（座位号增大）或逆时针（座位号减小）；从警长座位之后沿所选方向遇到的第一名存活玩家开始，存活玩家依次发言，警长最后发言。"));
   L.push(gameText(rules.locale, "· 没有警长时的白天发言顺序：法官随机选择并公布顺时针或逆时针方向。昨夜有人出局时，{0}；法官沿所选方向从发言依据座位之后寻找第一名存活玩家作为起点。昨夜无人出局时，法官从存活玩家中随机选择起点。", anchor));
-  L.push(gameText(rules.locale, "· 白天普通讨论按照法官公布的顺序逐席进行。玩家在本阶段完成一次公开发言后，本阶段的发言资格即告结束，直至本阶段结束不得再次发言；其他玩家后续发言、讨论继续或收到新的旁听信息，均不会恢复该资格。平票后的补充发言、警长竞选发言和遗言由法官另行开启，只有法官明确宣布进入相应阶段并指定可发言者时，才取得该阶段的发言资格。"));
+  L.push(gameText(rules.locale, "· 白天普通讨论按法官公布顺序逐一进行；玩家说完自己的发言后，法官立即点名下一名玩家；全部玩家各说完一次后进入投票；平票补充发言、警长竞选发言和遗言另由法官点名。"));
   L.push(gameText(rules.locale, "· 放逐投票：存活玩家同时秘密投票，票齐后公开谁投了谁{0}{1}，超时未投记为弃票。", v['vote.allowSelf'] ? gameText(rules.locale, "，可以投自己") : gameText(rules.locale, "，不能投自己"), v['vote.allowAbstain'] ? gameText(rules.locale, "，可以弃票") : ''));
   L.push(gameText(rules.locale, has('idiot')
     ? "· 放逐结果：最高票玩家被放逐并出局；如果最高票玩家是白痴，按上文白痴例外处理。"

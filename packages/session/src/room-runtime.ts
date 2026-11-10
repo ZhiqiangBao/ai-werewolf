@@ -3,7 +3,7 @@ import { actionKind, actionMenu, DEFAULT_GAME_LOCALE, gameText } from '@werewolf
 import type { AdapterKind, AuditEntry, ControlAction, ModelRequestInfo, Projection, Seat, SeatTestResult, ToolCall, ToolSpec } from '@werewolf/protocol';
 import { abandonGame, buildRules, createGame, migrateGameState, UnsupportedRoleDataVersion, projectSeat, seatTools, seatTasksComplete, submit, waitingSeats, type EngineResult, type SubmitInput } from '@werewolf/engine';
 import { buildMessages, feedbackMessages, getAdapter, redact, styleText, type Adapter, type AdapterConfig, type DecideRequest, type DecideResult, type TranscriptMessage } from '@werewolf/llm';
-import { NOT_TOOL_TURN, migrateThread, ensureCue, ownLine, readyToAct, syncThread, type ActionCue, type TurnHint, type SeatThread } from './agent';
+import { NOT_TOOL_TURN, migrateThread, ensureCue, notToolTurnMessages, ownLine, readyToAct, syncThread, type ActionCue, type TurnHint, type SeatThread } from './agent';
 import { ApiFailure } from './room-failure';
 import { adapterConfig } from './room-model';
 import type { OwnedRoomFields, RoomReadRecord, RoomRuntimeRecord, RoomRuntimeState, Viewer } from './room-types';
@@ -712,8 +712,12 @@ export class RoomRuntimeService {
     this.apply(live, { seat, call: AUTO, auto: true, autoReason: reason, decisionId: decision });
   }
 
-  private rememberReply(thread: SeatThread, result: DecideResult, error?: string, legalTools?: ToolSpec[]): void {
+  private rememberReply(thread: SeatThread, result: DecideResult, error?: string, legalTools?: ToolSpec[], notToolTurn = false): void {
     const locale = thread.locale;
+    if (notToolTurn) {
+      thread.messages.push(...notToolTurnMessages(result, locale));
+      return;
+    }
     if (error && result.fatal && !result.toolCallIds.length) {
       if (result.assistant?.content) thread.messages.push(result.assistant);
       thread.messages.push({ role: 'user', name: 'judge', content: gameText(locale, '本次模型请求未完成：{0}', error) });
@@ -921,17 +925,19 @@ export class RoomRuntimeService {
       }
       if (live.gen !== gen || ctrl.signal.aborted || seatTasksComplete(rec.state!, seat)) return;
       let error = result.ok ? undefined : result.error ?? gameText(rec.state!.rules.locale, '旁听请求失败');
+      let notToolTurn = false;
       if (result.ok && result.call) {
         const call = clampTexts(result.call, tools);
         const allowed = projection.interrupts.some((t) => t.name === call.tool) &&
           rec.status === 'running' && projectSeat(rec.state!, rec.events, seat).interrupts.some((t) => t.name === call.tool);
         // 旁听生成的普通行动不能借用随后到来的行动许可；错误只作为本次工具反馈返回。
+        notToolTurn = !allowed;
         error = !allowed ? gameText(rec.state!.rules.locale, NOT_TOOL_TURN)
           : rec.timing && rec.actionAvailableAt && this.now() < rec.actionAvailableAt ? gameText(rec.state!.rules.locale, '推进间隔尚未结束，请稍后行动')
             : this.apply(live, { seat, call }, context?.call?.ref).error?.reason;
       }
       this.finishCall(context, this.resultOutcome(result, error, context));
-      this.rememberReply(thread, result, error);
+      this.rememberReply(thread, result, error, undefined, notToolTurn);
       this.writeObservedAudit(live, context, {
         seat, model, decisionId: decision, projectionVersion: projection.version, purpose: 'listen',
         ok: !error, messages, request, response: result.raw ?? result.call,

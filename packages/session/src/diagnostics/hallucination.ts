@@ -54,6 +54,35 @@ export const reviewId = (run: Run, trialId: string): string => `item-${digest([d
 export function blindReview(run: Run) { return { runHash: digest(run), records: run.trials.map((t) => ({ trialId: reviewId(run, t.id), output: structuredClone(t.output) })) }; }
 export function labelTemplate(run: Run): Labels { return { runHash: digest(run), labels: run.trials.map((t) => ({ trialId: reviewId(run, t.id), verdict: 'uncertain', evidence: ['尚未人工判定；不能算通过。'] })) }; }
 
+export function improvementSummary(frozen: FrozenCase, run: Run, labels: Labels): Record<string, unknown> {
+  verifyCase(frozen);
+  if (run.version !== 2 || run.caseHash !== frozen.caseHash || labels.runHash !== digest(run)) throw Error('SUMMARY_CASE_MISMATCH');
+  const verdicts = new Map<string, Verdict>();
+  for (const label of labels.labels) {
+    const trial = run.trials.find((t) => t.id === label.trialId || reviewId(run, t.id) === label.trialId);
+    if (trial) verdicts.set(trial.id, label.verdict);
+  }
+  const rows = run.targets.flatMap((target) => (run.candidate ? (['original', 'candidate'] as const) : (['original'] as const)).map((variant) => {
+    const trials = run.trials.filter((t) => t.targetId === target.id && t.variant === variant);
+    const completed = trials.filter((t) => t.output.status === 'completed');
+    const judged = completed.map((t) => verdicts.get(t.id) ?? 'uncertain');
+    const targetErrors = judged.filter((v) => v === 'target_error').length;
+    const passes = judged.filter((v) => v === 'pass').length;
+    const otherErrors = judged.filter((v) => v === 'other_error').length;
+    const uncertain = judged.filter((v) => v === 'uncertain').length;
+    const denominator = targetErrors + passes;
+    return { targetId: target.id, model: target.model, protocol: target.protocol, variant, trials: trials.length, completed: completed.length, targetErrors, passes, otherErrors, uncertain, targetErrorRate: denominator ? targetErrors / denominator : null, passRate: denominator ? passes / denominator : null };
+  }));
+  const paired = run.targets.map((target) => {
+    const original = rows.find((row) => row.targetId === target.id && row.variant === 'original');
+    const candidate = rows.find((row) => row.targetId === target.id && row.variant === 'candidate');
+    const originalRate = typeof original?.targetErrorRate === 'number' ? original.targetErrorRate : null;
+    const candidateRate = typeof candidate?.targetErrorRate === 'number' ? candidate.targetErrorRate : null;
+    return { targetId: target.id, model: target.model, originalTargetErrorRate: originalRate, candidateTargetErrorRate: candidateRate, candidateMinusOriginalTargetErrorRate: originalRate !== null && candidateRate !== null ? candidateRate - originalRate : null, originalPassRate: original?.passRate ?? null, candidatePassRate: candidate?.passRate ?? null };
+  });
+  return { version: 1, generatedAt: new Date().toISOString(), caseId: frozen.caseId, caseHash: frozen.caseHash, candidateHash: run.candidate?.hash ?? null, seed: run.seed, repeats: run.repeats, planned: run.planned, recorded: run.trials.length, complete: run.complete, rows, paired, note: '错误率分母只包含已人工标注为 pass 或 target_error 的完整响应；uncertain、失败和未记录结果不计入。' };
+}
+
 export function report(frozen: FrozenCase, run: Run, labels?: Labels): string {
   verifyCase(frozen); if (run.version !== 2 || run.caseHash !== frozen.caseHash || !Array.isArray(run.trials) || !Array.isArray(run.targets)) throw Error('REPORT_CASE_MISMATCH'); const ids = new Set(run.trials.map((t) => t.id)); if (ids.size !== run.trials.length || run.trials.some((t) => !run.targets.some((target) => target.id === t.targetId))) throw Error('RUN_INVALID: 试验记录不完整'); if (labels && (!Array.isArray(labels.labels) || labels.runHash !== digest(run))) throw Error('LABELS_INVALID: 标注必须绑定本次运行'); const supplied = (labels?.labels ?? []).map((label) => ({ ...label, trialId: run.trials.find((t) => t.id === label.trialId || reviewId(run, t.id) === label.trialId)?.id ?? label.trialId })); if (labels && (new Set(supplied.map((l) => l.trialId)).size !== supplied.length || supplied.some((l) => !ids.has(l.trialId) || !['target_error', 'other_error', 'pass', 'uncertain'].includes(l.verdict) || !Array.isArray(l.evidence) || !l.evidence.length || !l.evidence.every(nonempty)))) throw Error('LABELS_INVALID: 标注须引用具体证据且不能重复'); if (supplied.some((l) => l.verdict !== 'uncertain' && run.trials.find((t) => t.id === l.trialId)!.output.status !== 'completed')) throw Error('LABELS_FAILED_RESPONSE: 失败请求不能标为通过或错误');
   const completedCount = run.trials.filter((t) => t.output.status === 'completed').length; const lines = ['# 对局幻觉诊断报告', '', `案例：${frozen.caseId}；现场哈希：${frozen.caseHash}`, '', `来源：${frozen.synthetic ? '合成诊断' : '历史对局'}；现场完整性：${frozen.fidelity}；已记录试验 ${run.trials.length}/${run.planned}；完整响应 ${completedCount}；失败 ${run.trials.length - completedCount}；运行${run.complete ? '已结束' : '未完成'}。`, '', `目标错误：${frozen.rubric.targetError}`, '', `合理输出范围：${frozen.rubric.expected}`, '', '依据：', '', ...frozen.rubric.evidence.map((e) => `- ${e}`), '', '排除情形：', '', ...frozen.rubric.exclusions.map((e) => `- ${e}`), '', '| 模型 | 提示词 | 已调用 | 完整响应 | 目标错误 / 可判定 | 其他错误 | 未判定 | 请求失败 | 目标错误率及 95% Wilson 区间 |', '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |'];
