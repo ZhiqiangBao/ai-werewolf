@@ -35,7 +35,7 @@ def chat_messages(messages):
         if role == "tool":
             result.append({"role": "tool", "tool_call_id": message.get("callId", ""), "content": message.get("content", "")})
         elif role == "assistant":
-            item = {"role": "assistant", "content": message.get("content")}
+            item = {"role": "assistant", "content": message.get("content") or ""}
             calls = message.get("calls", [])
             if calls:
                 item["tool_calls"] = [{"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": c["arguments"]}} for c in calls]
@@ -133,7 +133,7 @@ def parse_output(protocol, data):
     elif protocol == "responses":
         for item in data.get("output") or []:
             if item.get("type") == "message":
-                text += "".join(part.get("text", "") for part in item.get("content") or [] if part.get("type") == "output_text")
+                text += "".join(part.get("text", "") for part in item.get("content") or [] if part.get("type") in ("output_text", "text"))
             if item.get("type") == "function_call" and call is None:
                 try:
                     arguments = json.loads(item.get("arguments") or "{}")
@@ -169,12 +169,18 @@ def main():
         if call is not None:
             result["call"] = call
         emit_result(result)
-    except urllib.error.HTTPError:
-        emit_result({"status": "failed", "failureKind": "http", "error": "HTTP request failed", "text": "", "latencyMs": round((time.time() - started) * 1000)})
+    except urllib.error.HTTPError as exc:
+        try:
+            body = exc.read().decode("utf-8", errors="replace")[:1000]
+        except Exception:
+            body = ""
+        emit_result({"status": "failed", "failureKind": "http", "error": f"HTTP {exc.code} {exc.reason}: {body}", "text": "", "latencyMs": round((time.time() - started) * 1000)})
+    except urllib.error.URLError as exc:
+        emit_result({"status": "failed", "failureKind": "network", "error": f"URL error: {exc.reason}", "text": "", "latencyMs": round((time.time() - started) * 1000)})
     except TimeoutError:
         emit_result({"status": "failed", "failureKind": "timeout", "error": "Request timed out", "text": "", "latencyMs": round((time.time() - started) * 1000)})
-    except Exception:
-        emit_result({"status": "failed", "failureKind": "network", "error": "Request failed", "text": "", "latencyMs": round((time.time() - started) * 1000)})
+    except Exception as exc:
+        emit_result({"status": "failed", "failureKind": "network", "error": f"{type(exc).__name__}: {exc}", "text": "", "latencyMs": round((time.time() - started) * 1000)})
 
 
 if __name__ == "__main__":
