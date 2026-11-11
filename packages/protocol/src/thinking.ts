@@ -9,7 +9,20 @@ interface ThinkingProfile {
   switchParam: 'enable_thinking' | 'thinking';
   forced: boolean;
   budget?: boolean;
+  switchOnly?: boolean;
   effort?: Partial<Record<Level, string>>;
+}
+
+function isOfficialDeepseek(baseUrl: string, model: string): boolean {
+  try {
+    return new URL(baseUrl).hostname === 'api.deepseek.com' && /^(?:deepseek-flash|deepseek-v4-(?:pro|flash|flash-vision-exp))$/i.test(model);
+  } catch { return false; }
+}
+
+function isOfficialMimo(baseUrl: string, model: string): boolean {
+  try {
+    return /^(?:api|token-plan-cn)\.xiaomimimo\.com$/.test(new URL(baseUrl).hostname) && /^mimo-v2\.6-(?:flash|pro(?:-ultraspeed)?)$/i.test(model);
+  } catch { return false; }
 }
 
 function profile(baseUrl: string, name: string): ThinkingProfile {
@@ -22,11 +35,11 @@ function profile(baseUrl: string, name: string): ThinkingProfile {
     /^qwen3\.8-2\.4t/.test(model) || /^(?:minimax[/-])?minimax-m2/i.test(model) ||
     /^deepseek-r1/.test(model) || /^kimi-k2\.7-code/.test(model);
   const base = { switchParam, forced } as const;
-  if (/^qwen3\.8-(?:max|flash|omni|2\.4t|27b)/.test(model) && !model.includes('preview')) {
+  if (model === 'qwen4-max-preview' || (/^qwen3\.8-(?:max|flash|omni|2\.4t|27b)/.test(model) && !model.includes('preview'))) {
     return { ...base, effort: { low: 'low', medium: 'medium', high: 'xhigh' } };
   }
   if (/^qwen3(?:[.\-]|$)|^qwen-(?:plus|flash)/.test(model)) return { ...base, budget: true };
-  if (/^deepseek-v4/.test(model)) {
+  if (/^deepseek-v4/.test(model) || isOfficialDeepseek(baseUrl, model)) {
     // 百炼旧版 Pro 将 low/medium 都映射到 high，不能假装有三个不同档位。
     const twoLevels = aliyun && /^deepseek-v4-pro$/.test(model);
     return { ...base, effort: { ...(twoLevels ? {} : { low: 'low' }), medium: 'high', high: 'max' } };
@@ -37,6 +50,7 @@ function profile(baseUrl: string, name: string): ThinkingProfile {
     if (/^glm-5\.2/.test(model)) return { ...base, effort: { medium: 'high', high: 'max' } };
   }
   if (aliyun && /^kimi-k2\.[567]/.test(model)) return { ...base, budget: true };
+  if (isOfficialMimo(baseUrl, model) || (host === 'api.z.ai' && /^glm-5(?:\.1)?$/.test(model))) return { ...base, switchOnly: true };
   return base;
 }
 
@@ -53,17 +67,20 @@ export interface ThinkingOption {
 const labels: Record<ThinkingMode, string> = { default: '跟随模型', off: '关闭', low: '轻度', medium: '标准', high: '深度' };
 const budget: Record<Level, number> = { low: 1024, medium: 4096, high: 16384 };
 
-function nativeProfile(baseUrl: string, model: string, protocol: ApiProtocol): { kind: 'effort' | 'budget' | 'unknown'; off: boolean; effort?: Partial<Record<Level, string>>; dashscope?: boolean } {
+function nativeProfile(baseUrl: string, model: string, protocol: ApiProtocol): { kind: 'effort' | 'budget' | 'switch' | 'unknown'; off: boolean; effort?: Partial<Record<Level, string>>; thinkingType?: 'enabled' } {
+  if (isOfficialDeepseek(baseUrl, model)) return { kind: 'effort', off: true, effort: profile(baseUrl, model).effort, thinkingType: 'enabled' };
+  // MiMo Responses 接受多种 effort 值，但除 none 外行为完全相同，不能伪装成强度档。
+  if (protocol === 'responses' && isOfficialMimo(baseUrl, model)) return { kind: 'switch', off: true };
   if (isDashscopeEndpoint(baseUrl)) {
     const p = profile(baseUrl, model);
-    const known = /^qwen3\.8-(?:max|flash|2\.4t|27b)/i.test(model) || /^deepseek-v4/i.test(model) || /^glm-5\.[23]/i.test(model);
+    const known = /^qwen4-max-preview$/i.test(model) || /^qwen3\.8-(?:max|flash|2\.4t|27b)/i.test(model) || /^deepseek-v4/i.test(model) || /^glm-5\.[23]/i.test(model);
     if (known) {
       const two = /^glm-5\.2(?:-|$)|^deepseek-v4-pro$/i.test(model);
       const effort = two ? { medium: 'high', high: 'max' } : /^qwen/i.test(model) ? { low: 'low', medium: 'medium', high: 'xhigh' } : { low: 'low', medium: 'high', high: 'max' };
-      return { kind: 'effort', off: !p.forced, effort, dashscope: true };
+      return { kind: 'effort', off: !p.forced, effort, thinkingType: 'enabled' };
     }
-    if (protocol === 'anthropic_messages' && p.budget) return { kind: 'budget', off: !p.forced, dashscope: true };
-    return { kind: 'unknown', off: false, dashscope: true };
+    if (protocol === 'anthropic_messages' && p.budget) return { kind: 'budget', off: !p.forced, thinkingType: 'enabled' };
+    return { kind: 'unknown', off: false, thinkingType: 'enabled' };
   }
   const name = model.toLowerCase().replace(/\./g, '-');
   if (protocol === 'responses') return { kind: /^(?:gpt-[56](?:-|$)|o[134](?:-|$))/.test(name) ? 'effort' : 'unknown', off: false };
@@ -91,9 +108,10 @@ export function thinkingOptions(baseUrl: string, model: string, protocol: ApiPro
     const native = nativeProfile(baseUrl, model, protocol);
     return THINKING_MODES.map((value) => {
       const supported = value === 'default' || (value === 'off' ? native.off : native.kind === 'budget' || (native.kind === 'effort' && (!native.effort || !!native.effort[value])));
-      if (value === 'default') return option(value, supported, '使用所选协议的模型默认设置。');
+      if (value === 'default') return option(value, supported, native.kind === 'switch' ? '这个接口仅支持思考开关，不区分轻度、标准和深度；跟随模型默认设置。' : '使用所选协议的模型默认设置。');
       if (value === 'off') return option(value, supported, native.off ? '通过原生协议关闭思考。' : '尚未确认该协议和型号支持关闭；可以使用受支持的强度。');
       if (native.kind === 'budget') return option(value, supported, '思考预算 {0} token。', budget[value]);
+      if (native.kind === 'switch') return option(value, supported, '这个接口仅支持思考开关，不区分轻度、标准和深度；跟随模型默认设置。');
       if (native.kind === 'effort' && !supported) return option(value, supported, '这个接口没有独立的轻度档，请选择标准或深度。');
       if (native.kind === 'effort') return option(value, supported, '通过原生协议设置 {0} 力度。', value);
       return option(value, supported, '尚未确认该协议和型号的强度参数，请使用跟随模型。');
@@ -101,9 +119,10 @@ export function thinkingOptions(baseUrl: string, model: string, protocol: ApiPro
   }
   const p = profile(baseUrl, model);
   return THINKING_MODES.map((value) => {
-    if (value === 'default') return option(value, true, '使用模型默认的思考强度。');
+    if (value === 'default') return option(value, true, p.switchOnly ? '这个接口仅支持思考开关，不区分轻度、标准和深度；跟随模型默认设置。' : '使用模型默认的思考强度。');
     if (value === 'off') return option(value, !p.forced, p.forced ? '这个模型始终思考，不能关闭；可以选择它支持的强度。' : '关闭思考，减少等待；需要接口支持。');
     const supported = !!p.budget || !!p.effort?.[value];
+    if (p.switchOnly) return option(value, supported, '这个接口仅支持思考开关，不区分轻度、标准和深度；跟随模型默认设置。');
     if (p.budget) return option(value, supported, '{0}：思考预算 {1} token，不限制正文长度。', gameText(locale, labels[value]), budget[value]);
     if (p.effort?.[value]) return option(value, supported, '{0}：使用模型的 {1} 推理力度。', gameText(locale, labels[value]), p.effort[value]);
     return option(value, supported, p.effort ? '这个接口没有独立的轻度档，请选择标准或深度。' : '尚未确认这个模型支持强度调节，请使用跟随模型。');
@@ -119,7 +138,7 @@ export function thinkingParameters(baseUrl: string, model: string, mode: Thinkin
   if (protocol === 'responses') return { reasoning: { effort: mode === 'off' ? 'none' : native.effort?.[mode] ?? mode } };
   if (protocol === 'anthropic_messages') {
     if (mode === 'off') return { thinking: { type: 'disabled' } };
-    return native.kind === 'budget' ? { thinking: { type: 'enabled', budget_tokens: budget[mode] } } : { thinking: { type: native.dashscope ? 'enabled' : 'adaptive' }, output_config: { effort: native.effort?.[mode] ?? mode } };
+    return native.kind === 'budget' ? { thinking: { type: 'enabled', budget_tokens: budget[mode] } } : { thinking: { type: native.thinkingType ?? 'adaptive' }, output_config: { effort: native.effort?.[mode] ?? mode } };
   }
   const p = profile(baseUrl, model);
   const parameters: Record<string, unknown> = p.switchParam === 'enable_thinking'

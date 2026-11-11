@@ -26,5 +26,6 @@ export const thinkingMessages: [string, string, string][] = [
   ['{0}：思考预算 {1} token，不限制正文长度。', '{0}: reasoning budget of {1} tokens; response length is not restricted.', '{0}：思考予算は {1} トークン。本文の長さは制限しません。'],
   ['{0}：使用模型的 {1} 推理力度。', '{0}: use the model’s {1} reasoning effort.', '{0}：モデルの推論強度 {1} を使います。'],
   ['这个接口没有独立的轻度档，请选择标准或深度。', 'This API has no separate low effort; choose Standard or High.', 'この API には独立した軽度設定がありません。標準または深度を選んでください。'],
+  ['这个接口仅支持思考开关，不区分轻度、标准和深度；跟随模型默认设置。', 'This API only supports turning reasoning on or off, with no distinct Low, Standard, or High effort; use the model default.', 'この API は思考のオン・オフのみ対応し、軽度・標準・深度の区別はありません。モデル既定を使います。'],
   ['尚未确认这个模型支持强度调节，请使用跟随模型。', 'Adjustable effort has not been confirmed for this model; use the model default.', 'このモデルの強度調整は未確認です。モデル既定を選んでください。'],
 ];

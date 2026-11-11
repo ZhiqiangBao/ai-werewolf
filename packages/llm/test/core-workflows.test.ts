@@ -108,6 +108,34 @@ function mockModel(...replies: Response[]) {
 
 afterEach(() => vi.unstubAllGlobals());
 
+it('模型思考选项通过三种适配器发送原生参数，MiMo 仅关闭思考', async () => {
+  for (const { protocol } of protocols) {
+    for (const model of ['qwen4-max-preview', 'deepseek-flash']) {
+      const req = modelRequest(protocol, seerTurn('zh-CN'));
+      const baseUrl = model.startsWith('qwen') ? 'https://token-plan.maas.qianwenaiapi.com/v1'
+        : protocol === 'anthropic_messages' ? 'https://api.deepseek.com/anthropic' : 'https://api.deepseek.com';
+      req.config = { ...req.config, baseUrl, model, thinkingMode: 'high' };
+      const requests = mockModel(sse(toolStream(protocol, 'effort-inspection', target).events));
+      expect((await remoteAdapter(protocol).decide(req)).ok).toBe(true);
+      expect(requests).toHaveLength(1);
+      const effort = model.startsWith('qwen') ? 'xhigh' : 'max';
+      const body = requests[0].body;
+      expect(body.model).toBe(model);
+      if (protocol === 'responses') expect(body.reasoning).toEqual({ effort });
+      else if (protocol === 'anthropic_messages') {
+        expect(body.thinking).toEqual({ type: 'enabled' });
+        expect(body.output_config).toEqual({ effort });
+      } else expect(body).toMatchObject({ reasoning_effort: effort, ...(model.startsWith('qwen') ? { enable_thinking: true } : { thinking: { type: 'enabled' } }) });
+      expect(body).not.toHaveProperty('thinking_budget');
+    }
+  }
+  const req = modelRequest('responses', seerTurn('zh-CN'));
+  req.config = { ...req.config, baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1', model: 'mimo-v2.6-pro', thinkingMode: 'off' };
+  const requests = mockModel(sse(toolStream('responses', 'mimo-inspection', target).events));
+  expect((await remoteAdapter('responses').decide(req)).ok).toBe(true);
+  expect(requests[0].body.reasoning).toEqual({ effort: 'none' });
+});
+
 it('三个模型协议按本局语言完成查验纠错，后续连接失败时安全结束旁听', async () => {
   for (const { protocol, path, locale, menu, schemaLabel, feedback, result } of protocols) {
     const game = seerTurn(locale);
