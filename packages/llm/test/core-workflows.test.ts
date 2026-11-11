@@ -63,7 +63,7 @@ function toolStream(protocol: ApiProtocol, id: string, value: number | string, c
       delta({ reasoning_content: thinking }),
       delta({ tool_calls: [{ index: 0, id, type: 'function', function: { name: tool, arguments: first } }] }),
       delta({ tool_calls: [{ index: 0, function: { arguments: rest } }] }),
-      '[DONE]',
+      ...(complete ? [{ choices: [{ delta: {}, finish_reason: 'tool_calls' }] }, '[DONE]'] : []),
     ] };
   }
   if (protocol === 'responses') {
@@ -266,4 +266,31 @@ it('同模型同凭证的两个席位分别发送各自投影，更换凭证续�
   expect(mappedCall).toMatchObject({ name: tool, arguments: '{"targetSeat":1}' });
   expect(mappedCall.call_id).not.toBe(callId);
   expect(rebound.input).toContainEqual({ type: 'function_call_output', call_id: mappedCall.call_id, output: 'Action accepted.' });
+});
+
+
+it('Chat Completions 只执行正常完成的流式和非流式调用', async () => {
+  const req = modelRequest('chat_completions', seerTurn('zh-CN'));
+  const call = toolStream('chat_completions', 'completion-check', target);
+  const partial = toolStream('chat_completions', 'completion-check', target, false);
+  const final = (reason: string) => ({ choices: [{ delta: {}, finish_reason: reason }] });
+  const json = (reason?: string) => Response.json({ choices: [{ message: { role: 'assistant', content: null, tool_calls: [call.call] }, ...(reason === undefined ? {} : { finish_reason: reason }) }] });
+  mockModel(sse(partial.events), sse([...partial.events, '[DONE]']),
+    sse([...partial.events, final('length'), '[DONE]']), sse([...partial.events, final('content_filter'), '[DONE]']),
+    sse(call.events), sse([...partial.events, final('tool_calls')]), json('tool_calls'), json('stop'), json('length'), json());
+  const adapter = remoteAdapter('chat_completions');
+  for (let i = 0; i < 4; i++) {
+    const result = await adapter.decide(req);
+    expect(result).toMatchObject({ ok: false, fatal: true, toolCallIds: [] });
+    expect(result.call).toBeUndefined();
+  }
+  for (let i = 0; i < 4; i++) {
+    const result = await adapter.decide(req);
+    expect(result).toMatchObject({ ok: true, call: { tool, args: { targetSeat: target } }, toolCallIds: ['completion-check'] });
+  }
+  for (let i = 0; i < 2; i++) {
+    const result = await adapter.decide(req);
+    expect(result).toMatchObject({ ok: false, fatal: true, toolCallIds: [] });
+    expect(result.call).toBeUndefined();
+  }
 });

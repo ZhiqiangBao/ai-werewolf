@@ -41,9 +41,11 @@ export const openaiAdapter: Adapter = {
           features: { stream: useStream, toolChoice: json ? 'none' : listen || noRequired.has(memo) ? 'auto' : 'required', responseFormat: json && !noJsonFormat.has(memo), compatibilityMemory: memory } });
         const acc = { content: '', reasoning_content: '', calls: new Map<number, { id: string; name: string; arguments: string }>() };
         let usage: unknown;
+        let finishReason: unknown;
         const event = (obj: any) => {
           if (obj.error) throw new HttpError(200, JSON.stringify(obj.error));
           if (obj.usage) usage = obj.usage;
+          if (obj.choices?.[0]?.finish_reason != null) finishReason = obj.choices[0].finish_reason;
           const delta = obj.choices?.[0]?.delta ?? obj.choices?.[0]?.message;
           if (!delta) return;
           const thinking = delta.reasoning_content ?? delta.reasoning ?? delta.thinking;
@@ -62,7 +64,7 @@ export const openaiAdapter: Adapter = {
           req.onRequest?.({ apiProtocol: 'chat_completions', tools: structuredClone('tools' in encoded ? encoded.tools ?? [] : []), ...('tool_choice' in encoded ? { toolChoice: encoded.tool_choice } : {}), ...(json ? { toolInstruction: jsonInstruction(tools, req.projection?.locale ?? req.locale) } : {}) });
           const result = await post(url, encoded, headers, signal, event, req.projection?.locale ?? req.locale, observation && request ? { observer: observation.observer, request, protocol: 'chat_completions' } : undefined);
           request?.finish('success');
-          return result ?? { usage, choices: [{ message: { content: acc.content || null, reasoning_content: acc.reasoning_content,
+          return result ?? { usage, choices: [{ finish_reason: finishReason, message: { content: acc.content || null, reasoning_content: acc.reasoning_content,
             tool_calls: [...acc.calls.entries()].sort(([a], [b]) => a - b).map(([, c], i) => ({ id: c.id || `call_${i}`, type: 'function', function: { name: c.name, arguments: c.arguments } })),
           } }] };
         } catch (error) {
@@ -83,6 +85,12 @@ export const openaiAdapter: Adapter = {
         data = await load(false, reason);
       }
       return observeSync(observation?.observer, observation?.adapter, 'parse', () => {
+      const reason = data?.choices?.[0]?.finish_reason;
+      // A complete JSON argument is not proof that the provider finished the turn.
+      // Accept the normal text and tool-call endings, including legacy function_call.
+      if (!['stop', 'tool_calls', 'function_call'].includes(reason)) {
+        throw new HttpError(200, gameText(req.projection?.locale ?? req.locale, 'Chat Completions 回复未完成：{0}', reason ?? '缺少完成状态'));
+      }
       const msg = data?.choices?.[0]?.message;
       if (!msg || typeof msg !== 'object') return failure(started, gameText(req.projection?.locale ?? req.locale, '返回里没有 choices[0].message'), { raw: data });
       const calls = (Array.isArray(msg.tool_calls) ? msg.tool_calls : []).map((c: any, i: number) => ({ id: c.id || `call_${i}`, name: String(c.function?.name ?? ''), arguments: String(c.function?.arguments ?? '{}') }));
