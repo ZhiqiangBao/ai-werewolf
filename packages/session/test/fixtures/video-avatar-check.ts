@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { bindTheme, artManifest } from '../../../../scripts/video/avatar-theme';
 import { publicationMetadata, syncPublishCopy, withPublicationDetails } from '../../../../scripts/video/publish-copy';
 import type { Cast, VoiceCatalog } from '../../../../scripts/video/project';
+import { characterVoiceDirection } from '../../../../scripts/video/character-delivery';
 
 test('room theme, explicit override, old records and existing project conflicts', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'video-theme-'));
@@ -29,7 +30,7 @@ test('art manifest uses public cast only and records actual voice and grid', () 
   const voices = { model: 'test', profiles: { 'seat-9': { voice: 'custom-voice', label: 'Nine', rate: 1, instruction: '' } } } satisfies VoiceCatalog;
   const manifest = artManifest('urban', cast, voices);
   assert.match(manifest.atlas, /avatars-urban-v1.webp$/);
-  assert.deepEqual(manifest.seats[0], { seat: 9, name: 'Nine', row: 3, column: 1, appearance: '自信银短发年长女', gender: '女', voiceKey: 'seat-9', voice: 'custom-voice' });
+  assert.deepEqual(manifest.seats[0], { seat: 9, name: 'Nine', row: 3, column: 1, appearance: '自信银短发年长女', gender: '女', voiceKey: 'seat-9', voice: 'custom-voice', voiceDirection: characterVoiceDirection('urban', 9), instruction: '' });
   assert.doesNotMatch(JSON.stringify(manifest), /secret/);
 });
 

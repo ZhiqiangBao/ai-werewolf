@@ -8,6 +8,7 @@ await mkdir(base, { recursive: true });
 const target = await mkdtemp(join(base, 'smoke-'));
 for (const file of ['package.json', 'tsconfig.json', 'vitest.config.ts']) await cp(join(root, file), join(target, file));
 await cp(join(root, 'packages'), join(target, 'packages'), { recursive: true, filter: (path) => basename(path) !== 'node_modules' });
+await cp(join(root, 'scripts/asr'), join(target, 'scripts/asr'), { recursive: true });
 // Test-only junctions reuse the checkout's installed dependencies without network access.
 await symlink(join(root, 'node_modules'), join(target, 'node_modules'), 'junction');
 for (const entry of await readdir(join(root, 'packages'), { withFileTypes: true })) {

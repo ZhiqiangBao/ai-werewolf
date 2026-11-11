@@ -9,7 +9,7 @@ import { bindTheme } from './avatar-theme';
 import { createHash } from 'node:crypto';
 import { encodingSettings } from './encoding';
 import { asrProviderForLocale, ensureLocalAsrReady, type AsrProvider } from '../../packages/session/src/asr';
-import { environmentForTtsModel } from './tts-config';
+import { environmentForTtsModel, projectTtsModel } from './tts-config';
 
 const root = resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const args = new Map(process.argv.slice(2).map((a) => { const i = a.indexOf('='); return [a.slice(0, i < 0 ? undefined : i), i < 0 ? 'true' : a.slice(i + 1)]; }));
@@ -98,7 +98,11 @@ if (completedBeforeResume.some((stage) => !stages.includes(stage as typeof stage
 if (completedBeforeResume.some((stage) => stages.indexOf(stage as typeof stages[number]) >= resumeStartIndex)) {
   throw Error('Cannot resume: workflow checkpoint is not contiguous');
 }
-const selectedTtsEnv = requestedTtsModel ? environmentForTtsModel(requestedTtsModel) : {};
+const savedVoicesFile = resolve(root, args.get('--voices') || `${dir}/voices.json`);
+const savedVoices = existsSync(savedVoicesFile) ? JSON.parse(await readFile(savedVoicesFile, 'utf8')) : undefined;
+const ttsProvider = args.get('--tts-provider') || process.env.VIDEO_TTS_PROVIDER || 'qwen-token-plan';
+const selectedTtsEnv = ttsProvider === 'qwen-token-plan'
+  ? environmentForTtsModel(projectTtsModel(requestedTtsModel || process.env.VIDEO_TTS_MODEL, savedVoices)) : {};
 const env = { ...process.env, WEREWOLF_DATA: dataRoot, VIDEO_DATA_DIR: dataRoot, VIDEO_ROOM: room, VIDEO_PROJECT_DIR: dir, VIDEO_AVATAR_STYLE: theme, VIDEO_ENCODER: encoder,
   VIDEO_PLAYER_SEAT: playerSeat || '',
   ...(args.has('--video-locale') ? { VIDEO_LOCALE: args.get('--video-locale')! } : {}),
@@ -108,7 +112,7 @@ const env = { ...process.env, WEREWOLF_DATA: dataRoot, VIDEO_DATA_DIR: dataRoot,
   ...(args.has('--video-kbps') ? { VIDEO_BITRATE_KBPS: args.get('--video-kbps')! } : {}),
   ...(args.has('--max-video-kbps') ? { VIDEO_MAXRATE_KBPS: args.get('--max-video-kbps')! } : {}),
   ...(args.has('--audio-kbps') ? { VIDEO_AUDIO_KBPS: args.get('--audio-kbps')! } : {}),
-  VIDEO_TTS_PROVIDER: args.get('--tts-provider') || process.env.VIDEO_TTS_PROVIDER || 'qwen-token-plan',
+  VIDEO_TTS_PROVIDER: ttsProvider,
   ...(args.get('--tts-adapter') ? { VIDEO_TTS_ADAPTER: resolve(root, args.get('--tts-adapter')!) } : {}),
   ...selectedTtsEnv,
   VIDEO_VOICES_FILE: resolve(root, args.get('--voices') || `${dir}/voices.json`),
@@ -179,7 +183,15 @@ try {
       // Caption timing is always checked, including when semantic review is explicitly off.
       await run('scripts/video/audit-audio.ts', ['--fail-on-error']);
     }
-    else await run(`scripts/video/${stage === 'tts' ? 'synthesize' : stage}.ts`);
+    else {
+      if (stage === 'tts') {
+        const voices = JSON.parse(await readFile(env.VIDEO_VOICES_FILE, 'utf8'));
+        if (ttsProvider === 'qwen-token-plan' && voices.characterVoiceDesign === 'portrait-v1') {
+          await run('scripts/video/voice-enroll.ts', ['--design', `--model=${voices.model}`]);
+        }
+      }
+      await run(`scripts/video/${stage === 'tts' ? 'synthesize' : stage}.ts`);
+    }
     if (stage === 'verify' && !playerSeat) await run('scripts/video/publish-copy.ts', ['--if-exists']);
     if (stage === 'render' && stopMonitor) { await stopMonitor(); stopMonitor = undefined; }
     report.completed.push(stage); await writeFile(statusFile, JSON.stringify(report, null, 2));

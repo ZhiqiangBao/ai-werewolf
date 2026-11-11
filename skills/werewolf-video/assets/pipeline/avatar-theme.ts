@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { characterVoices } from './character-voices';
 import type { Cast, VoiceCatalog } from './project';
+import { characterVoiceDirection } from './character-delivery';
 
 export async function bindTheme(directory: string, roomFile: string, override?: string, preferBound = false): Promise<string> {
   const room = JSON.parse(await readFile(roomFile, 'utf8')) as { avatarStyle?: string };
@@ -35,6 +36,7 @@ export function artManifest(theme: string, cast: Cast[], voices: VoiceCatalog) {
       const character = characters[c.seat - 1];
       if (!character || !voices.profiles[c.voiceKey]) throw Error(`Missing character or voice for seat ${c.seat}`);
       return { seat: c.seat, name: c.name, row: Math.floor((c.seat - 1) / 4) + 1, column: (c.seat - 1) % 4 + 1,
-        appearance: character.appearance, gender: character.gender, voiceKey: c.voiceKey, voice: voices.profiles[c.voiceKey].voice };
+        appearance: character.appearance, gender: character.gender, voiceKey: c.voiceKey, voice: voices.profiles[c.voiceKey].voice,
+        voiceDirection: characterVoiceDirection(theme, c.seat), instruction: voices.profiles[c.voiceKey].instruction };
     }) };
 }

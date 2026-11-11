@@ -35,6 +35,9 @@ export interface VoiceCatalog {
   endpoint?: string;
   apiKeyEnv?: string;
   flashVoiceBindings?: Record<string, string>;
+  modelVoiceBindings?: Record<string, Record<string, string>>;
+  /** New casts enroll portrait-specific voices before TTS; existing casts remain unchanged. */
+  characterVoiceDesign?: 'portrait-v1';
   profiles: Record<string, VoiceProfile>;
   judgeCues?: Record<string, { instruction?: string; rate?: number }>;
   clipSeeds?: Record<string, number>;

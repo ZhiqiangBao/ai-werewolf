@@ -10,6 +10,13 @@ export interface TtsModelConfig {
 
 export const TOKEN_PLAN_ENDPOINT = 'https://token-plan.maas.qianwenaiapi.com/api/v1/services/audio/tts/SpeechSynthesizer';
 export const DASHSCOPE_ENDPOINT = 'https://maas.qianwenaiapi.com/api/v1/services/audio/tts/SpeechSynthesizer';
+export const DEFAULT_VIDEO_TTS_MODEL = 'qwen-audio-3.1-tts-flash';
+
+export function projectTtsModel(requested?: string, saved?: Pick<VoiceCatalog, 'model'>): string {
+  const model = requested?.trim() || saved?.model || DEFAULT_VIDEO_TTS_MODEL;
+  resolveTtsModelConfig(model);
+  return model;
+}
 
 // A model switch also selects voices from that model's own catalog. Player
 // voices are selected from gender-verified pools after the avatar theme is known.
@@ -76,12 +83,17 @@ export function selectVoiceCatalogModel(catalog: VoiceCatalog, model: string): V
   const config = resolveTtsModelConfig(model);
   const flashVoices = model === 'qwen-audio-3.1-tts-flash' ? selectThemeFlashVoices(catalog) : undefined;
   const profiles = Object.fromEntries(Object.entries(catalog.profiles).map(([key, profile]) => {
-    const selected = catalog.flashVoiceBindings?.[key] ?? flashVoices?.[key] ?? config.voices?.[key] ?? (model === 'qwen-audio-3.0-tts-plus' ? plusVoices[key] : undefined);
-    if (selected) return [key, { ...profile, voice: selected }];
+    const binding = catalog.modelVoiceBindings?.[model]?.[key] ?? (model === 'qwen-audio-3.1-tts-flash' ? catalog.flashVoiceBindings?.[key] : undefined);
+    if (!binding && catalog.model === model && compatibleVoice(profile.voice, model)) return [key, profile];
+    const selected = binding ?? flashVoices?.[key] ?? config.voices?.[key] ?? (model === 'qwen-audio-3.0-tts-plus' ? catalog.themeVoiceBindings?.[key] ?? plusVoices[key] : undefined);
+    if (selected) {
+      if (!compatibleVoice(selected, model)) throw Error(`Incompatible voice binding for ${model} ${key}`);
+      return [key, { ...profile, voice: selected }];
+    }
     if (compatibleVoice(profile.voice, model)) return [key, profile];
     throw Error(`No compatible ${model} voice for profile ${key}; choose a registered profile or provide a compatible custom voice`);
   }));
-  return { ...catalog, model: config.model, profiles };
+  return { ...catalog, model: config.model, endpoint: config.endpoint, apiKeyEnv: config.apiKeyEnv, profiles };
 }
 
 function selectThemeFlashVoices(catalog: VoiceCatalog): Record<string, string> {
@@ -111,9 +123,10 @@ export function voiceCatalogIssues(catalog: VoiceCatalog): string[] {
     const profile = catalog.profiles[key], expected = characterGender(catalog.theme, Number(match[1]));
     const known = flashVoiceGender[profile.voice];
     if (known && known !== expected) issues.push(`${key} 的 Flash 声线性别与 ${catalog.theme} 立绘不一致`);
-    const enrolled = catalog.flashVoiceBindings?.[key] === profile.voice;
+    const enrolledVoice = catalog.modelVoiceBindings?.[catalog.model]?.[key] ?? catalog.flashVoiceBindings?.[key];
+    const enrolled = enrolledVoice === profile.voice;
     if (!known && !enrolled && !profile.voice.startsWith('qwen-audio-3.1-tts-flash-')) issues.push(`${key} 的 Flash 声线未绑定到目标模型`);
-    if (catalog.flashVoiceBindings?.[key] && catalog.flashVoiceBindings[key] !== profile.voice) issues.push(`${key} 的 Flash 声线与 voice enrollment manifest 不一致`);
+    if (enrolledVoice && enrolledVoice !== profile.voice) issues.push(`${key} 的 Flash 声线与 voice enrollment manifest 不一致`);
   }
   return issues;
 }
@@ -126,4 +139,8 @@ export function environmentForTtsModel(model: string): Record<string, string> {
     VIDEO_TTS_ENDPOINT: config.endpoint === TOKEN_PLAN_ENDPOINT ? '' : config.endpoint,
     VIDEO_TTS_API_KEY_ENV: config.apiKeyEnv ?? '',
   };
+}
+
+export function environmentForVoiceCatalog(catalog: VoiceCatalog): Record<string, string> {
+  return environmentForTtsModel(catalog.model);
 }

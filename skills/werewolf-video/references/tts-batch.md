@@ -58,14 +58,14 @@ node node_modules/tsx/dist/cli.mjs scripts/video/synthesize.ts
 pnpm video:voice-enroll --project-dir=项目目录 --model=qwen-audio-3.1-tts-flash --design --seats=1,4 --prefix=项目前缀
 ```
 
-程序把返回的 voice ID、目标模型、人物性别、主题和创建时间写入 `voice-enrollment.json`，并同步 `voices.json.flashVoiceBindings`。创建成功后必须重新合成该座位的全部片段，再运行波形、字幕、时间轴和听感检查。创建接口失败、目标模型不支持或授权不完整时停止，不自动改用兼容声线。`DASHSCOPE_API_KEY` 只从已获授权的运行环境读取，密钥不写入材料或日志。
+程序把返回的 voice ID、目标模型、人物性别、主题和创建时间写入 `voice-enrollment.json`，并同步 `voices.json.modelVoiceBindings[model]`；Flash 同时保留兼容的 `flashVoiceBindings`。两种模型的登记分别保存，续跑复用同一设计，不重复创建。创建成功后必须重新合成该座位的全部片段，再运行波形、字幕、时间轴和听感检查。创建接口失败、目标模型不支持或授权不完整时停止，不自动改用兼容声线。`DASHSCOPE_API_KEY` 只从已获授权的运行环境读取，密钥不写入材料或日志。
 
 同一对局从样品扩展为整片时，可把 `VIDEO_AUDIO_CACHE_DIRS` 设为已有音频目录绝对路径的 JSON 数组，例如 `'["D:/项目/data/video/ROOM/audio","D:/项目/data/video/ROOM/sample/audio"]'`。内置 Qwen 适配器在发请求前按完整缓存键查找，检查字节数与 WAV 头，复用音频和真实时间戳；不能仅凭文字相同而复用另一角色声音。其他 TTS 适配器可在计算自己的完整请求键后调用 `audio-cache.ts` 的 `reuseAudio`，不同服务/端点须进入键中。
 
 Qwen Token Plan 特例：
 
 - 保留 `qwen-token-plan` 路由和现有 Token Plan 端点；凭据优先从 `WEREWOLF_TTS_API_KEY` 读取，其次只读项目加密的 `data/models.json`。不再运行时读取 Qwen Code 全局 settings；旧安装先执行项目的 `models:migrate` 显式迁移，保留原主密钥。密钥明文不落入脚本、产物或日志。
-- 完整片旧版内置默认模型为 `qwen-audio-3.0-tts-plus`，不代表新配音偏好或当前服务能力。新配音优先考虑 `qwen-audio-3.1-tts-flash`，由模型注册表选择兼容音色；已完成且绑定正确的 Plus 原音继续复用，不跨模型盲用 voice ID。使用 `input.instruction`、`word_timestamp_enabled: true` 和 SSE；语音、时间戳与结束事件都完成后才写成功缓存。
+- 新项目默认模型为 `qwen-audio-3.1-tts-flash`，已有项目沿用保存模型。3.0 Plus 走 Token Plan，3.1 Flash 走 DashScope，由模型注册表同时选择端点、凭据环境和兼容音色；已完成且绑定正确的 Plus 原音继续复用，不跨模型盲用 voice ID。使用 `input.instruction`、`word_timestamp_enabled: true` 和 SSE；语音、时间戳与结束事件都完成后才写成功缓存。
 - SSE 事件按空行分块；同一事件可能有多行 JSON。最终 WAV 可能带流式长度头，应按真实 PCM 字节数重写规范头。
 - 下载服务返回的音频 URL 时，不向存储域名转发服务商 API Key，不打印带签名 URL。
 - 鉴权、额度、限流或外发审批失败应保留检查点。换标准按量密钥、端点或服务商属于另外的选择，不能自动回退。

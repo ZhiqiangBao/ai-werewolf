@@ -49,7 +49,7 @@ pnpm video:make --room=ROOM_ID --check-only --encoder=cpu
 
 ## 3. 配音、转写与时间对齐
 
-完整片的 TTS 模型、端点、凭据环境和兼容音色属于运行配置，由 `--tts-model=qwen-audio-3.1-tts-flash|qwen-audio-3.0-tts-plus` 参数和模型注册表自动选择；不要求手工重写 `voices.json`。默认不传参数时保持已有项目配置和旧的 3.0 Plus 回退。编辑版按[编辑版制作](references/edited-video.md)的旁白 job 显式指定端点、模型和兼容音色。新配音优先 `qwen-audio-3.1-tts-flash`；已完成且绑定正确的 Plus 原音继续复用，不因偏好变化重配。模型、端点和音色需实际兼容，不把 Plus 的 voice ID 盲目用于 Flash。每个座位在本项目中只绑定一个 voice ID。音频不通过时先保留该 voice ID，只重新合成指定座位或片段，再重新审计；不得用另一个声线绕过削波或性别不符。目标模型没有对应人物声线时，只有在制作执行者明确选定模型切换后，才按[声线切换](references/tts-batch.md#模型切换与新声线)创建目标模型声线并更新绑定。音色目录和模型能力按[声线](references/character-voices.md)及[配音参考](references/tts-batch.md)核实。
+完整片的 TTS 模型、端点、凭据环境和兼容音色属于运行配置，由 `--tts-model=qwen-audio-3.1-tts-flash|qwen-audio-3.0-tts-plus` 参数和模型注册表自动选择；不要求手工重写 `voices.json`。新项目默认使用 3.1 Flash；已有项目沿用保存的模型和人物音色。3.0 Plus 合成固定走 Token Plan，3.1 Flash 合成固定走 DashScope，不自动切换计费线路。编辑版按[编辑版制作](references/edited-video.md)的旁白 job 显式指定端点、模型和兼容音色。新配音优先 `qwen-audio-3.1-tts-flash`；已完成且绑定正确的 Plus 原音继续复用，不因偏好变化重配。模型、端点和音色需实际兼容，不把 Plus 的 voice ID 盲目用于 Flash。每个座位在本项目中只绑定一个 voice ID。音频不通过时先保留该 voice ID，只重新合成指定座位或片段，再重新审计；不得用另一个声线绕过削波或性别不符。目标模型没有对应人物声线时，只有在制作执行者明确选定模型切换后，才按[声线切换](references/tts-batch.md#模型切换与新声线)创建目标模型声线并更新绑定。音色目录和模型能力按[声线](references/character-voices.md)及[配音参考](references/tts-batch.md)核实。
 
 先按批量配音指南执行到 `--through=tts`，例如 `pnpm video:make --room=ROOM_ID --tts-model=qwen-audio-3.1-tts-flash --through=tts --resume`，取得完整稿原音。只补指定座位时使用 `synthesize.ts --prepared-clips --voice-keys=seat-1,seat-4`，只补指定片段时使用 `video:repair-audio --clips=片段ID --max-attempts=...`。两种方式都读取当前 `voices.json`，不会自动换声线。原音检查、转写和词时通过后，按编辑版指南编译已经审核的高光和精华稿，再用旁白 job 合成各自新增解说，并对新增音频执行同样检查。完整稿原音已可用时直接复用，不能为编译选段重复付费生成。渲染前应同时具备原音、编译后的 selection 和该版旁白 manifest。
 

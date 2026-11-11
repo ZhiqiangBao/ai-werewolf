@@ -83,9 +83,9 @@ export function applyCharacterVoices(voices: VoiceCatalog, cast: Cast[], theme: 
     const character = characters[c.seat - 1];
     if (!character || !voices.profiles[c.voiceKey]) throw Error(`A voice profile is required for ${c.voiceKey}`);
     const previous = voices.profiles[c.voiceKey];
-    const voice = voices.model === 'qwen-audio-3.1-tts-flash' && voices.flashVoiceBindings?.[c.voiceKey]
+    const voice = voices.modelVoiceBindings?.[voices.model]?.[c.voiceKey] ?? (voices.model === 'qwen-audio-3.1-tts-flash' && voices.flashVoiceBindings?.[c.voiceKey]
       ? voices.flashVoiceBindings[c.voiceKey]
-      : `qwen-audio-3.0-tts-plus-${character.voice}`;
+      : `qwen-audio-3.0-tts-plus-${character.voice}`);
     result.profiles[c.voiceKey] = { ...previous, voice, label: `${c.seat}号 ${c.name}`, rate: previous.rate ?? 1.04, instruction: previous.instruction ?? '' };
   }
   return result;

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { qwenCacheKey } from '../src/speech/qwen';
-import { environmentForTtsModel, resolveTtsModelConfig, selectVoiceCatalogModel } from '../../../scripts/video/tts-config';
+import { environmentForTtsModel, environmentForVoiceCatalog, resolveTtsModelConfig, selectVoiceCatalogModel } from '../../../scripts/video/tts-config';
 import { clipVoiceProfile } from '../../../scripts/video/project';
 
 it('selects the 3.1 Flash route and migrates project voices from one CLI model choice', () => {
@@ -52,6 +52,13 @@ it('migrates a Flash project back to compatible Plus voices instead of leaving _
   expect(catalog.profiles.commentator.voice).toBe('longanlingxin');
   expect(catalog.profiles.judge.voice).toBe('qwen-audio-3.0-tts-plus-longshuojizhu');
   expect(catalog.profiles['seat-1'].voice).toBe('qwen-audio-3.0-tts-plus-longxinruixuan');
+});
+
+it('uses the selected model route even when saved endpoint and key settings belong to the other model', () => {
+  for (const model of ['qwen-audio-3.0-tts-plus', 'qwen-audio-3.1-tts-flash']) {
+    const wrongRoute = resolveTtsModelConfig(model.includes('3.0') ? 'qwen-audio-3.1-tts-flash' : 'qwen-audio-3.0-tts-plus');
+    expect(environmentForVoiceCatalog({ model, profiles: {}, endpoint: wrongRoute.endpoint, apiKeyEnv: wrongRoute.apiKeyEnv })).toEqual(environmentForTtsModel(model));
+  }
 });
 
 it('binds cache identity to endpoint as well as model and request input', () => {

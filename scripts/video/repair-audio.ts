@@ -12,6 +12,7 @@ import { assertPlayerSources } from './integrity';
 import { synthesizeSpeech } from './tts';
 import { clipVoiceProfile, projectDir, type Clip, type Script, type VoiceCatalog } from './project';
 import type { SpeechSynthesizer } from './tts-types';
+import { environmentForVoiceCatalog } from './tts-config';
 
 interface RepairEntry {
   id: string; status: 'pending' | 'replaced' | 'failed'; oldDigest: string;
@@ -70,6 +71,7 @@ export async function repairAudio(directory: string, options: RepairOptions): Pr
     const clip = clips.find((c) => c.id === id)!, inspected = audit.clips.find((c) => c.id === id)!;
     const voicesFile = join(directory, 'voices.json');
     const voicesText = await readFile(voicesFile, 'utf8'), voices = JSON.parse(voicesText) as VoiceCatalog;
+    if (!options.synthesize && (!process.env.VIDEO_TTS_PROVIDER || process.env.VIDEO_TTS_PROVIDER === 'qwen-token-plan')) Object.assign(process.env, environmentForVoiceCatalog(voices));
     const profile = clipVoiceProfile(voices, clip, source.locale ?? 'zh-CN'), entry: RepairEntry = { id, status: 'pending', oldDigest: inspected.digest, attempts: [] };
     const originalMeta = JSON.parse(await readFile(clip.audioFile + '.json', 'utf8')) as { voice?: string; model?: string };
     assert.equal(originalMeta.voice, profile.voice, `Existing audio voice differs from current seat voice for ${id}`);

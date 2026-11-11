@@ -6,6 +6,7 @@ import { assertPlayerSources } from './integrity';
 import { inspectMaterials } from './materials';
 import assert from 'node:assert/strict';
 import { preparePlayerAudio } from './player-audio-provenance';
+import { environmentForVoiceCatalog } from './tts-config';
 
 const prepared = process.argv.includes('--prepared-clips');
 const voiceKeysArg = process.argv.find((arg) => arg.startsWith('--voice-keys='));
@@ -27,6 +28,15 @@ const script: Script = prepared ? JSON.parse(await readFile(`${projectDir}/scrip
 const voices: VoiceCatalog = prepared ? JSON.parse(await readFile(`${projectDir}/voices.json`, 'utf8')) : await loadVoices();
 const requestedModel = process.env.VIDEO_TTS_MODEL?.trim();
 if (requestedModel && requestedModel !== voices.model) throw Error(`TTS model ${requestedModel} does not match voices.json model ${voices.model}`);
+if (!process.env.VIDEO_TTS_PROVIDER || process.env.VIDEO_TTS_PROVIDER === 'qwen-token-plan') {
+  // A saved Plus cast must never inherit a previous Flash run's paid endpoint.
+  Object.assign(process.env, environmentForVoiceCatalog(voices));
+}
+if ((!process.env.VIDEO_TTS_PROVIDER || process.env.VIDEO_TTS_PROVIDER === 'qwen-token-plan') && !process.argv.includes('--plan-only') && voices.characterVoiceDesign === 'portrait-v1') {
+  const bindings = voices.modelVoiceBindings?.[voices.model] ?? (voices.model === 'qwen-audio-3.1-tts-flash' ? voices.flashVoiceBindings : undefined);
+  const missing = Object.keys(voices.profiles).filter(key => /^seat-\d+$/.test(key) && bindings?.[key] !== voices.profiles[key].voice);
+  if (missing.length) throw Error(`Portrait voices are not enrolled: ${missing.join(', ')}; run video:voice-enroll --design for this project first`);
+}
 const clips = prepared ? JSON.parse(await readFile(`${projectDir}/clips.json`, 'utf8')) as ReturnType<typeof buildClips> : buildClips(script);
 const synthesisClips = clips.filter((clip) =>
   (!selectedVoiceKeys || selectedVoiceKeys.includes(clip.voiceKey)) &&

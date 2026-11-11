@@ -11,7 +11,7 @@ const ENDPOINT = 'https://token-plan.maas.qianwenaiapi.com/api/v1/services/audio
 export function qwenCacheKey(endpoint: string, model: string, input: unknown): string {
   return createHash('sha256').update(JSON.stringify({ endpoint, model, input })).digest('hex');
 }
-export async function synthesizeQwen(text: string, profile: VoiceProfile, model: string, output: string, options?: { signal?: AbortSignal; endpoint?: string; apiKey?: string }): Promise<AudioMeta> {
+export async function synthesizeQwen(text: string, profile: VoiceProfile, model: string, output: string, options?: { signal?: AbortSignal; endpoint?: string; apiKey?: string; force?: boolean }): Promise<AudioMeta> {
   options?.signal?.throwIfAborted();
   const configuredEndpoint = process.env.VIDEO_TTS_ENDPOINT?.trim() || undefined;
   const configuredKeyEnv = process.env.VIDEO_TTS_API_KEY_ENV?.trim() || undefined;
@@ -28,15 +28,17 @@ export async function synthesizeQwen(text: string, profile: VoiceProfile, model:
     ...(profile.volume === undefined ? {} : { volume: profile.volume }),
     ...(profile.instruction.trim() ? { instruction: profile.instruction } : {}), language_hints: profile.languageHints ?? [profile.locale?.split('-')[0] ?? 'zh'], word_timestamp_enabled: true, seed };
   const cacheKey = qwenCacheKey(endpoint, model, input);
-  try {
-    const meta = JSON.parse(await readFile(output + '.json', 'utf8')) as AudioMeta;
-    const bytes = await readFile(output);
+  if (!options?.force) {
+    try {
+      const meta = JSON.parse(await readFile(output + '.json', 'utf8')) as AudioMeta;
+      const bytes = await readFile(output);
+      options?.signal?.throwIfAborted();
+      if (meta.cacheKey === cacheKey && bytes.length === meta.bytes && bytes.subarray(0, 4).toString() === 'RIFF') return meta;
+    } catch { options?.signal?.throwIfAborted(); /* Missing/incomplete cache: regenerate this clip only. */ }
+    const reused = await reuseAudio(cacheKey, output);
     options?.signal?.throwIfAborted();
-    if (meta.cacheKey === cacheKey && bytes.length === meta.bytes && bytes.subarray(0, 4).toString() === 'RIFF') return meta;
-  } catch { options?.signal?.throwIfAborted(); /* Missing/incomplete cache: regenerate this clip only. */ }
-  const reused = await reuseAudio(cacheKey, output);
-  options?.signal?.throwIfAborted();
-  if (reused) return reused;
+    if (reused) return reused;
+  }
   const apiKey = explicit ? options?.apiKey ?? configuredKey : process.env.WEREWOLF_TTS_API_KEY || projectQwenTokenPlanKey();
   if (explicit ? !apiKey : !apiKey?.startsWith('sk-sp-')) throw Error('Qwen TTS key is unavailable');
   const response = await fetch(endpoint, { method: 'POST', ...(explicit ? { redirect: 'error' as const } : {}),
