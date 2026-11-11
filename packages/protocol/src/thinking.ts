@@ -113,7 +113,7 @@ export function thinkingOptions(baseUrl: string, model: string, protocol: ApiPro
       if (native.kind === 'budget') return option(value, supported, '思考预算 {0} token。', budget[value]);
       if (native.kind === 'switch') return option(value, supported, '这个接口仅支持思考开关，不区分轻度、标准和深度；跟随模型默认设置。');
       if (native.kind === 'effort' && !supported) return option(value, supported, '这个接口没有独立的轻度档，请选择标准或深度。');
-      if (native.kind === 'effort') return option(value, supported, '通过原生协议设置 {0} 力度。', value);
+      if (native.kind === 'effort') return option(value, supported, '通过原生协议设置 {0} 力度。', native.effort?.[value] ?? value);
       return option(value, supported, '尚未确认该协议和型号的强度参数，请使用跟随模型。');
     });
   }

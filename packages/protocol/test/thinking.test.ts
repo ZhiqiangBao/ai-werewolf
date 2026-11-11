@@ -12,6 +12,7 @@ it('Qwen4 的三种协议提供真实三档，深度映射 xhigh，默认不额�
     expect(supported(aliyun, model, protocol)).toEqual(['default', 'off', ...levels]);
     expect(defaultThinkingMode(aliyun, model, protocol)).toBe('low');
     expect(thinkingParameters(aliyun, model, 'default', protocol)).toEqual({});
+    expect(thinkingOptions(aliyun, model, protocol).find(option => option.value === 'high')?.hint).toContain('xhigh');
     for (const mode of levels) {
       const effort = mode === 'high' ? 'xhigh' : mode;
       expect(thinkingParameters(aliyun, model, mode, protocol)).toEqual(protocol === 'responses'
