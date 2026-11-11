@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Catalog, ViewResponse } from '@werewolf/protocol';
 import { api, streamUrl } from './api';
-import { scopedCallback, ViewLoader } from './view-loader';
+import { retainView, scopedCallback, ViewLoader } from './view-loader';
 
 export function useHashRoute(): string[] {
   const [hash, setHash] = useState(() => location.hash);
@@ -60,7 +60,7 @@ export function useView(roomId: string, token: string) {
   const loader = useMemo(() => {
     const own: ViewLoader<ViewResponse> = new ViewLoader(
       () => api.view(roomId, token),
-      (data, error) => setSnapshot((previous) => ({ loader: own, data: data ?? (previous?.loader === own ? previous.data : null), error })),
+      (data, error) => setSnapshot((previous) => ({ loader: own, data: retainView(previous?.loader === own ? previous.data : null, data), error })),
       () => current.current === own,
     );
     return own;

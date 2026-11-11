@@ -39,6 +39,7 @@ function mergeInput(a: RoomSetupInput, b: RoomSetupInput): RoomSetupInput {
 function applyLocal(s: RoomSetupView, input: RoomSetupInput): RoomSetupView {
   return {
     ...s,
+    presetId: input.presetId ?? s.presetId,
     avatarStyle: input.avatarStyle ?? s.avatarStyle,
     locale: input.locale ?? s.locale,
     timing: input.timing ?? s.timing,
@@ -61,20 +62,22 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
   const [setup, setSetup] = useState<RoomSetupView | null>(null);
   const [models, setModels] = useState<ModelPresetView[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'dirty' | 'saving' | 'failed'>('saved');
+  const saving = useRef(false);
   const [starting, setStarting] = useState(false);
   const queued = useRef<RoomSetupInput>({});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const edits = useRef(0);
+  const readRevision = useRef(0);
   const chain = useRef<Promise<void>>(Promise.resolve());
   useEffect(() => {
     if (setup?.avatarStyle) applyAvatarStyle(setup.avatarStyle);
   }, [setup?.avatarStyle]);
   useStream(roomId, token, () => {
-    if (saving || Object.keys(queued.current).length) return;
-    const mark = edits.current;
+    if (saving.current || Object.keys(queued.current).length) return;
+    const mark = edits.current, revision = readRevision.current;
     api.getSetup(roomId, token).then((v) => {
-      if (mark === edits.current && !Object.keys(queued.current).length) setSetup(v);
+      if (mark === edits.current && revision === readRevision.current && !saving.current && !Object.keys(queued.current).length) setSetup(v);
     }, () => {});
   });
 
@@ -83,14 +86,13 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
   }, []);
 
   useEffect(() => {
-    if (saving) return;
     let active = true;
-    const mark = edits.current;
+    const mark = edits.current, revision = readRevision.current;
     api.getSetup(roomId, token).then((value) => {
-      if (active && mark === edits.current && !Object.keys(queued.current).length) setSetup(value);
+      if (active && mark === edits.current && revision === readRevision.current && !saving.current && !Object.keys(queued.current).length) setSetup(value);
     }, (e: Error) => { if (active) setError(e.message); });
     return () => { active = false; };
-  }, [roomId, token, uiLocale, saving]);
+  }, [roomId, token, uiLocale]);
 
   useEffect(() => {
     loadModels();
@@ -101,24 +103,28 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
     const run = async () => {
-      const input = queued.current;
-      if (!Object.keys(input).length) return;
-      queued.current = {};
-      const mark = edits.current;
-      setSaving(true);
-      try {
-        const v = await api.putSetup(roomId, token, input);
-        setSetup((cur) =>
-          edits.current === mark || !cur
-            ? v
-            : { ...cur, ruleCardPreview: v.ruleCardPreview, validationErrors: v.validationErrors, tokens: v.tokens },
-        );
-        setError(null);
-      } catch (e) {
-        setError((e as Error).message);
-        api.getSetup(roomId, token).then(setSetup, () => {});
-      } finally {
-        setSaving(false);
+      while (Object.keys(queued.current).length) {
+        const input = queued.current;
+        queued.current = {};
+        const mark = edits.current;
+        saving.current = true;
+        setSaveStatus('saving');
+        try {
+          const v = await api.putSetup(roomId, token, input);
+          readRevision.current += 1;
+          if (edits.current === mark && !Object.keys(queued.current).length) {
+            setSetup(v);
+            setSaveStatus('saved');
+          } else setSaveStatus('dirty');
+          setError(null);
+        } catch (e) {
+          queued.current = mergeInput(input, queued.current);
+          setSaveStatus('failed');
+          setError((e as Error).message);
+          throw e;
+        } finally {
+          saving.current = false;
+        }
       }
     };
     chain.current = chain.current.then(run, run);
@@ -127,26 +133,37 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
 
   useEffect(
     () => () => {
-      void flush();
+      void flush().catch(() => {});
     },
     [flush],
   );
 
   const patch = (input: RoomSetupInput, delay = 500) => {
     edits.current += 1;
+    setSaveStatus('dirty');
     setSetup((s) => (s ? applyLocal(s, input) : s));
     queued.current = mergeInput(queued.current, input);
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => void flush(), delay);
+    timer.current = setTimeout(() => { void flush().catch(() => {}); }, delay);
   };
 
   const patchSeat = (seat: number, change: Omit<SeatConfigInput, 'seat'>, delay?: number) =>
     patch({ seats: [{ seat, ...change }] }, delay);
 
   const changePreset = async (presetId: string) => {
-    await flush();
-    queued.current = { presetId };
-    await flush();
+    try {
+      await flush();
+    } catch {
+      edits.current += 1;
+      queued.current = mergeInput(queued.current, { presetId });
+      setSetup((s) => s ? applyLocal(s, { presetId }) : s);
+      return;
+    }
+    edits.current += 1;
+    queued.current = mergeInput(queued.current, { presetId });
+    setSetup((s) => s ? applyLocal(s, { presetId }) : s);
+    setSaveStatus('dirty');
+    try { await flush(); } catch { /* 保留未保存的编辑，等待重试。 */ }
   };
 
   const start = async () => {
@@ -168,12 +185,13 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
 
   const preset = catalog.presets.find((p) => p.id === setup.presetId);
   const errors = setup.validationErrors;
+  const saveLabel = t({ saved: '已自动保存', dirty: '有未保存的更改', saving: '保存中…', failed: '保存失败，修改尚未保存' }[saveStatus]);
 
   return (
     <div className="wrap">
       <header className="page-heading">
         <div><span className="eyebrow">{t('筹备你的圆桌')}</span><h1>{t('准备你的圆桌')}</h1><p>{t('选一个故事，让不同的声音入席。')}</p></div>
-        <div className="row"><AvatarStylePicker value={setup.avatarStyle ?? currentAvatarStyle()} onChange={(avatarStyle) => patch({ avatarStyle }, 0)} /><span className="tag gold">{saving ? t('正在保存…') : t('配置已自动保存')}</span></div>
+        <div className="row"><AvatarStylePicker value={setup.avatarStyle ?? currentAvatarStyle()} onChange={(avatarStyle) => patch({ avatarStyle }, 0)} /><span className="tag gold">{saveLabel}</span></div>
       </header>
       <div className="setup-steps"><span><b>01</b>{t('选择版型')}</span><span><b>02</b>{t('安排座位')}</span><span><b>03</b>{t('开启故事')}</span></div>
       <div className="setup-grid">
@@ -202,7 +220,7 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
             <h3>
               {t('开局')}
               <span className="spacer" />
-              <span className="tiny dim">{saving ? t('保存中…') : t('已自动保存')}</span>
+              <span className="tiny dim">{saveLabel}</span>
             </h3>
             <div className="small muted" style={{ marginBottom: 10 }}>
               {preset ? `${gameText(setup.locale, preset.name)} · ${t('{0} 人', preset.playerCount)}` : setup.presetId} · {t('身份在开局时随机发放')}
@@ -219,6 +237,7 @@ export function Setup({ roomId, token, onStarted }: { roomId: string; token: str
                 {error}
               </div>
             )}
+            {saveStatus === 'failed' && <button className="btn sm" onClick={() => void flush().catch(() => {})}>{t('重试保存')}</button>}
             <button className="btn primary lg" style={{ width: '100%' }} disabled={!!errors.length || starting} onClick={start}>
               {starting ? t('正在开局…') : t('开始游戏')}
             </button>

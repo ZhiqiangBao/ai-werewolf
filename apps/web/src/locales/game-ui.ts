@@ -15,6 +15,7 @@ export const gameUiMessages: readonly (readonly [string, string, string])[] = [
   ['继续', 'Resume', '再開'],
   ['显示', 'Show', '表示'],
   ['刷新', 'Refresh', '更新'],
+  ['连接中断，画面未更新：{0}', 'Connection interrupted; this view is out of date: {0}', '接続が中断され、画面は更新されていません：{0}'], ['这个链接不是观战链接。', 'This is not a spectator link.', 'このリンクは観戦用ではありません。'],
   ['回到首页', 'Back to home', 'ホームに戻る'],
   ['正在连接房间…', 'Connecting to room…', '部屋に接続中…'],
   ['这个链接不是房主链接。', 'This is not a host link.', 'このリンクはホスト用ではありません。'],

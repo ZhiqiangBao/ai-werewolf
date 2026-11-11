@@ -79,6 +79,11 @@ function Loading({ error }: { error: string | null }) {
   );
 }
 
+function StaleView({ error }: { error: string | null }) {
+  const { t } = useI18n();
+  return error ? <div className="error-box" role="alert">{t('连接中断，画面未更新：{0}', error)}</div> : null;
+}
+
 /** 不显示凭证；仅作为动画游标的内存隔离范围。 */
 function animationScope(roomId: string, token: string, p: Projection): string {
   return JSON.stringify([roomId, token, p.gameId, p.viewer.kind, p.viewer.kind === 'seat' ? p.viewer.seat : null]);
@@ -97,11 +102,12 @@ export function HostPage({ roomId, token }: { roomId: string; token: string }) {
     return (
       <>
         <TopBar room={data.room} projection={null} who={t('房主')} />
+        <StaleView error={error} />
         <Setup roomId={roomId} token={token} onStarted={() => void refresh()} />
       </>
     );
   }
-  return <HostGame roomId={roomId} token={token} room={data.room} projection={data.projection as GodProjection} presentation={data.presentation} refresh={refresh} />;
+  return <><StaleView error={error} /><HostGame roomId={roomId} token={token} room={data.room} projection={data.projection as GodProjection} presentation={data.presentation} refresh={refresh} /></>;
 }
 
 function HostGame({ roomId, token, room, projection: p, presentation, refresh }: { roomId: string; token: string; room: RoomBrief; projection: GodProjection; presentation?: ViewResponse['presentation']; refresh: () => Promise<void> }) {
@@ -252,6 +258,7 @@ export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
     return (
       <>
         <TopBar room={room} projection={null} who={who} />
+        <StaleView error={error} />
         {human ? <HumanLobby room={room} token={token} refresh={refresh} /> : <div className="center-screen">
           <div>
             <h2>{t('你是 {0}', gameText(room.locale, '{0}号', room.seat))}</h2>
@@ -285,7 +292,7 @@ export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
         )}
       </TopBar>
       <div className="wrap game-wrap">
-        {error && <div className="error-box" role="alert">{t('连接中断：{0}。草稿保留，恢复连接后再提交。', error)}</div>}
+        <StaleView error={error} />
         <div className="game">
           <div className="game-left">
             {p.result && <ResultBanner result={p.result} locale={p.locale ?? room.locale} />}
@@ -313,14 +320,21 @@ export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
 export function WatchPage({ roomId, token }: { roomId: string; token: string }) {
   const { t } = useI18n();
   const { data, error } = useView(roomId, token);
-  const catalog = useCatalog();
-  const speech = useSpeechPlayback(roomId, token, data?.projection ?? null, data?.room, data?.presentation);
   if (!data) return <Loading error={error} />;
+  if (data.room.viewer !== 'spectator') return <Loading error={t('这个链接不是观战链接。')} />;
+  return <WatchView roomId={roomId} token={token} data={data} error={error} />;
+}
+
+function WatchView({ roomId, token, data, error }: { roomId: string; token: string; data: ViewResponse; error: string | null }) {
+  const { t } = useI18n();
+  const catalog = useCatalog();
+  const speech = useSpeechPlayback(roomId, token, data.projection, data.room, data.presentation);
   const { room } = data;
   if (!data.projection) {
     return (
       <>
         <TopBar room={room} projection={null} who={t('观战')} />
+        <StaleView error={error} />
         <div className="center-screen muted">{t('等待房主开局，开局后自动刷新。')}</div>
       </>
     );
@@ -336,6 +350,7 @@ export function WatchPage({ roomId, token }: { roomId: string; token: string }) 
         )}
       </TopBar>
       <div className="wrap game-wrap">
+        <StaleView error={error} />
         <div className="game">
           <div className="game-left">
             {p.result && <ResultBanner result={p.result} locale={p.locale ?? room.locale} />}

@@ -1,3 +1,8 @@
+/** 刷新失败时保留同一凭证最近一次成功的视图。 */
+export function retainView<T>(previous: T | null, data: T | null): T | null {
+  return data ?? previous;
+}
+
 /** 在旧连接事件迟到时，不把它转交给当前凭证。 */
 export function scopedCallback(isCurrent: () => boolean, callback: () => void): () => void {
   return () => { if (isCurrent()) callback(); };
