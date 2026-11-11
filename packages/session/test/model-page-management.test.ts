@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { request } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { expect, it } from 'vitest';
-import { createHttpServer, isLocalModelMutation } from '../../../apps/server/src/http-server';
+import { expect, it, vi } from 'vitest';
+import { createHttpServer, isLocalManagementRequest } from '../../../apps/server/src/http-server';
 import { MemoryStore, RoomManager, SecretBox, SpeechConnections, SpeechService } from '../src/index';
 import { ModelLibrary } from '../src/model-library';
 import { projectQwenTokenPlanKey } from '../src/project-models';
@@ -91,7 +91,7 @@ it('归并别名的房间引用阻止删除；归档后保留别名并可重载'
 });
 
 it('模型编辑和删除只接受本机同源请求', () => {
-  const check = (remoteAddress: string, host: string, origin?: string) => isLocalModelMutation({ headers: { host, origin }, socket: { remoteAddress } } as Parameters<typeof isLocalModelMutation>[0]);
+  const check = (remoteAddress: string, host: string, origin?: string) => isLocalManagementRequest({ headers: { host, origin }, socket: { remoteAddress } } as Parameters<typeof isLocalManagementRequest>[0]);
   expect(check('127.0.0.1', '127.0.0.1:3000', 'http://127.0.0.1:3000')).toBe(true);
   expect(check('::ffff:127.0.0.1', '127.0.0.1:3000', 'http://127.0.0.1:3000')).toBe(true);
   expect(check('::1', '[::1]:3000', 'http://[::1]:3000')).toBe(false);
@@ -187,11 +187,14 @@ it('席位保留选中模型时的加密快照，模型编辑和变量变化不�
   }
 });
 
-it('模型 HTTP 路由限制本机地址，允许本机添加、修改和删除', async () => {
+it('模型与共享语音库限制本机同源管理，房间来源仍按凭证使用', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'werewolf-model-page-'));
   const secrets = SecretBox.ephemeral();
   const manager = new RoomManager({ store: new MemoryStore(), secrets, modelsPath: join(dir, 'models.json'), tickMs: 0 });
-  const http = createHttpServer({ manager, webRoot: dir, speech: new SpeechService(dir, []), speechConnections: new SpeechConnections(join(dir, 'speech.json'), secrets, dir) });
+  const speech = new SpeechService(dir, []);
+  const speechConnections = new SpeechConnections(join(dir, 'speech.json'), secrets, dir);
+  const render = vi.spyOn(speech, 'render').mockRejectedValue(new Error('fixture provider unavailable'));
+  const http = createHttpServer({ manager, webRoot: dir, speech, speechConnections });
   const socketPath = process.platform === 'win32' ? `\\\\.\\pipe\\werewolf-model-${randomUUID()}` : join(dir, 'http.sock');
   let remoteAddress = '127.0.0.1';
   // 沙箱禁止 TCP 连接，用本地 IPC 承载真实 HTTP；远端地址由测试显式模拟。
@@ -203,7 +206,10 @@ it('模型 HTTP 路由限制本机地址，允许本机添加、修改和删除'
       const req = request({ socketPath, agent: false, method, path: `/api/v1${path}`, headers: { Host: host, Origin: `http://${host}`, 'Content-Type': 'application/json', ...headers } }, (res) => {
         const chunks: Buffer[] = [];
         res.on('data', (chunk: Buffer) => chunks.push(chunk));
-        res.on('end', () => resolve({ status: res.statusCode!, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) }));
+        res.on('end', () => {
+          try { resolve({ status: res.statusCode!, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) }); }
+          catch (error) { reject(error); }
+        });
       });
       req.on('error', reject);
       req.end(body === undefined ? undefined : JSON.stringify(body));
@@ -233,8 +239,38 @@ it('模型 HTTP 路由限制本机地址，允许本机添加、修改和删除'
     expect((await call('PUT', path, { ...input, name: 'changed', apiKey: '' })).body).toMatchObject({ label: 'changed', hasKey: true });
     expect((await call('DELETE', path)).status).toBe(200);
     expect((await call('GET', '/models')).body).toEqual([]);
+
+    const draft = { name: 'speech', kind: 'speech-compatible', url: 'https://speech.example/v1/audio/speech', apiKey: 'fixture-speech-key' };
+    const addedSpeech = await call('POST', '/speech-settings', draft);
+    expect(addedSpeech.status).toBe(201);
+    const speechPath = `/speech-settings/${addedSpeech.body.id}`;
+    const room = manager.createRoom();
+    const privateSpeech = speechConnections.save(room.roomId, draft);
+    const roomHeaders = { Authorization: `Bearer ${room.hostToken}` };
+    const sharePath = `/rooms/${room.roomId}/speech-settings/${privateSpeech.id}/share`;
+    const before = readFileSync(join(dir, 'speech.json'), 'utf8');
+    remoteAddress = '192.168.0.2';
+    for (const [method, endpoint] of [['GET', '/speech-settings'], ['POST', '/speech-settings'], ['PUT', speechPath], ['DELETE', speechPath], ['POST', `${speechPath}/test`], ['POST', sharePath]]) {
+      expect((await call(method, endpoint, method === 'GET' || method === 'DELETE' ? undefined : draft, roomHeaders)).status, `${method} ${endpoint}`).toBe(403);
+    }
+    expect(render).not.toHaveBeenCalled();
+    expect(readFileSync(join(dir, 'speech.json'), 'utf8')).toBe(before);
+    expect((await call('GET', `/rooms/${room.roomId}/speech-settings`, undefined, roomHeaders)).status).toBe(200);
+    const catalog = await call('GET', `/rooms/${room.roomId}/speech-providers`, undefined, roomHeaders);
+    expect(catalog.body.providers).toContainEqual({ id: addedSpeech.body.id, label: draft.name });
+    expect(JSON.stringify(catalog.body)).not.toContain(draft.apiKey);
+    expect(JSON.stringify(catalog.body)).not.toContain(draft.url);
+    remoteAddress = '127.0.0.1';
+    expect((await call('PUT', speechPath, draft, { Origin: 'http://evil.example' })).status).toBe(403);
+    expect((await call('PUT', speechPath, { ...draft, name: 'changed', apiKey: '' })).body).toMatchObject({ name: 'changed', hasKey: true });
+    expect((await call('GET', '/speech-settings')).body.connections).toHaveLength(1);
+    expect((await call('POST', `${speechPath}/test`)).status).toBe(503);
+    expect(render).toHaveBeenCalledTimes(1);
+    expect((await call('POST', sharePath, undefined, roomHeaders)).status).toBe(200);
+    expect((await call('DELETE', speechPath)).status).toBe(200);
   } finally {
     await http.close();
+    render.mockRestore();
     rmSync(dir, { recursive: true, force: true });
   }
 });

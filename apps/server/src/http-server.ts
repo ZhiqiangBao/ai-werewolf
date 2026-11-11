@@ -10,8 +10,8 @@ import { attachEventStream } from './event-stream';
 import { shutdownResources } from './shutdown';
 import { errorBody, requestLanguage } from './localization';
 
-/** 共享模型库的修改仅允许通过本机同源页面，不能信任转发头。 */
-export function isLocalModelMutation(req: Pick<IncomingMessage, 'headers' | 'socket'>): boolean {
+/** 服务级配置管理仅允许通过本机同源页面，不能信任转发头。 */
+export function isLocalManagementRequest(req: Pick<IncomingMessage, 'headers' | 'socket'>): boolean {
   const remote = req.socket.remoteAddress;
   if (remote !== '127.0.0.1' && remote !== '::1' && remote !== '::ffff:127.0.0.1') return false;
   const host = req.headers.host;
@@ -23,6 +23,10 @@ export function isLocalModelMutation(req: Pick<IncomingMessage, 'headers' | 'soc
     if (!origin) return true;
     return origin === target.origin;
   } catch { return false; }
+}
+
+function requireLocalManagement(req: IncomingMessage): void {
+  if (!isLocalManagementRequest(req)) throw new ApiFailure(403, 'FORBIDDEN', '请在运行服务的电脑上通过 127.0.0.1 打开页面操作。', { key: '请在运行服务的电脑上通过 127.0.0.1 打开页面操作。' });
 }
 
 export interface Frontend {
@@ -88,6 +92,7 @@ export function createHttpServer({ manager, speech, speechConnections, webRoot }
 
   /** 首页共享库沿用模型库的服务级管理入口；旧房间配置仍先检查房主凭证。 */
   async function speechSettings(req: IncomingMessage, res: ServerResponse, method: string, id?: string, action?: string, roomId?: string): Promise<void> {
+    if (!roomId || (method === 'POST' && id && action === 'share')) requireLocalManagement(req);
     if (method === 'GET' && !id) return send(res, 200, { connections: roomId ? speechConnections.views(roomId) : speechConnections.sharedViews(), builtins: speech.catalog().providers, ...(speechConnections.error ? { error: speechConnections.error } : {}) });
     if (method === 'POST' && id && action === 'test') {
       const providers = roomId ? speechConnections.providers(roomId) : speechConnections.sharedProviders();
@@ -123,16 +128,16 @@ export function createHttpServer({ manager, speech, speechConnections, webRoot }
 
     if (parts[0] === 'catalog' && method === 'GET') return send(res, 200, manager.catalog());
     if (parts[0] === 'model-key-envs' && parts.length === 1 && method === 'GET') {
-      if (!isLocalModelMutation(req)) throw new ApiFailure(403, 'FORBIDDEN', '请在运行服务的电脑上通过 127.0.0.1 打开页面操作。', { key: '请在运行服务的电脑上通过 127.0.0.1 打开页面操作。' });
+      requireLocalManagement(req);
       return send(res, 200, { variables: manager.modelKeyEnvs() });
     }
     if ((parts[0] === 'model-presets' || parts[0] === 'models') && !parts[1] && method === 'GET') return send(res, 200, manager.modelPresets());
     if (parts[0] === 'models' && !parts[1] && method === 'POST') {
-      if (!isLocalModelMutation(req)) throw new ApiFailure(403, 'FORBIDDEN', '请在运行服务的电脑上通过 127.0.0.1 打开页面操作。', { key: '请在运行服务的电脑上通过 127.0.0.1 打开页面操作。' });
+      requireLocalManagement(req);
       return send(res, 201, manager.addModel(await readBody(req)));
     }
     if (parts[0] === 'models' && parts[1] && (method === 'DELETE' || method === 'PUT')) {
-      if (!isLocalModelMutation(req)) throw new ApiFailure(403, 'FORBIDDEN', '请在运行服务的电脑上通过 127.0.0.1 打开页面操作。', { key: '请在运行服务的电脑上通过 127.0.0.1 打开页面操作。' });
+      requireLocalManagement(req);
       if (method === 'PUT') return send(res, 200, manager.updateModel(decodeURIComponent(parts[1]), await readBody(req)));
       manager.deleteModel(decodeURIComponent(parts[1]));
       return send(res, 200, { ok: true });

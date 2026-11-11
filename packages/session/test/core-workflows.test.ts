@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from '
 import { request as httpRequest, type IncomingMessage } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { buildRules, createGame } from '@werewolf/engine';
 import { mockAdapter, mockDecision, type Adapter } from '@werewolf/llm';
 import type { CreateRoomResult, GodProjection, Projection, RoomSetupView, ViewResponse } from '@werewolf/protocol';
@@ -281,3 +281,42 @@ it('暂停混合对局后从旧版文件恢复，隔离同模型同密钥的座�
     removeDataDir(dir);
   }
 }, 15_000);
+
+it('任一座位存档损坏时整房拒绝恢复和覆盖，修复后可完整重读', () => {
+  const dir = mkdtempSync(join(tempRoot, tempPrefix));
+  const memory = new MemoryStore();
+  const manager = new RoomManager({ store: memory, secrets: SecretBox.ephemeral(), tickMs: 0 });
+  const room = manager.createRoom();
+  manager.dispose();
+  const record = memory.rooms.get(room.roomId)!;
+  record.threads = [1, 2].map((seat) => ({ seat, seen: 0, formatVersion: 2, messages: [] }));
+  const store = new FileStore(dir);
+  const roomPath = join(dir, 'rooms', `${room.roomId}.json`);
+  const seatPath = (seat: number) => join(dir, 'rooms', room.roomId, `s${seat}.json`);
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    store.save(record);
+    const originalRoom = readFileSync(roomPath, 'utf8');
+    const originalSeat = readFileSync(seatPath(2), 'utf8');
+    for (const broken of ['{broken', JSON.stringify({ seat: 1, seen: 0, messages: [] }), JSON.stringify({ seat: 2, seen: 0, formatVersion: 2, messages: {} })]) {
+      writeFileSync(seatPath(2), broken);
+      expect(store.loadAll()).toEqual([]);
+      for (const threads of [[], record.threads]) {
+        expect(() => store.save({ ...record, threads })).toThrow('拒绝覆盖原存档');
+        expect(readFileSync(seatPath(2), 'utf8')).toBe(broken);
+        expect(readFileSync(roomPath, 'utf8')).toBe(originalRoom);
+      }
+    }
+    writeFileSync(seatPath(1), '{also broken');
+    expect(store.loadAll()).toEqual([]);
+    expect(warn.mock.calls.flat().join(' ')).toContain(`${room.roomId}/s`);
+    writeFileSync(seatPath(1), JSON.stringify(record.threads[0]));
+    writeFileSync(seatPath(2), originalSeat);
+    const [restored] = store.loadAll();
+    expect(restored.threads).toEqual(record.threads);
+    expect(() => store.save(restored)).not.toThrow();
+  } finally {
+    warn.mockRestore();
+    removeDataDir(dir);
+  }
+});

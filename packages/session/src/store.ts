@@ -100,9 +100,17 @@ function writeAtomic(file: string, text: string): void {
   }
 }
 
+function checkThread(thread: SeatThread, expectedSeat?: number): void {
+  if (!thread || !Number.isInteger(thread.seat) || thread.seat < 1 || thread.seat > 99 ||
+      (expectedSeat !== undefined && thread.seat !== expectedSeat) || !Array.isArray(thread.messages) ||
+      !Number.isInteger(thread.seen) || thread.seen < 0) throw new Error('座位消息格式或座位号不正确');
+}
+
 /** 本地文件存储：data/rooms/<id>.json 保存房间，<id>/s<座位>.json 保存该座位的消息，<id>.audit.jsonl 追加审计。 */
 export class FileStore implements RoomStore {
   private readonly dir: string;
+  /** 恢复失败的房间不得由残缺或重新生成的线程覆盖；修复后成功重读才解除。 */
+  private readonly blockedRooms = new Map<string, string>();
 
   constructor(dataDir: string) {
     this.dir = join(dataDir, 'rooms');
@@ -113,12 +121,16 @@ export class FileStore implements RoomStore {
     const out: RoomRecord[] = [];
     for (const f of readdirSync(this.dir)) {
       if (!f.endsWith('.json')) continue;
+      const roomId = f.slice(0, -5);
       try {
         const rec = JSON.parse(readFileSync(join(this.dir, f), 'utf8')) as RoomRecord;
+        if (!/^[A-Za-z0-9_-]+$/.test(roomId) || rec?.id !== roomId) throw new Error('房间号与存档文件名不一致');
         const fromFiles = this.readSeatFiles(rec.id);
         if (fromFiles) rec.threads = fromFiles;
+        this.blockedRooms.delete(roomId);
         out.push(rec);
       } catch (e) {
+        this.blockedRooms.set(roomId, (e as Error).message);
         console.warn(`跳过无法读取的房间文件 ${f}：${(e as Error).message}`);
       }
     }
@@ -127,7 +139,17 @@ export class FileStore implements RoomStore {
 
   save(room: RoomRecord): void {
     if (!/^[A-Za-z0-9_-]+$/.test(room.id)) throw new Error('非法房间号');
+    const blocked = this.blockedRooms.get(room.id);
+    if (blocked) throw new Error(`房间 ${room.id} 恢复失败，拒绝覆盖原存档：${blocked}`);
     const { threads, ...rest } = room;
+    if (threads) {
+      const seats = new Set<number>();
+      for (const thread of threads) {
+        checkThread(thread);
+        if (seats.has(thread.seat)) throw new Error('座位消息重复，拒绝保存');
+        seats.add(thread.seat);
+      }
+    }
     writeAtomic(join(this.dir, `${room.id}.json`), JSON.stringify(rest));
     if (threads) this.writeSeatFiles(room.id, threads);
   }
@@ -139,9 +161,12 @@ export class FileStore implements RoomStore {
     for (const f of readdirSync(dir)) {
       if (!/^s\d+\.json$/.test(f)) continue;
       try {
-        threads.push(migrateThread(JSON.parse(readFileSync(join(dir, f), 'utf8'))));
+        const thread = JSON.parse(readFileSync(join(dir, f), 'utf8')) as SeatThread;
+        checkThread(thread, Number(f.slice(1, -5)));
+        if (threads.some((item) => item.seat === thread.seat)) throw new Error('座位消息重复');
+        threads.push(migrateThread(thread));
       } catch (e) {
-        console.warn(`跳过无法读取的座位文件 ${roomId}/${f}：${(e as Error).message}`);
+        throw new Error(`无法读取座位文件 ${roomId}/${f}：${(e as Error).message}`);
       }
     }
     if (!threads.length) return undefined;
@@ -154,7 +179,6 @@ export class FileStore implements RoomStore {
     mkdirSync(dir, { recursive: true });
     const keep = new Set<string>();
     for (const t of threads) {
-      if (!Number.isInteger(t.seat) || t.seat < 1 || t.seat > 99) continue;
       const name = `s${t.seat}.json`;
       keep.add(name);
       writeAtomic(join(dir, name), JSON.stringify(t, null, 2));

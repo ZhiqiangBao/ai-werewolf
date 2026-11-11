@@ -691,7 +691,7 @@ export class RoomRuntimeService {
       actors,
       prompts: d.prompts,
       allowedTools: d.tools,
-      ...(rec.state!.rules.electionVersion === 3 && d.step.type === 'speech' && d.step.kind === 'campaign' ? {
+      ...((rec.state!.rules.electionVersion ?? 1) >= 3 && d.step.type === 'speech' && d.step.kind === 'campaign' ? {
         interruptTools: Object.fromEntries(rec.state!.players.map((p) => {
           const tools = projectSeat(rec.state!, rec.events, p.seat).interrupts;
           return [p.seat, tools.some((t) => t.name === 'sheriff_withdraw') ? tools : []];
