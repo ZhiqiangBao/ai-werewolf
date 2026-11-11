@@ -37,7 +37,7 @@ export const awakenedWolf: RoleModule = {
   ],
   tools: ({ seats, rules }) => [
     mimicTool(seats, rules.locale), waitTool(rules.locale), killTool(seats, rules.locale), ...(rules.values['wolf.allowEmpty'] ? [emptyKill(rules.locale)] : []),
-    mirrorTool(seats, rules.locale), poisonTool(seats, rules.locale), guardTool(seats, rules.locale), clawTool(seats, rules.locale), skipSkill(rules.locale),
+    mirrorTool(seats, rules.locale, rules.inspectionVersion === 2), poisonTool(seats, rules.locale), guardTool(seats, rules.locale), clawTool(seats, rules.locale), skipSkill(rules.locale),
     ...(hunter.tools?.({ seat: 0, seats, rules }) ?? []),
   ],
   setup(ctx, seats) {
@@ -80,7 +80,7 @@ export const awakenedWolf: RoleModule = {
       : rules.deathResolutionVersion === 2
         ? "模仿猎人：学习夜结束后取得猎人技能；学习夜天亮出局时，开枪条件与猎人规则相同；若胜负已分，不再发动开枪技能。"
         : "模仿猎人：学习夜结束后取得猎人技能；学习夜天亮出局时，开枪条件与猎人规则相同。") : undefined;
-    if (has('mirror_maiden')) details.push(gameText(rules.locale, "模仿魔镜：独立查验具体身份，不可重复。"));
+    if (has('mirror_maiden')) details.push(gameText(rules.locale, "模仿魔镜：独立查验具体身份，不可重复。") + (rules.inspectionVersion === 2 ? gameText(rules.locale, '也可以选择本夜不查验。') : ''));
     if (has('witch')) details.push(gameText(rules.locale, "模仿女巫：独立一毒无解药，不继承已用库存。"));
     if (has('guard')) details.push(gameText(rules.locale, "模仿守卫：独立记录，可自守不可连守，也可以阻挡毒药。"));
     if (has('werewolf')) details.push(gameText(rules.locale, isUnifiedNightOrder

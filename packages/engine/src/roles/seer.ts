@@ -9,7 +9,7 @@ import { INSPECTION_PRIVACY_RULE } from './inspection';
 
 export const seer: RoleModule = {
   id: 'seer',
-  tools: ({ seats, rules }) => [seerTool(seats, rules.locale)],
+  tools: ({ seats, rules }) => [seerTool(seats, rules.locale, rules.inspectionVersion === 2)],
   name: '预言家',
   faction: 'good',
   category: 'god',
@@ -17,7 +17,7 @@ export const seer: RoleModule = {
   summary: '每晚查验一名其他存活玩家，结果只区分好人或狼人。',
   nightPhase: { id: 'seer', order: 30 },
 
-  ruleCard: (rules) => [gameText(rules.locale, "预言家：每晚查验一名其他存活玩家，结果只区分好人或狼人，不返回具体身份；可以重复查验。{0}", gameText(rules.locale, INSPECTION_PRIVACY_RULE))],
+  ruleCard: (rules) => [gameText(rules.locale, rules.inspectionVersion === 2 ? "预言家：每晚可以查验一名其他存活玩家，也可以空验；结果只区分好人或狼人，不返回具体身份；可以重复查验。{0}" : "预言家：每晚查验一名其他存活玩家，结果只区分好人或狼人，不返回具体身份；可以重复查验。{0}", gameText(rules.locale, INSPECTION_PRIVACY_RULE))],
 
   setup(ctx, seats) {
     for (const s of seats) roleData(ctx.player(s), 'seer').checks = [];
@@ -50,7 +50,7 @@ export const seer: RoleModule = {
               name: 'seer_inspect',
               title: gameText(ctx.rules.locale, "查验"),
               description: gameText(ctx.rules.locale, "查验一名其他存活玩家，立刻得知他是好人还是狼人。"),
-              params: [seatParam('target', gameText(ctx.rules.locale, "查验目标"), ctx.alive().filter((x) => x !== seat), undefined)],
+              params: [seatParam('target', gameText(ctx.rules.locale, "查验目标"), ctx.alive().filter((x) => x !== seat), ctx.rules.inspectionVersion === 2 ? gameText(ctx.rules.locale, '本夜不查验') : undefined)],
             },
           ],
           prompt: () => gameText(ctx.rules.locale, "请选择今晚要查验的玩家。"),
@@ -85,11 +85,11 @@ export const seer: RoleModule = {
   },
 };
 
-function seerTool(seats: Seat[], locale: string | undefined = 'zh-CN'): ToolSpec {
+function seerTool(seats: Seat[], locale: string | undefined = 'zh-CN', allowSkip = false): ToolSpec {
   return {
     name: 'seer_inspect',
     title: gameText(locale, "查验"),
     description: gameText(locale, "查验 target 指定的玩家，获得好人或狼人结果。填写目标座位号，例如 {\"target\":3}。"),
-    params: [seatParam('target', gameText(locale, "查验目标"), seats, undefined)],
+    params: [seatParam('target', gameText(locale, "查验目标"), seats, allowSkip ? gameText(locale, '本夜不查验') : undefined)],
   };
 }

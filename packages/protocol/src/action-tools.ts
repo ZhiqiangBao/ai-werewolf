@@ -40,6 +40,12 @@ export function expandActionTools(tools: ToolSpec[], rules: RuleSet): ToolSpec[]
       operation(tool, 'wolf_decline_explode', gameText(rules.locale, "本次不自爆"), gameText(rules.locale, "本次不自爆。无参数，填写 {}。"), { explode: false }, undefined, rules.locale),
     ];
     if (tool.name === 'wolf_explode') return [{ ...tool, description: gameText(rules.locale, "自爆并公开狼人身份。无参数，填写 {}。") }];
+    if (tool.name === 'mirror_inspect') {
+      const target = tool.params.find((p) => p.name === 'targetSeat');
+      if (!target || target.kind !== 'seat' || !target.nullable) return [tool];
+      return [operation(tool, 'mirror_inspect', tool.title, tool.description, {}, { targetSeat: 'targetSeat' }, rules.locale),
+        operation(tool, 'mirror_skip', gameText(rules.locale, '本夜不查验'), gameText(rules.locale, '本夜不查验。无参数，填写 {}。'), { targetSeat: null }, undefined, rules.locale)];
+    }
     const targets: Record<string, [string, string, string, string, string, string]> = {
       vote: ['vote', gameText(rules.locale, "投票放逐"), 'targetSeat', 'vote_abstain', gameText(rules.locale, "放逐弃票"), gameText(rules.locale, "投票选择放逐目标")],
       sheriff_vote: ['sheriff_vote', gameText(rules.locale, "投票选警长"), 'candidateSeat', 'sheriff_abstain', gameText(rules.locale, "警长竞选弃票"), gameText(rules.locale, "投票选择警长候选人")],
@@ -47,7 +53,7 @@ export function expandActionTools(tools: ToolSpec[], rules: RuleSet): ToolSpec[]
       guard_protect: ['guard_protect', gameText(rules.locale, "守护玩家"), 'targetSeat', 'guard_skip', gameText(rules.locale, "本夜空守"), gameText(rules.locale, "守护指定目标")],
       hunter_shoot: ['hunter_shoot', gameText(rules.locale, "开枪带走玩家"), 'targetSeat', 'hunter_hold_fire', gameText(rules.locale, "放弃开枪"), gameText(rules.locale, "开枪带走目标")],
       wolf_kill: ['wolf_kill', gameText(rules.locale, "提交狼刀目标"), 'targetSeat', 'wolf_empty_kill', gameText(rules.locale, "提交空刀"), gameText(rules.locale, "提交今晚的狼刀目标")],
-      seer_inspect: ['seer_inspect', gameText(rules.locale, "查验阵营"), 'targetSeat', '', '', gameText(rules.locale, "查验目标的阵营")],
+      seer_inspect: ['seer_inspect', gameText(rules.locale, "查验阵营"), 'targetSeat', 'seer_skip', gameText(rules.locale, '本夜不查验'), gameText(rules.locale, "查验目标的阵营")],
     };
     const kind = targets[tool.name];
     if (!kind) return [tool];
@@ -61,6 +67,7 @@ export function expandActionTools(tools: ToolSpec[], rules: RuleSet): ToolSpec[]
       guard_protect: gameText(rules.locale, "今晚不守护。"),
       hunter_shoot: gameText(rules.locale, "放弃本次开枪。"),
       wolf_kill: gameText(rules.locale, "提交空刀。"),
+      seer_inspect: gameText(rules.locale, '本夜不查验。'),
     };
     return [
       ...(p.options.length ? [operation(tool, name, title, gameText(rules.locale, "{0}。{1} 填目标座位号，例如 {2}。", effect, field, JSON.stringify({ [field]: 3 })), {}, { [field]: 'target' }, rules.locale)] : []),

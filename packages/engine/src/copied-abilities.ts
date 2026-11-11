@@ -28,8 +28,8 @@ function announce(ctx: Ctx, seat: Seat, tool: string, target: Seat): void {
 const fallback = () => ({ tool: 'awakened_skip_skill', args: {} });
 registerAbility({ id: 'none', version: 1, initialState: () => ({}) });
 registerAbility({
-  id: 'mirror', version: 1, initialState: () => ({ checks: [] }), catalog: ({ seats, rules }) => [mirrorTool(seats, rules.locale)],
-  tools: (ctx, seat, instance) => mirrorTargets(ctx, seat, instance).length ? [mirrorTool(mirrorTargets(ctx, seat, instance), ctx.rules.locale)] : [],
+  id: 'mirror', version: 1, initialState: () => ({ checks: [] }), catalog: ({ seats, rules }) => [mirrorTool(seats, rules.locale, rules.inspectionVersion === 2)],
+  tools: (ctx, seat, instance) => mirrorTargets(ctx, seat, instance).length ? [mirrorTool(mirrorTargets(ctx, seat, instance), ctx.rules.locale, ctx.rules.inspectionVersion === 2)] : [],
   validate: (ctx, _seat, instance, call) => abilityState(instance, 'mirror').checks.some((c) => c.target === call.args.targetSeat) ? err('MIRROR_REPEAT', gameText(ctx.rules.locale, '魔镜查验不能重复选择同一玩家')) : null,
   apply: (ctx, seat, instance, call) => inspectRole(ctx, seat, call.args.targetSeat as Seat | null, abilityState(instance, 'mirror').checks),
   fallback: () => ({ tool: 'mirror_inspect', args: { targetSeat: null } }),

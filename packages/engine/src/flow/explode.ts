@@ -13,6 +13,7 @@ function canExplodeNow(ctx: Ctx, seat: Seat): boolean {
     !s.result &&
     !s.ending &&
     s.phase === 'day' &&
+    !((s.rules.electionVersion ?? 1) >= 4 && s.pending?.step.type === 'sheriff.signup') &&
     ctx.isAlive(seat) &&
     !!ctx.roleOf(seat).canExplode
   );
@@ -117,7 +118,9 @@ export function applyExplosion(ctx: Ctx, seat: Seat): void {
       const postponedText = (s.rules.electionVersion ?? 1) >= 2
         ? gameText(ctx.rules.locale, "首次警上自爆，竞选延期；下一白天先确认自爆并直接续投，不再竞选发言，警徽落地或再次自爆后才通报昨夜情况；再次竞选自爆则警徽流失。")
         : gameText(ctx.rules.locale, "首次警上自爆，竞选延期；下一白天公布昨夜情况后直接续投，不再竞选发言，再次竞选自爆则警徽流失。");
-      const text = policy === 'postpone_vote' ? postponedText : gameText(ctx.rules.locale, "警长竞选尚未结束有人自爆，竞选推迟到下一个白天。");
+      const text = (s.rules.electionVersion ?? 1) >= 4 && !el.candidates.length
+        ? gameText(ctx.rules.locale, '警长报名尚未开始便有人自爆；竞选延期至下一个白天重新报名。')
+        : policy === 'postpone_vote' ? postponedText : gameText(ctx.rules.locale, "警长竞选尚未结束有人自爆，竞选推迟到下一个白天。");
       if (s.rules.electionExplosionVersion === 2 && s.rules.deathResolutionVersion === 2) {
         // 等本次出局和仍待公告的夜间出局结算完毕。终局或再次自爆会移除此步骤。
         const dawnIndex = s.agenda.findIndex((step) => step.type === 'dawn.announce');

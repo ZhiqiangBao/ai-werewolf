@@ -40,7 +40,8 @@ export function deriveNightOrder(roles: string[], awakenedNightVersion: RuleSet[
 export interface BuildRulesOptions {
   locale?: string;
   toolsetVersion?: 1 | 2;
-  electionVersion?: 1 | 2 | 3;
+  electionVersion?: 1 | 2 | 3 | 4;
+  inspectionVersion?: 1 | 2;
   deathResolutionVersion?: 1 | 2;
   hunterShotVersion?: 1 | 2;
   electionExplosionVersion?: 1 | 2;
@@ -72,7 +73,8 @@ export function buildRules(
   return {
     locale,
     toolsetVersion: opts.toolsetVersion ?? 2,
-    electionVersion: opts.electionVersion ?? 3,
+    electionVersion: opts.electionVersion ?? 4,
+    inspectionVersion: opts.inspectionVersion ?? 2,
     deathResolutionVersion: opts.deathResolutionVersion ?? 2,
     hunterShotVersion: opts.hunterShotVersion ?? (opts.deathResolutionVersion === 1 ? 1 : 2),
     electionExplosionVersion: opts.electionExplosionVersion ?? (opts.deathResolutionVersion === 1 ? 1 : 2),
@@ -93,7 +95,8 @@ export function validateRules(rules: RuleSet, locale: string | undefined = rules
   const language = isGameLocale(locale) ? locale : DEFAULT_GAME_LOCALE;
   if (rules.locale !== undefined && !isGameLocale(rules.locale)) errors.push('Unsupported game language');
   if (rules.toolsetVersion !== undefined && rules.toolsetVersion !== 1 && rules.toolsetVersion !== 2) errors.push(gameText(language, '工具版本只支持 1 或 2'));
-  if (rules.electionVersion !== undefined && ![1, 2, 3].includes(rules.electionVersion)) errors.push(gameText(language, '竞选流程版本只支持 1、2 或 3'));
+  if (rules.electionVersion !== undefined && ![1, 2, 3, 4].includes(rules.electionVersion)) errors.push(gameText(language, '竞选流程版本只支持 1、2、3 或 4'));
+  if (rules.inspectionVersion !== undefined && ![1, 2].includes(rules.inspectionVersion)) errors.push(gameText(language, '查验版本只支持 1 或 2'));
   if (rules.deathResolutionVersion !== undefined && ![1, 2].includes(rules.deathResolutionVersion)) errors.push(gameText(language, '死亡结算版本只支持 1 或 2'));
   if (rules.hunterShotVersion !== undefined && ![1, 2].includes(rules.hunterShotVersion)) errors.push(gameText(language, '猎枪触发版本只支持 1 或 2'));
   if (rules.hunterShotVersion === 2 && rules.deathResolutionVersion !== 2) errors.push(gameText(language, '猎枪触发版本 2 要求出局结算版本 2'));

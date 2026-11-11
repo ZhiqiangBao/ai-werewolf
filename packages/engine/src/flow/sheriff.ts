@@ -28,7 +28,7 @@ export const withdrawInterrupt: InterruptDef = {
   tool: 'sheriff_withdraw',
   available(ctx, seat) {
     const s = ctx.state;
-    return s.rules.electionVersion === 3 && !s.result && !s.ending && ctx.isAlive(seat)
+    return (s.rules.electionVersion ?? 1) >= 3 && !s.result && !s.ending && ctx.isAlive(seat)
       && s.election.status === 'running' && s.election.candidates.includes(seat)
       && !s.election.withdrawn.includes(seat)
       && s.pending?.step.type === 'speech' && s.pending.step.kind === 'campaign'
@@ -100,7 +100,7 @@ function startCampaign(ctx: Ctx): void {
   });
   ctx.pushFront(
     ...order.flatMap((seat) => speechSteps(ctx, seat, 'campaign')),
-    ...(s.rules.electionVersion === 3 ? [{ type: 'sheriff.withdraw', cancelOnExplode: true }] : []),
+    ...((s.rules.electionVersion ?? 1) >= 3 ? [{ type: 'sheriff.withdraw', cancelOnExplode: true }] : []),
     { type: 'sheriff.vote', round: 1, cancelOnExplode: true },
   );
 }

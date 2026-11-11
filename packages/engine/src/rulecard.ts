@@ -164,14 +164,14 @@ export function buildRuleCard(rules: RuleSet): string {
       gameText(rules.locale, "· 警长竞选：{0}有竞选资格的玩家同时选择是否报名竞选；无人报名或全员报名则本局没有警长，只有一名候选人时直接当选。", timing) +
         sentenceSeparator +
         gameText(rules.locale, "候选人从随机起点、按随机方向依次竞选发言；候选人可以退出竞选。") +
-        (rules.electionVersion === 3 ? sentenceSeparator + gameText(rules.locale, "普通竞选发言期间可在他人发言时退出竞选，但不能插话或打断。发言结束后未退出者同时最终确认去留，确认不可修改、超时默认继续；确认完公布退出者并投票。平票候选人的补充发言和投票时不能退出竞选。") : ''),
+        ((rules.electionVersion ?? 1) >= 3 ? sentenceSeparator + gameText(rules.locale, "普通竞选发言期间可在他人发言时退出竞选，但不能插话或打断。发言结束后未退出者同时最终确认去留，确认不可修改、超时默认继续；确认完公布退出者并投票。平票候选人的补充发言和投票时不能退出竞选。") : ''),
     );
      L.push(gameText(rules.locale, "· 警长投票：{0}。符合资格的投票人同时秘密提交，每人 1 票，票齐后公开谁投给谁{1}。最高票并列时，并列候选人依次补充发言，之后除并列候选人外的其他存活玩家再投一次。再次平票、没有可投票的玩家或没有有效票时，本局没有警长。", voters, v['vote.allowAbstain'] ? gameText(rules.locale, "，可以弃票") : ''));
-    if (explodeRule) L.push(gameText(rules.locale, "· 竞选自爆：{0}", explodeRule));
+    if (explodeRule) L.push(gameText(rules.locale, "· 竞选自爆：{0}", ((rules.electionVersion ?? 1) >= 4 ? gameText(rules.locale, '以下续选规则适用于已经完成报名的竞选。') : '') + explodeRule));
   }
   L.push(gameText(rules.locale, sheriff ? "## 警徽、白天发言与放逐" : "## 白天发言与放逐"));
   if (sheriff) L.push(gameText(rules.locale, "· 警徽：警长是竞选职务，任何阵营均可竞选，不代表阵营。放逐首轮和放逐平票后的再次投票中，警长有效票均计 1.5 票，其他玩家的有效票各计 1 票；如果警长是放逐平票后参与补充发言的并列玩家之一，则不能参加该轮投票。出局后由警长本人向存活玩家移交或撕毁警徽；移交不转移身份技能或私密记录。"));
-  L.push(gameText(rules.locale, "· 每个白天的普通讨论都在昨夜出局结算情况通报并完成相应结算后开始。") + (sheriff && canExplode && v['sheriff.explodeInElection'] === 'postpone_vote' ? sentenceSeparator + ((rules.electionVersion ?? 1) >= 2 ? gameText(rules.locale, "延期续选时，警长选举优先于通报：先确认是否自爆并续投；选举结束或被自爆中断后，再通报昨夜出局结算情况。") : gameText(rules.locale, "延期后直接继续警长选举时，也先通报昨夜出局结算情况再续投。")) : ''));
+  L.push(gameText(rules.locale, "· 每个白天的普通讨论都在昨夜出局结算情况通报并完成相应结算后开始。") + (sheriff && canExplode && v['sheriff.explodeInElection'] === 'postpone_vote' ? sentenceSeparator + ((rules.electionVersion ?? 1) >= 2 ? gameText(rules.locale, (rules.electionVersion ?? 1) >= 4 ? '已完成报名的延期续选优先于通报：有候选人时先确认是否自爆；无人参选则直接结束，只有一人则直接当选，其他情况续投。选举结束或被自爆中断后，再通报昨夜出局结算情况。' : "延期续选时，警长选举优先于通报：先确认是否自爆并续投；选举结束或被自爆中断后，再通报昨夜出局结算情况。") : gameText(rules.locale, "延期后直接继续警长选举时，也先通报昨夜出局结算情况再续投。")) : ''));
   const anchor = v['speech.anchor'] === 'knife_first'
     ? gameText(rules.locale, "法官先检查狼人选择的攻击目标：若该目标昨夜出局，就以该目标为发言依据；若该目标没有出局，就从其他昨夜出局玩家中选择座位号最小者作为发言依据")
     : gameText(rules.locale, "法官从昨夜出局玩家中随机选择一人作为发言依据");
@@ -199,6 +199,7 @@ export function buildRuleCard(rules: RuleSet): string {
           : gameText(rules.locale, sheriff
             ? "普通狼人只能在轮到自己发言（竞选、白天、平票后的补充发言，不含遗言）时选择自爆。"
             : "普通狼人只能在轮到自己白天发言或平票后的补充发言时选择自爆。");
+    if ((rules.electionVersion ?? 1) >= 4 && sheriff) L.push(gameText(rules.locale, '警长报名期间不能自爆。') + (electionCanPostpone ? gameText(rules.locale, '报名开始前若在遗言阶段自爆，竞选延期至下一个白天重新报名。') : ''));
     L.push(
       gameText(rules.locale, rules.deathResolutionVersion === 2
         ? "· 自爆：{0}投票进行中不能自爆。自爆者立刻出局并公开狼人身份；胜负判定优先。当天剩余的发言、竞选和投票取消。仅胜负未分时才继续处理后续事项：{1}有遗言资格者再按本局规则发表遗言，之后进入黑夜。"

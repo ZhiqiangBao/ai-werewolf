@@ -16,7 +16,7 @@ export function seatTools(state: GameState, seat: Seat): ToolSpec[] {
   const seats = state.players.map((p) => p.seat);
   const v = state.rules.values;
   const tools: ToolSpec[] = [speakTool(state.rules.locale), voteTool(seats, v['vote.allowAbstain'] === true, state.rules.locale)];
-  if (v['sheriff.enabled'] === true) tools.push(...sheriffTools(seats, v['vote.allowAbstain'] === true, state.rules.electionVersion === 3, state.rules.locale));
+  if (v['sheriff.enabled'] === true) tools.push(...sheriffTools(seats, v['vote.allowAbstain'] === true, (state.rules.electionVersion ?? 1) >= 3, state.rules.locale));
   tools.push(...(getRole(player.role).tools?.({ seats, seat, rules: state.rules }) ?? []));
   for (const id of getRole(player.role).abilityCatalog ?? []) {
     for (const tool of getAbility(id).catalog?.({ seats, seat, rules: state.rules }) ?? []) {

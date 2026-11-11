@@ -19,11 +19,11 @@ export const allRoleChecks = (ctx: Ctx, seat: Seat): RoleCheck[] => [
 export const inspectionTargets = (ctx: Ctx, seat: Seat): Seat[] =>
   ctx.alive().filter((s) => s !== seat && !roleChecks(ctx, seat).some((c) => c.target === s));
 
-export function mirrorTool(seats: Seat[], locale: string | undefined = 'zh-CN'): ToolSpec {
+export function mirrorTool(seats: Seat[], locale: string | undefined = 'zh-CN', allowSkip = false): ToolSpec {
   return {
     name: 'mirror_inspect', title: gameText(locale, "查验具体身份"),
     description: gameText(locale, "查验 targetSeat 指定玩家的身份表现。填写目标座位号，例如 {\"targetSeat\":3}。"),
-    params: [seatParam('targetSeat', gameText(locale, "查验目标"), seats, undefined)],
+    params: [seatParam('targetSeat', gameText(locale, "查验目标"), seats, allowSkip ? gameText(locale, '本夜不查验') : undefined)],
   };
 }
 

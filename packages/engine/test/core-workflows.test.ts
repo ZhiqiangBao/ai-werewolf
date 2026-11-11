@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { gameRecordEvents } from '@werewolf/protocol';
-import { replay, submit } from '../src/index';
+import { buildRules, buildRuleCard, replay, submit } from '../src/index';
 import { DEAL12, DEAL9, TestGame, lastPublic } from './harness';
 
 const noSheriff = { 'sheriff.enabled': false };
@@ -216,4 +216,61 @@ describe('核心对局流程', () => {
     expect(lastPublic(game, 'vote.result')!.seq).toBeLessThan(lastPublic(game, 'dawn')!.seq);
     expectReplay(game);
   });
+
+  it('报名期间拒绝自爆，报名之前的遗言自爆则延期后重新报名', () => {
+    const defaults = buildRules('standard12');
+    expect(defaults).toMatchObject({ electionVersion: 4, inspectionVersion: 2 });
+    expect(buildRuleCard(defaults)).toContain('警长报名期间不能自爆');
+    expect(buildRuleCard(defaults)).toContain('也可以空验');
+    const game = new TestGame({ deal: DEAL12, electionVersion: 4, values: { 'sheriff.timing': 'after_last_words' } });
+    game.night({ kill: 12 });
+    expect(game.pending?.step.kind).toBe('lastwords');
+    expect(game.view(1).interrupts.map((tool) => tool.name)).toContain('wolf_explode');
+    game.ok(1, 'wolf_explode');
+    game.until((g) => g.state.day === 2 && g.state.phase === 'night');
+    expect(lastPublic(game, 'sheriff.postponed')?.text).toContain('重新报名');
+    game.night();
+    game.untilTool('sheriff_signup');
+    expect(game.view(2).interrupts.map((tool) => tool.name)).not.toContain('wolf_explode');
+    expect(game.act(2, 'wolf_explode')?.code).toBe('TOOL_NOT_LEGAL');
+    expect(game.state.election.status).toBe('running');
+    expectReplay(game);
+  });
+
+  it('新版查验可主动空验，旧版仍拒绝空验；模仿魔镜也可空验', () => {
+    const game = new TestGame({ deal: DEAL12, toolsetVersion: 2, values: noSheriff });
+    game.untilTool('seer_skip');
+    expect(game.toolsOf(5).map((tool) => tool.name)).toContain('seer_inspect');
+    game.ok(5, 'seer_skip');
+    expect(game.view(5).events.findLast((event) => event.type === 'seer.skip')).toBeDefined();
+    expect(game.view(5).me?.knownIdentities).toEqual([]);
+    expectReplay(game);
+
+    const old = new TestGame({ deal: DEAL12, toolsetVersion: 1, inspectionVersion: 1, values: noSheriff });
+    delete old.state.rules.inspectionVersion;
+    old.untilTool('seer_inspect');
+    expect(old.act(5, 'seer_inspect', { target: null })?.code).toBe('INVALID_ARGUMENT');
+    old.auto(5);
+    expect(old.view(5).events.findLast((event) => event.type === 'seer.skip')).toBeDefined();
+
+    const deal = ['werewolf', 'werewolf', 'werewolf', 'awakened_wolf', 'mirror_maiden', 'witch', 'hunter', 'guard', 'villager', 'villager', 'villager', 'villager'];
+    const mirror = new TestGame({ preset: 'mirror12', deal, toolsetVersion: 2, values: noSheriff });
+    mirror.ok(4, 'awakened_mimic', { targetSeat: 5 });
+    mirror.untilTool('mirror_skip');
+    expect(mirror.waiting()).toContain(5);
+    mirror.ok(5, 'mirror_skip');
+    expect(mirror.view(5).events.findLast((event) => event.type === 'mirror.skip')).toBeDefined();
+    mirror.toNight();
+    mirror.until((g) => g.waiting().includes(4) && g.hasTool('mirror_skip'));
+    mirror.ok(4, 'mirror_skip');
+    expect(mirror.view(4).events.findLast((event) => event.type === 'mirror.skip')).toBeDefined();
+    expectReplay(mirror);
+
+    const exhausted = new TestGame({ preset: 'mirror12', deal, toolsetVersion: 2, values: noSheriff });
+    exhausted.untilTool('wolf_kill');
+    exhausted.state.players[4].data.roleChecks = exhausted.alive().filter((seat) => seat !== 5).map((target) => ({ night: 0, target, role: 'villager' }));
+    exhausted.untilTool('witch_skip');
+    expect(exhausted.view(5).events.some((event) => event.type === 'mirror.result' || event.type === 'mirror.skip')).toBe(false);
+  });
+
 });
