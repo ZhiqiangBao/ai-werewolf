@@ -251,12 +251,13 @@ export function syncThread(
       if (msg && e.type === 'judge' && e.payload.decisionId === turn.cue?.id && followsSpeech &&
           thread.messages.length > start && prev?.role === 'user') {
         const tail = turn.cue ? cueTail(turn.cue, thread.seat) : '';
-        const body = tail && prev.content.endsWith(tail) ? prev.content.slice(0, -tail.length).trimEnd() : prev.content.slice(0, prev.content.lastIndexOf('\n'));
-        if (prev.name === 'judge') prev.content = `${body}\n${msg.content}`;
-        else {
-          // The entire action invitation belongs to the judge, including multi-line tool menus.
-          const endOfQuote = prev.content.lastIndexOf('」\n');
-          prev.content = endOfQuote >= 0 ? prev.content.slice(0, endOfQuote + 1) : body;
+        if (prev.name === 'judge') {
+          const body = tail && prev.content.endsWith(tail) ? prev.content.slice(0, -tail.length).trimEnd() : prev.content.slice(0, prev.content.lastIndexOf('\n'));
+          prev.content = `${body}\n${msg.content}`;
+        } else {
+          // Player text is opaque. Remove only the exact control suffix we appended.
+          const suffix = `\n${tail}`;
+          if (tail && prev.content.endsWith(suffix)) prev.content = prev.content.slice(0, -suffix.length);
           thread.messages.push(msg);
         }
       } else if (msg) thread.messages.push(msg);
