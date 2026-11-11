@@ -89,7 +89,7 @@ export const openaiAdapter: Adapter = {
       // A complete JSON argument is not proof that the provider finished the turn.
       // Accept the normal text and tool-call endings, including legacy function_call.
       if (!['stop', 'tool_calls', 'function_call'].includes(reason)) {
-        throw new HttpError(200, gameText(req.projection?.locale ?? req.locale, 'Chat Completions 回复未完成：{0}', reason ?? '缺少完成状态'));
+        throw new HttpError(200, gameText(req.projection?.locale ?? req.locale, 'Chat Completions 回复未完成：{0}', reason ?? gameText(req.projection?.locale ?? req.locale, '缺少完成状态')));
       }
       const msg = data?.choices?.[0]?.message;
       if (!msg || typeof msg !== 'object') return failure(started, gameText(req.projection?.locale ?? req.locale, '返回里没有 choices[0].message'), { raw: data });
