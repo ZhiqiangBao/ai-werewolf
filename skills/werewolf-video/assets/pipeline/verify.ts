@@ -30,7 +30,7 @@ if (source.perspective === 'god') {
   assert(review, 'Missing recorded end review');
   assert.deepEqual([...final.alive].sort((a, b) => a - b), review.data.roles.filter((r: any) => r.alive).map((r: any) => r.seat).sort((a: number, b: number) => a - b));
 } else {
-  assert(!review && !source.ruleCard && source.cast.every((c) => c.seat === source.playerSeat || c.role === 'unknown'), 'Player view contains privileged material');
+  assert(!review && source.ruleCard && source.publicRoles?.length && source.cast.every((c) => c.seat === source.playerSeat || c.role === 'unknown'), 'Player view contains privileged material');
   assert(source.events.every((e) => e.audience === 'public' || e.audience.includes(source.playerSeat!)), 'Player view contains an unauthorized event');
 }
 assert.equal(final.result.winner, source.result.winner);

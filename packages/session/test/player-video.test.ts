@@ -31,6 +31,11 @@ describe('玩家视角视频权限', () => {
     expect(art.theme).toBe('urban');
     expect(art.atlas).toMatch(/avatars-urban-v1\.webp$/);
     expect(JSON.stringify(art)).not.toMatch(/PRIVATE_POISON_SECRET|OMNISCIENT_REVIEW_SECRET|roleName|factionName/);
+    const exported = JSON.parse(await readFile(join(data, 'exports', `synthetic-player-${own}-video-script.json`), 'utf8'));
+    expect(exported.ruleCard).toContain('## 夜晚与身份技能');
+    expect(exported.ruleCard).toContain('预言家');
+    expect(exported.publicRoles).toEqual(state.rules.roles);
+    expect(exported.cast.filter((player: any) => player.role !== 'unknown')).toHaveLength(1);
     const narration = JSON.parse(await readFile(join(dir, 'narration.json'), 'utf8'));
     narration.review = { status: 'reviewed', method: '合成测试核对', factsChecked: true, playerQuotesUntouched: true, futureResultsNotUsedInProcessCommentary: true };
     await writeFile(join(dir, 'narration.json'), JSON.stringify(narration));

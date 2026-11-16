@@ -180,11 +180,11 @@ export async function createSceneRenderer(script: Script, options?: { theme?: st
     central(clip, state); script.cast.forEach((c, i) => seat(c, i, state, clip));
     round(1430, 126, 462, 799, 29, ui.panel, ui.borderSoft);
     icon('badge', 1459, 145, 28, ui.accent); text(t('本局技能卡'), 1502, 159, 27, ui.text, true, 'left', 350);
-    text(script.perspective === 'player' ? t('本人身份 · 自动循环滚动') : t('全部身份 · 自动循环滚动'), 1459, 190, 15, ui.muted);
+    text(t('全部身份 · 自动循环滚动'), 1459, 190, 15, ui.muted);
     const rules = isNight ? nightRules : dayRules;
     const offset = Math.floor((clip.startFrame / 30 * RULE_SCROLL_SPEED) % rules.cycleHeight);
     g.drawImage(rules.image, 0, offset, RULE_VIEW.width, RULE_VIEW.height, RULE_VIEW.x, RULE_VIEW.y, RULE_VIEW.width, RULE_VIEW.height);
-    text(script.perspective === 'player' ? t('本人身份默认简介（zh-CN）') : locale === (script.locale ?? 'zh-CN') ? t('来自本局规则 · 连续滚动不随发言重置') : t('规则正文原语言：{0}', script.locale ?? 'zh-CN'), 1458, 842, 15, ui.muted, false, 'left', 405);
+    text(locale === (script.locale ?? 'zh-CN') ? t('来自本局规则 · 连续滚动不随发言重置') : t('规则正文原语言：{0}', script.locale ?? 'zh-CN'), 1458, 842, 15, ui.muted, false, 'left', 405);
     const aliveWolves = script.cast.filter((c) => c.role === 'werewolf' && state.alive.has(c.seat)).length;
     round(1456, 866, 408, 35, 12, ui.chip); text(script.perspective === 'player' ? t('存活 {0} 人', state.alive.size) : t('存活 {0} 人     狼人 {1}     好人 {2}', state.alive.size, aliveWolves, state.alive.size - aliveWolves), 1660, 883, 17, ui.muted, false, 'center', 396);
     speakerPanel(clip, state);

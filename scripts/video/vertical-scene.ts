@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Clip, Script } from './project';
 import { replay } from './replay';
+import { videoChapter, videoLocale, videoRole, videoText } from './video-locale';
 const require = createRequire(import.meta.url);
 const { createCanvas, loadImage, Path2D, GlobalFonts } = require(process.env.VIDEO_CANVAS_MODULE || '@napi-rs/canvas');
 for (const file of ['arial.ttf', 'arialbd.ttf']) { const p = `C:/Windows/Fonts/${file}`; if (existsSync(p)) GlobalFonts.registerFromPath(p, 'VideoSans'); }
@@ -45,6 +46,7 @@ export function avatarWaveFrame(samples: Int16Array, frame: number): Buffer {
 
 /** One large focal element; subtitles are burned separately without a box. */
 export async function verticalScene(clip: Clip, theme: string, script: Script, story?: StoryCard) {
+  const locale = videoLocale(script.locale), t = (key: string, ...values: unknown[]) => videoText(locale, key, ...values);
   const art = resolve('apps/web/public/art/moon-village');
   const [background, atlas, table] = await Promise.all([
     loadImage(resolve(art, `village-${clip.phase === 'night' ? 'night' : 'day'}-v1.webp`)),
@@ -65,15 +67,15 @@ export async function verticalScene(clip: Clip, theme: string, script: Script, s
     g.font = `bold ${size}px ${number ? 'Georgia, serif' : 'VideoSans'}`;
     g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#4c3826'; g.fillText(text, x + width / 2, y + 33, width - 20); g.restore();
   };
-  const phase = clip.phase === 'day' ? `DAY ${clip.day}` : clip.phase === 'night' ? `NIGHT ${clip.day}` : clip.phase.toUpperCase();
-  const brandTitle = 'MOONSHADOW HALL';
+  const phase = clip.phase === 'day' || clip.phase === 'night' ? videoChapter(locale, clip.day, clip.phase, clip.phase) : clip.phase.toUpperCase();
+  const brandTitle = t('月影议事厅');
   g.font = 'bold 48px Georgia, serif'; const brandLeft = (1080 - g.measureText(brandTitle).width - 96) / 2;
   g.save(); g.translate(brandLeft, 146); g.scale(1.6, 1.6); g.strokeStyle = '#f0d398'; g.lineWidth = 1.5;
   g.stroke(new Path2D('m24 2 19 11v22L24 46 5 35V13L24 2Z m-11 11 8 5h6l8-5-2 18-9 8-9-8-2-18Z m0 0 9 16-7 2 M35 13l-9 16 7 2 M22 29h4l-2 5-2-5Z M18 24l3 1 M30 24l-3 1 M24 7v4 M22 9h4')); g.restore();
   g.textAlign = 'left'; g.fillStyle = '#f4d795'; g.font = 'bold 48px Georgia, serif'; g.fillText(brandTitle, brandLeft + 96, 190);
-  g.fillStyle = '#d5cdb6'; g.font = '21px VideoSans'; g.fillText('AI WEREWOLF', brandLeft + 99, 230);
+  g.fillStyle = '#d5cdb6'; g.font = '21px VideoSans'; g.fillText(t('AI 狼人杀'), brandLeft + 99, 230);
   const recordedVote = clip.type === 'vote.result' ? clip.data : clip.voiceKey === 'commentator' ? script.events.find(event => event.sourceSeq === clip.sourceSeq && event.type === 'vote.result')?.data : undefined;
-  const stage = recordedVote ? recordedVote.kind === 'sheriff' ? 'SHERIFF VOTE' : 'EXILE VOTE' : clip.type === 'wolf.chat' ? 'WOLF CHAT' : isPlayerSpeech(clip) ? 'DISCUSSION' : 'GOD VIEW';
+  const stage = recordedVote ? recordedVote.kind === 'sheriff' ? (recordedVote.round > 1 ? t('警长补充投票') : t('警长投票')) : t('放逐投票') : clip.type === 'wolf.chat' ? t('狼队密谈') : isPlayerSpeech(clip) ? t('发言') : t('全知视角');
   g.font = '27px VideoSans'; g.fillStyle = '#d7dfd1'; g.textAlign = 'center';
   const stageText = `${phase}  ·  ${stage}`;
   g.save(); g.translate(540 - g.measureText(stageText).width / 2 - 40, 286); g.scale(1.2, 1.2); g.strokeStyle = '#e8cf96'; g.lineWidth = 1.5;
@@ -90,8 +92,9 @@ export async function verticalScene(clip: Clip, theme: string, script: Script, s
     const state = replay(script, clip.data.replayThrough ?? clip.sourceSeq);
     badge(String(clip.seat), 270, 1008, 72, 46, true);
     g.font = 'bold 36px VideoSans';
-    const roleWidth = Math.max(112, Math.min(230, Math.ceil(g.measureText(player.roleName).width) + 32));
-    badge(player.roleName, 810 - roleWidth, 1008, roleWidth, 36);
+    const roleName = videoRole(locale, player.role, player.roleName);
+    const roleWidth = Math.max(112, Math.min(230, Math.ceil(g.measureText(roleName).width) + 32));
+    badge(roleName, 810 - roleWidth, 1008, roleWidth, 36);
     g.font = '30px VideoSans'; g.lineWidth = 5; g.strokeStyle = '#111927'; g.fillStyle = '#e7ebe5';
     g.strokeText(player.name, 540, 1225, 600); g.fillText(player.name, 540, 1225, 600);
     if (state.sheriff === player.seat) {
@@ -121,8 +124,8 @@ export async function verticalScene(clip: Clip, theme: string, script: Script, s
       g.beginPath(); g.arc(x, y, 66, 0, Math.PI * 2); g.lineWidth = 5; g.strokeStyle = state.alive.has(player.seat) ? '#e3d2a3' : '#9c9c9c'; g.stroke();
       at(`${player.seat} · ${player.name}`, x, y + 92, 27, 180);
       if (story?.focusSeats?.includes(player.seat)) {
-        g.save(); g.font = 'bold 42px VideoSans'; const width = Math.max(110, g.measureText(player.roleName).width + 26);
-        g.translate(x + 4, y + 35); g.scale(.5, .5); badge(player.roleName, 0, 0, width, 42); g.restore();
+        g.save(); const roleName = videoRole(locale, player.role, player.roleName); g.font = 'bold 42px VideoSans'; const width = Math.max(110, g.measureText(roleName).width + 26);
+        g.translate(x + 4, y + 35); g.scale(.5, .5); badge(roleName, 0, 0, width, 42); g.restore();
       }
       if (!state.alive.has(player.seat)) at('OUT', x, y + 12, 32, 110);
       if (state.sheriff === player.seat) {
@@ -131,7 +134,7 @@ export async function verticalScene(clip: Clip, theme: string, script: Script, s
       }
     });
     if (Array.isArray(recordedVote?.rows)) {
-      const title = recordedVote.kind === 'sheriff' ? (recordedVote.round > 1 ? 'SHERIFF RUNOFF' : 'SHERIFF VOTE') : recordedVote.kind === 'exile' ? 'EXILE VOTE' : 'VOTE';
+      const title = recordedVote.kind === 'sheriff' ? (recordedVote.round > 1 ? t('警长补充投票') : t('警长投票')) : recordedVote.kind === 'exile' ? t('放逐投票') : t('投票');
       at(title, 540, 715, 36, 480);
       const rows = recordedVote.rows.slice(0, 9), spacing = Math.min(65, 290 / Math.max(rows.length, 1));
       rows.forEach((row: any, i: number) => {
@@ -161,7 +164,7 @@ export async function verticalScene(clip: Clip, theme: string, script: Script, s
     if (story.detail) { g.font = '28px VideoSans'; g.fillStyle = '#d9e3d9'; const y = 1305 + lines.length * 47; g.strokeText(story.detail, 540, y, 920); g.fillText(story.detail, 540, y, 920); }
     g.restore();
   }
-  const marker = clip.type === 'hosting.choice' ? 'Action paraphrase' : clip.type === 'wolf.chat' ? 'Wolf chat' : 'Excerpt';
+  const marker = clip.type === 'hosting.choice' ? t('行动转述') : clip.type === 'wolf.chat' ? t('狼队密谈') : t('节选');
   g.font = '23px VideoSans'; g.textAlign = 'left'; g.fillStyle = '#b7d6ca'; g.fillText(marker, 65, story ? 370 : 1375);
   return canvas.toBuffer('image/png') as Buffer;
 }
