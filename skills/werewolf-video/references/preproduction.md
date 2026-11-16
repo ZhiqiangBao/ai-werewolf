@@ -24,12 +24,18 @@
 
 ```powershell
 node --version
+$pnpmPaths = @(where.exe pnpm 2>$null | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+$localPnpm = $pnpmPaths | Where-Object {
+  $_ -match '\\fallback\\pnpm\.cmd$' -or ($_ -notmatch '\\nodejs\\pnpm(?:\.(cmd|ps1))?$' -and $_ -notmatch '\\corepack\\')
+} | Select-Object -First 1
+if (-not $localPnpm) { throw '没有可直接执行的本机 pnpm；当前 PATH 只有 Corepack 入口。请先提供本机 pnpm，再运行视频制作。' }
+$env:PATH = "$(Split-Path -Parent $localPnpm);$env:PATH"
 pnpm --version
 ffmpeg -version
 ffprobe -version
 ```
 
-按项目 `AGENTS.md`／`package.json` 的版本要求安装 Node.js 与 pnpm；当前仓库要求 Node.js 22.12 或更新版本。依赖未安装时运行 `pnpm install`。FFmpeg 与 FFprobe 必须能从 `PATH` 调用；如果已有可执行文件但不在 `PATH`，在同一 PowerShell 会话设置 `$env:FFMPEG_PATH` 和 `$env:FFPROBE_PATH` 为对应绝对路径。缺失工具时先停止并请用户提供安装或可用路径，不要等整局配音后才发现。`--check-only` 不检查这些程序、TTS 凭据或本地 ASR 模型是否就绪。
+按项目 `AGENTS.md` 的要求准备 Node.js 22.12 或更新版本和本机 pnpm，不指定 pnpm 版本；上面的引导会优先把可直接执行的本机 pnpm 放到当前 PowerShell 会话的 PATH 前面，避免 Corepack 在制作过程中联网解析版本。依赖未安装时运行 `pnpm install`。FFmpeg 与 FFprobe 必须能从 `PATH` 调用；如果已有可执行文件但不在 `PATH`，在同一 PowerShell 会话设置 `$env:FFMPEG_PATH` 和 `$env:FFPROBE_PATH` 为对应绝对路径。缺失工具时先停止并请用户提供安装或可用路径，不要等整局配音后才发现。`--check-only` 不检查这些程序、TTS 凭据或本地 ASR 模型是否就绪。
 
 安装／bootstrap 后、配音前检查美术资源是否已复制到 `apps/web/public/art/moon-village/`：至少要有昼夜背景、昼夜桌面和当前主题头像图集。先查看 `art-manifest.json` 的主题和图集路径：默认读取房间公开的 `avatarStyle`，显式 `--theme` 优先，旧存档缺失时才使用 `campus`。按清单核对对应图集；出现主题冲突或无法确认旧目录主题时使用新目录，或先明确迁移并核对声音和缓存。缺项可按[程序启动与bootstrap](automation.md#运行环境)及技能入口执行 bootstrap，再检查是否出现；不要用缺图开始整局配音。Windows 画面会尝试注册 `C:/Windows/Fonts/msyh.ttc` 与 `msyhbd.ttc`；其他系统按[硬件说明](hardware.md)选择并注册实际中文字体。若字体不存在，先解决字体回退并用短画面检查文字，不能把程序退出成功当成中文字体正确。
 
