@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Clip, Script } from './project';
 import { replay } from './replay';
-import { videoChapter, videoLocale, videoRole, videoText } from './video-locale';
+import { videoChapter, videoRole, videoText, videoUiLocale } from './video-locale';
 const require = createRequire(import.meta.url);
 const { createCanvas, loadImage, Path2D, GlobalFonts } = require(process.env.VIDEO_CANVAS_MODULE || '@napi-rs/canvas');
 for (const file of ['arial.ttf', 'arialbd.ttf']) { const p = `C:/Windows/Fonts/${file}`; if (existsSync(p)) GlobalFonts.registerFromPath(p, 'VideoSans'); }
@@ -47,7 +47,7 @@ export function avatarWaveFrame(samples: Int16Array, frame: number): Buffer {
 /** One large focal element; subtitles are burned separately without a box. */
 export async function verticalScene(clip: Clip, theme: string, script: Script, story?: StoryCard) {
   // UI follows the system/video locale; recorded facts and dialogue stay in script.locale.
-  const locale = videoLocale(), t = (key: string, ...values: unknown[]) => videoText(locale, key, ...values);
+  const locale = videoUiLocale(script.uiLocale), t = (key: string, ...values: unknown[]) => videoText(locale, key, ...values);
   const art = resolve('apps/web/public/art/moon-village');
   const [background, atlas, table] = await Promise.all([
     loadImage(resolve(art, `village-${clip.phase === 'night' ? 'night' : 'day'}-v1.webp`)),

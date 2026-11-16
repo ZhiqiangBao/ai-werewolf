@@ -21,6 +21,8 @@ export interface RoomRecord {
   /** 暂停时各座位尚余的行动时间；用于恢复和重载。 */
   deadlineRemainingMs?: Record<string, number>;
   locale?: string;
+  /** 创建房间时的界面语言；不改变对局语言，供视频 UI 复用。旧房间可能没有。 */
+  uiLocale?: string;
   id: string;
   avatarStyle?: AvatarStyleId;
   createdAt: number;

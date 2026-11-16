@@ -144,7 +144,7 @@ export function createHttpServer({ manager, speech, speechConnections, webRoot }
     }
     if (parts[0] === 'speech-settings') return speechSettings(req, res, method, parts[1], parts[2]);
     if (parts[0] !== 'rooms') throw new ApiFailure(404, 'NOT_FOUND', '接口不存在', { key: '接口不存在' });
-    if (parts.length === 1 && method === 'POST') return send(res, 201, manager.createRoom(await readBody(req)));
+    if (parts.length === 1 && method === 'POST') return send(res, 201, manager.createRoom(await readBody(req), requestLanguage(req)));
 
     const [, roomId, action, sub, subAction] = parts;
     if (!roomId) throw new ApiFailure(404, 'NOT_FOUND', '接口不存在', { key: '接口不存在' });

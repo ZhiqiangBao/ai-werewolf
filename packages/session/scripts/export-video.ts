@@ -16,7 +16,8 @@ if (seatArg !== undefined && !/^[1-9][0-9]*$/.test(seatArg)) throw new Error('æ—
 const script = seatArg === undefined ? (() => {
   const projection = projectGod(record.state!, record.events);
   const room: RoomBrief = { roomId, viewer: 'host', status: record.status, paused: record.paused, presetName: projection.presetName, seats: record.seats.map((s) => ({ seat: s.seat, name: s.name, controller: s.controller })) };
-  return buildVideoScript(projection, room);
+  const script = buildVideoScript(projection, room);
+  return record.uiLocale ? { ...script, uiLocale: record.uiLocale } : script;
 })() : buildPlayerVideo(record, roomId, Number(seatArg));
 const path = join(directory, 'exports', `${roomId}${seatArg === undefined ? '' : `-player-${seatArg}`}-video-script.json`);
 mkdirSync(join(directory, 'exports'), { recursive: true });

@@ -54,7 +54,7 @@ export class RoomLobbyService {
     return { ...engineCatalog(), styles: STYLES };
   }
 
-  createRoom(input: Pick<RoomSetupInput, 'avatarStyle' | 'locale'> = {}): RoomRecord {
+  createRoom(input: Pick<RoomSetupInput, 'avatarStyle' | 'locale'> = {}, uiLocale?: string): RoomRecord {
     const avatarStyle = input.avatarStyle === undefined ? 'storybook' : input.avatarStyle;
     if (!isAvatarStyleId(avatarStyle)) throw new ApiFailure(400, 'BAD_REQUEST', '没有这个人物风格', { key: '没有这个人物风格' });
     const locale = input.locale ?? DEFAULT_GAME_LOCALE;
@@ -64,6 +64,7 @@ export class RoomLobbyService {
       id: randomBytes(5).toString('hex'),
       avatarStyle,
       locale,
+      ...(uiLocale ? { uiLocale } : {}),
       createdAt: this.now(),
       hostToken: token(),
       spectatorToken: token(),
@@ -92,6 +93,7 @@ export class RoomLobbyService {
     Object.assign(rec, {
       avatarStyle: src.avatarStyle,
       locale: src.rules?.locale ?? src.locale ?? DEFAULT_GAME_LOCALE,
+      ...(src.uiLocale ? { uiLocale: src.uiLocale } : {}),
       presetId: src.presetId,
       ruleValues: { ...src.ruleValues },
       timing: src.timing ? structuredClone(src.timing) : undefined,

@@ -10,6 +10,7 @@ export const roomFieldOwners = {
   id: 'identity',
   createdAt: 'identity',
   locale: 'lobby',
+  uiLocale: 'lobby',
   avatarStyle: 'lobby',
   hostToken: 'lobby',
   spectatorToken: 'lobby',

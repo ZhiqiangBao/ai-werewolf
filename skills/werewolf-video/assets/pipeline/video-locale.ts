@@ -17,6 +17,12 @@ export function videoLocale(source?: string, override = process.env.VIDEO_LOCALE
   if (!packs.has(locale)) throw Error(`Unsupported video language: ${locale}`);
   return locale;
 }
+/** The video UI language must come from the caller's UI-language bridge, never from room dialogue. */
+export function videoUiLocale(recordedUiLocale?: string, override = process.env.VIDEO_LOCALE): string {
+  const locale = recordedUiLocale || override;
+  if (!locale) throw Error('Video UI language is not recorded for this room; pass --video-locale or set VIDEO_LOCALE. Room locale only controls recorded dialogue and facts.');
+  return videoLocale(undefined, locale);
+}
 export function videoText(locale: string, key: string, ...values: unknown[]): string {
   let pack = packs.get(locale);
   if (!pack) throw Error(`Unsupported video language: ${locale}`);

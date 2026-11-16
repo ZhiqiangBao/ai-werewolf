@@ -17,6 +17,6 @@ export function buildPlayerVideo(record: RoomRecord, roomId: string, seat: Seat)
   const room: RoomBrief = { roomId, viewer: 'host', status: record.status, paused: record.paused,
     presetName: projection.presetName, seats: record.seats.map((s) => ({ seat: s.seat, name: s.name, controller: s.controller })) };
   const script = buildVideoScript(reduced, room);
-  return { ...script, perspective: 'player' as const, playerSeat: seat, publicRoles: [...record.state.rules.roles],
+  return { ...script, perspective: 'player' as const, playerSeat: seat, ...(record.uiLocale ? { uiLocale: record.uiLocale } : {}), publicRoles: [...record.state.rules.roles],
     events: script.events.map((event) => ({ ...event, audience: event.audience === 'public' ? 'public' as const : [seat] })) };
 }

@@ -166,9 +166,9 @@ export class RoomManager {
     if (inUse.length) throw new ApiFailure(409, 'MODEL_IN_USE', `未结束的房间 ${inUse.join('、')} 正在使用此模型，请在这些房间更换模型或结束对局后重试。`, { key: '未结束的房间 {0} 正在使用此模型，请在这些房间更换模型或结束对局后重试。', values: [inUse.join('、')] });
   }
 
-  createRoom(input: Pick<RoomSetupInput, 'avatarStyle' | 'locale'> = {}): CreateRoomResult {
+  createRoom(input: Pick<RoomSetupInput, 'avatarStyle' | 'locale'> = {}, uiLocale?: string): CreateRoomResult {
     this.assertActive();
-    const rec = this.lobby.createRoom(input);
+    const rec = this.lobby.createRoom(input, uiLocale);
     this.register(rec);
     this.persistence.flush(rec);
     return { roomId: rec.id, hostToken: rec.hostToken };
