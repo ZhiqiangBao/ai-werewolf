@@ -5,7 +5,7 @@ import type { SeatRecord } from './store';
 
 export function adapterConfig(s: SeatRecord, secrets: SecretBox): AdapterConfig {
   return {
-    apiProtocol: s.apiProtocol ?? 'responses',
+    apiProtocol: s.apiProtocol ?? 'chat_completions',
     baseUrl: s.baseUrl,
     model: s.model,
     apiKey: s.apiKeyEnc ? secrets.decrypt(s.apiKeyEnc) : null,

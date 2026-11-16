@@ -31,6 +31,7 @@ function defaultSeat(seat: Seat, avatarStyle: AvatarStyleId = 'storybook'): Seat
     nameSource: 'avatar',
     controller: 'ai',
     adapter: 'mock',
+    apiProtocol: 'responses',
     baseUrl: '',
     model: '',
     apiKeyEnc: null,
@@ -257,7 +258,7 @@ export class RoomLobbyService {
 
   seatView(s: SeatRecord): SeatConfigView {
     const { apiKeyEnc: _enc, apiKeyMask, nameSource: _nameSource, ...rest } = s;
-    const protocol = s.apiProtocol ?? 'responses';
+    const protocol = s.apiProtocol ?? 'chat_completions';
     const serverWebTools = s.serverWebTools ?? defaultServerWebTools();
     return { ...rest, apiProtocol: protocol, serverWebTools, serverWebToolSupport: s.adapter === 'openai_compatible' ? serverWebToolSupport(s.baseUrl, s.model, protocol, s.thinkingMode) : undefined, ...(s.adapter === 'openai_compatible' ? { thinkingMode: s.thinkingMode ?? defaultThinkingMode(s.baseUrl, s.model, s.apiProtocol) } : {}), apiKeyMasked: apiKeyMask, modelId: s.modelId ? this.models.find(s.modelId)?.id ?? s.modelId : null };
   }

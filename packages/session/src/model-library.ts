@@ -35,6 +35,11 @@ function credentialInput(key: string, name: string): string {
   return env;
 }
 
+/** models.json v2 之前没有 apiProtocol；缺失值必须保持历史 Chat Completions 语义。 */
+function storedProtocol(model: SavedModel): ApiProtocol {
+  return model.apiProtocol ?? 'chat_completions';
+}
+
 export function sameModelRoute(a: string, b: string, protocol: ApiProtocol): boolean {
   try { return new URL(apiUrl(a, protocol)).href === new URL(apiUrl(b, protocol)).href; } catch { return false; }
 }
@@ -77,14 +82,15 @@ export class ModelLibrary {
       const evidence = model.mergeEvidence as Record<string, unknown> | undefined;
       try {
         const sameCredential = source.apiKeyEnv || target.apiKeyEnv ? !!source.apiKeyEnv && source.apiKeyEnv === target.apiKeyEnv : !!source.apiKey && source.apiKey === target.apiKey;
-        if (source.lifecycle !== 'active' || !sameCredential || source.apiProtocol !== target.apiProtocol || new URL(apiUrl(source.baseUrl, source.apiProtocol)).href !== new URL(apiUrl(target.baseUrl, target.apiProtocol)).href) throw Error();
+        const sourceProtocol = storedProtocol(source), targetProtocol = storedProtocol(target);
+        if (source.lifecycle !== 'active' || !sameCredential || sourceProtocol !== targetProtocol || new URL(apiUrl(source.baseUrl, sourceProtocol)).href !== new URL(apiUrl(target.baseUrl, targetProtocol)).href) throw Error();
         if (source.model === target.model) {
           if (evidence?.kind !== 'identical_model' && evidence?.kind !== 'official_same_model') throw Error();
         } else {
           const route = new URL(source.baseUrl);
           const routeId = createHash('sha256').update(route.origin.toLowerCase() + route.pathname).digest('hex');
           const url = new URL(String(evidence?.sourceUrl ?? ''));
-          if (evidence?.kind !== 'official_same_model' || evidence.sourceModel !== source.model || evidence.targetModel !== target.model || evidence.protocol !== source.apiProtocol || evidence.providerId !== route.hostname.toLowerCase() || evidence.routeId !== routeId || !/^[a-f0-9]{64}$/i.test(String(evidence.sourceDigest ?? '')) || !Number.isFinite(Date.parse(String(evidence.checkedAt ?? ''))) || Date.parse(String(evidence.checkedAt)) > Date.now() || typeof evidence.summary !== 'string' || !evidence.summary || evidence.summary.length > 500 || /(?:sk-[\w-]{8,}|bearer\s+\S+|https?:\/\/\S+)/i.test(evidence.summary) || url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw Error();
+          if (evidence?.kind !== 'official_same_model' || evidence.sourceModel !== source.model || evidence.targetModel !== target.model || evidence.protocol !== sourceProtocol || evidence.providerId !== route.hostname.toLowerCase() || evidence.routeId !== routeId || !/^[a-f0-9]{64}$/i.test(String(evidence.sourceDigest ?? '')) || !Number.isFinite(Date.parse(String(evidence.checkedAt ?? ''))) || Date.parse(String(evidence.checkedAt)) > Date.now() || typeof evidence.summary !== 'string' || !evidence.summary || evidence.summary.length > 500 || /(?:sk-[\w-]{8,}|bearer\s+\S+|https?:\/\/\S+)/i.test(evidence.summary) || url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw Error();
         }
       } catch { throw new LocalizedError('项目模型库别名配置不一致；原文件未被覆盖'); }
     }
@@ -96,7 +102,7 @@ export class ModelLibrary {
       label: m.name,
       model: m.model ?? m.name,
       baseUrl: m.baseUrl,
-      apiProtocol: m.apiProtocol ?? 'responses',
+      apiProtocol: storedProtocol(m),
       apiKey: this.keyOf(m),
       ...(m.apiKeyEnv ? { apiKeyEnv: m.apiKeyEnv } : {}),
       source: m.source ?? 'added',

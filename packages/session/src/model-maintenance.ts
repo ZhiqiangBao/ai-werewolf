@@ -59,7 +59,7 @@ export class ModelMaintenance {
             (seat.adapter === 'openai_compatible' && (typeof seat.model !== 'string' || typeof seat.baseUrl !== 'string'))) throw new Error('MODEL_INVENTORY_INVALID');
         const ref: ReferenceSummary = { roomId: room.id, status: room.status as ReferenceSummary['status'], paused: room.paused, seat: seat.seat };
         if (seat.modelId === modelId || (seat.modelId && library.find(seat.modelId)?.id === modelId)) exactRefs.push(ref);
-        else if (library.list().some((candidate) => (candidate.id === modelId || candidate.mergedInto === modelId) && seat.model === candidate.model && (seat.apiProtocol ?? 'responses') === candidate.apiProtocol && typeof seat.baseUrl === 'string' && sameModelRoute(seat.baseUrl, candidate.baseUrl, candidate.apiProtocol))) possibleRefs.push(ref);
+        else if (library.list().some((candidate) => (candidate.id === modelId || candidate.mergedInto === modelId) && seat.model === candidate.model && (seat.apiProtocol ?? 'chat_completions') === candidate.apiProtocol && typeof seat.baseUrl === 'string' && sameModelRoute(seat.baseUrl, candidate.baseUrl, candidate.apiProtocol))) possibleRefs.push(ref);
       }
     }
     const credentialDependencies: string[] = [];
