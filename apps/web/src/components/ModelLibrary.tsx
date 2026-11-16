@@ -13,7 +13,7 @@ export function ModelLibrary() {
   const [keySource, setKeySource] = useState<'key' | 'env'>('key');
   const [originalKeySource, setOriginalKeySource] = useState<'key' | 'env'>('key');
   const [envOptions, setEnvOptions] = useState<{ name: string; available: boolean }[]>([]);
-  const [protocol, setProtocol] = useState<ApiProtocol>('chat_completions');
+  const [protocol, setProtocol] = useState<ApiProtocol>('responses');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -28,9 +28,9 @@ export function ModelLibrary() {
     void api.modelKeyEnvs().then((result) => { if (active) setEnvOptions(result.variables); }, (e: Error) => { if (active) setError(e.message); });
     return () => { active = false; };
   }, [keySource]);
-  const reset = () => { setEditing(null); setName(''); setBaseUrl(''); setApiKey(''); setApiKeyEnv(''); setKeySource('key'); setOriginalKeySource('key'); setProtocol('chat_completions'); };
+  const reset = () => { setEditing(null); setName(''); setBaseUrl(''); setApiKey(''); setApiKeyEnv(''); setKeySource('key'); setOriginalKeySource('key'); setProtocol('responses'); };
   const edit = (model: ModelPresetView) => {
-    setEditing(model.id); setName(model.model); setBaseUrl(model.baseUrl); setProtocol(model.apiProtocol ?? 'chat_completions'); setApiKey(''); setError(null); setNotice(null);
+    setEditing(model.id); setName(model.model); setBaseUrl(model.baseUrl); setProtocol(model.apiProtocol ?? 'responses'); setApiKey(''); setError(null); setNotice(null);
     const source = model.apiKeyEnv ? 'env' : 'key'; setKeySource(source); setOriginalKeySource(source); setApiKeyEnv(model.apiKeyEnv ?? '');
     nameInput.current?.focus();
   };

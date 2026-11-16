@@ -162,7 +162,7 @@ export class RoomManager {
     if (editing && related.length > 1) throw new ApiFailure(409, 'MODEL_ALIAS_IN_USE', '此模型存在归并的别名，请先使用本机维护工具处理。', { key: '此模型存在归并的别名，请先使用本机维护工具处理。' });
     if (editing) return;
     const inUse = [...this.rooms.values()].filter((room) => room.status !== 'ended' && room.seats.some((seat) => seat.controller === 'ai' && seat.adapter === 'openai_compatible' && related.some((model) =>
-      seat.modelId === model.id || (seat.model === model.model && (seat.apiProtocol ?? 'chat_completions') === model.apiProtocol && sameModelRoute(seat.baseUrl, model.baseUrl, model.apiProtocol))))).map((room) => room.id);
+      seat.modelId === model.id || (seat.model === model.model && (seat.apiProtocol ?? 'responses') === model.apiProtocol && sameModelRoute(seat.baseUrl, model.baseUrl, model.apiProtocol))))).map((room) => room.id);
     if (inUse.length) throw new ApiFailure(409, 'MODEL_IN_USE', `未结束的房间 ${inUse.join('、')} 正在使用此模型，请在这些房间更换模型或结束对局后重试。`, { key: '未结束的房间 {0} 正在使用此模型，请在这些房间更换模型或结束对局后重试。', values: [inUse.join('、')] });
   }
 

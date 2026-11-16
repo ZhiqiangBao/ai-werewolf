@@ -66,11 +66,11 @@ it('GLM-5 与 GLM-5.1 官方入口不提供不存在的强度档，GLM-5.2 只�
   const base = 'https://api.z.ai/api/paas/v4';
   for (const model of ['GLM-5', 'GLM-5.1']) {
     expect(supported(base, model)).toEqual(['default', 'off']);
-    expect(thinkingOptions(base, model).find((o) => o.value === 'low')!.hint).toContain('仅支持思考开关');
+    expect(thinkingOptions(base, model, 'chat_completions').find((o) => o.value === 'low')!.hint).toContain('仅支持思考开关');
   }
   expect(supported(base, 'GLM-5.2')).toEqual(['default', 'off', 'medium', 'high']);
-  expect(thinkingParameters(base, 'GLM-5.2', 'medium')).toEqual({ thinking: { type: 'enabled' }, reasoning_effort: 'high' });
-  expect(thinkingParameters(base, 'GLM-5.2', 'high')).toEqual({ thinking: { type: 'enabled' }, reasoning_effort: 'max' });
+  expect(thinkingParameters(base, 'GLM-5.2', 'medium', 'chat_completions')).toEqual({ thinking: { type: 'enabled' }, reasoning_effort: 'high' });
+  expect(thinkingParameters(base, 'GLM-5.2', 'high', 'chat_completions')).toEqual({ thinking: { type: 'enabled' }, reasoning_effort: 'max' });
   for (const model of ['glm-5.3', 'glm-5.3-flash']) {
     expect(supported(base, model)).toEqual(['default', ...levels]);
     expect(() => thinkingParameters(base, model, 'off')).toThrow();
@@ -88,8 +88,8 @@ it('保留百炼旧版 Pro、Qwen 预算与未知入口的边界', () => {
     }
   }
   expect(supported('https://gateway.invalid/v1', 'deepseek-flash')).toEqual(['default', 'off']);
-  expect(thinkingParameters(aliyun, 'qwen3.7-plus', 'low')).toEqual({ enable_thinking: true, thinking_budget: 1024 });
-  expect(thinkingParameters(aliyun, 'qwen3.8-max', 'high')).toEqual({ enable_thinking: true, reasoning_effort: 'xhigh' });
+  expect(thinkingParameters(aliyun, 'qwen3.7-plus', 'low', 'chat_completions')).toEqual({ enable_thinking: true, thinking_budget: 1024 });
+  expect(thinkingParameters(aliyun, 'qwen3.8-max', 'high', 'chat_completions')).toEqual({ enable_thinking: true, reasoning_effort: 'xhigh' });
   expect(defaultThinkingMode('http://127.0.0.1:1234/v1', 'Qwen&&Gemma')).toBe('default');
   for (const protocol of API_PROTOCOLS) {
     expect(thinkingParameters('', '', 'default', protocol)).toEqual({});

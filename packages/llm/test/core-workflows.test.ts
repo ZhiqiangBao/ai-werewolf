@@ -136,6 +136,37 @@ it('模型思考选项通过三种适配器发送原生参数，MiMo 仅关闭�
   expect(requests[0].body.reasoning).toEqual({ effort: 'none' });
 });
 
+it('Responses 和 Anthropic 在游戏工具旁声明服务端网页工具', async () => {
+  const game = seerTurn('en');
+  const responseReq = modelRequest('responses', game);
+  responseReq.config = { ...responseReq.config, baseUrl: 'https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1', model: 'qwen3.8-max', thinkingMode: 'high', serverWebTools: { search: true, extractor: true } };
+  const responseItems = [
+    { type: 'web_search_call', id: 'ws_fixture', status: 'completed' },
+    { type: 'web_extractor_call', id: 'we_fixture', status: 'completed' },
+    ...toolStream('responses', 'web-inspection', target).items!,
+  ];
+  const responseEvents = responseItems.map((item, output_index) => ({ type: 'response.output_item.done', output_index, item }));
+  const responseRequests = mockModel(sse([
+    ...responseEvents,
+    { type: 'response.completed', response: { status: 'completed', output: responseItems } },
+  ]));
+  const responseResult = await remoteAdapter('responses').decide(responseReq);
+  expect(responseResult).toMatchObject({ ok: true, call: { tool, args: { targetSeat: target } } });
+  expect(responseRequests[0].body.tools.slice(0, 2)).toEqual([{ type: 'web_search' }, { type: 'web_extractor' }]);
+  expect(responseRequests[0].body.tool_choice).toBe('auto');
+  const native = responseResult.assistant?.role === 'assistant' ? responseResult.assistant.native : undefined;
+  expect(native?.items).toEqual(expect.arrayContaining([{ type: 'web_search_call', id: 'ws_fixture', status: 'completed' }]));
+
+  const anthropicReq = modelRequest('anthropic_messages', game);
+  anthropicReq.config = { ...anthropicReq.config, baseUrl: 'https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1', model: 'qwen3.8-max', thinkingMode: 'high', serverWebTools: { search: true, extractor: true } };
+  const anthropicRequests = mockModel(sse(toolStream('anthropic_messages', 'anthropic-web-inspection', target).events));
+  expect((await remoteAdapter('anthropic_messages').decide(anthropicReq)).ok).toBe(true);
+  expect(anthropicRequests[0].body.tools.slice(0, 2)).toEqual([
+    { type: 'web_search_20250305', name: 'web_search', max_uses: 5 },
+    { type: 'web_fetch_20250910', name: 'web_fetch', max_uses: 5 },
+  ]);
+});
+
 it('三个模型协议按本局语言完成查验纠错，后续连接失败时安全结束旁听', async () => {
   for (const { protocol, path, locale, menu, schemaLabel, feedback, result } of protocols) {
     const game = seerTurn(locale);

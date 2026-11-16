@@ -41,9 +41,9 @@ export function chatMessages(messages: TranscriptMessage[]): ChatMessage[] {
   });
 }
 
-export function protocolBinding(config: { baseUrl: string; model: string; apiKey: string | null; apiProtocol?: ApiProtocol }): string {
-  const protocol = config.apiProtocol ?? 'chat_completions';
-  return createHash('sha256').update(JSON.stringify([protocol, apiUrl(config.baseUrl, protocol), config.model, config.apiKey])).digest('hex');
+export function protocolBinding(config: { baseUrl: string; model: string; apiKey: string | null; apiProtocol?: ApiProtocol; serverWebTools?: { search: boolean; extractor: boolean } }): string {
+  const protocol = config.apiProtocol ?? 'responses';
+  return createHash('sha256').update(JSON.stringify([protocol, apiUrl(config.baseUrl, protocol), config.model, config.apiKey, config.serverWebTools ?? { search: false, extractor: false }])).digest('hex');
 }
 
 export function nativeItems(message: TranscriptMessage, protocol: ApiProtocol, binding: string): Record<string, any>[] | null {

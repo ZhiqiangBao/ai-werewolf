@@ -90,7 +90,7 @@ function nativeProfile(baseUrl: string, model: string, protocol: ApiProtocol): {
 }
 
 /** 未配置档位时优先轻度；没有真实轻度档的接口继续使用模型默认，不自动关闭思考。 */
-export function defaultThinkingMode(baseUrl: string, model: string, protocol: ApiProtocol = 'chat_completions'): ThinkingMode {
+export function defaultThinkingMode(baseUrl: string, model: string, protocol: ApiProtocol = 'responses'): ThinkingMode {
   if (protocol !== 'chat_completions') {
     const p = nativeProfile(baseUrl, model, protocol);
     return p.kind === 'budget' || (p.kind === 'effort' && (!p.effort || p.effort.low)) ? 'low' : 'default';
@@ -99,7 +99,7 @@ export function defaultThinkingMode(baseUrl: string, model: string, protocol: Ap
   return p.budget || p.effort?.low ? 'low' : 'default';
 }
 
-export function thinkingOptions(baseUrl: string, model: string, protocol: ApiProtocol = 'chat_completions', locale: string | undefined = 'zh-CN'): ThinkingOption[] {
+export function thinkingOptions(baseUrl: string, model: string, protocol: ApiProtocol = 'responses', locale: string | undefined = 'zh-CN'): ThinkingOption[] {
   const option = (value: ThinkingMode, supported: boolean, hintKey: string, ...hintValues: (string | number)[]): ThinkingOption => ({
     value, label: gameText(locale, labels[value]), supported, hint: gameText(locale, hintKey, ...hintValues), hintKey,
     ...(hintValues.length ? { hintValues } : {}),
@@ -130,7 +130,7 @@ export function thinkingOptions(baseUrl: string, model: string, protocol: ApiPro
 }
 
 /** 统一档位转换为对应接口的参数；不同时传 reasoning_effort 与 thinking_budget。 */
-export function thinkingParameters(baseUrl: string, model: string, mode: ThinkingMode = 'default', protocol: ApiProtocol = 'chat_completions', locale?: string): Record<string, unknown> {
+export function thinkingParameters(baseUrl: string, model: string, mode: ThinkingMode = 'default', protocol: ApiProtocol = 'responses', locale?: string): Record<string, unknown> {
   if (mode === 'default') return {};
   const option = thinkingOptions(baseUrl, model, protocol, locale).find((o) => o.value === mode);
   if (!option?.supported) throw new Error(gameText(locale, '不支持该思考档位：{0}', option?.hint ?? String(mode)));

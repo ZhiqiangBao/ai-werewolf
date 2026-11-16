@@ -1,7 +1,7 @@
 import { gameText } from './locale';
 import { LocalizedError } from './errors';
 
-export const API_PROTOCOLS = ['chat_completions', 'responses', 'anthropic_messages'] as const;
+export const API_PROTOCOLS = ['responses', 'chat_completions', 'anthropic_messages'] as const;
 export type ApiProtocol = (typeof API_PROTOCOLS)[number];
 
 export const API_PROTOCOL_LABELS: Record<ApiProtocol, string> = {
@@ -9,7 +9,7 @@ export const API_PROTOCOL_LABELS: Record<ApiProtocol, string> = {
 };
 
 export function apiProtocol(value: unknown): ApiProtocol {
-  if (value === undefined) return 'chat_completions';
+  if (value === undefined) return 'responses';
   if (!API_PROTOCOLS.includes(value as ApiProtocol)) throw new LocalizedError('无效的接口协议');
   return value as ApiProtocol;
 }
@@ -17,7 +17,7 @@ export function apiProtocol(value: unknown): ApiProtocol {
 const paths: Record<ApiProtocol, string> = { chat_completions: '/chat/completions', responses: '/responses', anthropic_messages: '/messages' };
 
 /** 同时接受 API 根地址与完整端点；绝不在协议之间自动切换。 */
-export function apiBase(value: string, protocol: ApiProtocol = 'chat_completions', locale?: string): string {
+export function apiBase(value: string, protocol: ApiProtocol = 'responses', locale?: string): string {
   const base = value.trim().replace(/\/+$/, '');
   if (!base || base.includes('${')) return '';
   let url: URL;
@@ -43,7 +43,7 @@ export function apiBase(value: string, protocol: ApiProtocol = 'chat_completions
   return /\/v\d+(?:beta)?$/.test(url.pathname) ? base : `${base}/v1`;
 }
 
-export function apiUrl(value: string, protocol: ApiProtocol = 'chat_completions', locale?: string): string {
+export function apiUrl(value: string, protocol: ApiProtocol = 'responses', locale?: string): string {
   const base = apiBase(value, protocol, locale);
   return base.endsWith(paths[protocol]) ? base : `${base}${paths[protocol]}`;
 }

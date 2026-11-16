@@ -5,6 +5,7 @@ import { abortedOutcome, failure, HttpError, post, runRequest } from '../transpo
 import { jsonInstruction, parseAssistant, parseJson, tokenUsage } from '../result';
 import type { Adapter, AdapterConfig, TranscriptMessage } from '../types';
 import { observeSync } from '../observation';
+import { nativeServerToolNames, nativeServerTools } from '../server-tools';
 
 export function responsesInput(messages: TranscriptMessage[], config: AdapterConfig): Record<string, any>[] {
   const binding = protocolBinding({ ...config, apiProtocol: 'responses' });
@@ -27,8 +28,10 @@ export const responsesAdapter: Adapter = {
       const config = { ...req.config, apiProtocol: 'responses' as const };
       const url = apiUrl(config.baseUrl, 'responses', req.projection?.locale ?? req.locale);
       const json = config.toolMode === 'json' && req.toolChoice !== 'auto';
+      const serverTools = json ? [] : nativeServerTools(config);
+      const serverToolNames = json ? [] : nativeServerToolNames(config);
       const request = observation?.observer.start('http_request', observation.adapter.id, { variantIndex: 0, variantReason: 'initial', features: {
-        stream: !!req.stream, toolChoice: json ? 'none' : req.toolChoice === 'auto' || (isDashscopeEndpoint(config.baseUrl) && req.tools.length > 1) ? 'auto' : 'required', responseFormat: json,
+        stream: !!req.stream, toolChoice: json ? 'none' : serverTools.length || req.toolChoice === 'auto' || (isDashscopeEndpoint(config.baseUrl) && req.tools.length > 1) ? 'auto' : 'required', responseFormat: json,
       } });
       try {
       const body = observeSync(observation?.observer, request, 'request_encode', () => {
@@ -40,8 +43,8 @@ export const responsesAdapter: Adapter = {
         max_output_tokens: config.maxOutputTokens ?? 32768,
         ...(req.cacheKey ? { prompt_cache_key: `${req.cacheKey}:${protocolBinding(config).slice(0, 16)}` } : {}),
         ...(json ? { text: { format: { type: 'json_object' } } } : {
-          tools: req.tools.map((t) => ({ type: 'function', name: t.name, description: `${t.title}：${t.description}`, parameters: toolToJsonSchema(t, req.projection?.locale ?? req.locale), strict: true })),
-          tool_choice: req.toolChoice === 'auto' || (isDashscopeEndpoint(config.baseUrl) && req.tools.length > 1) ? 'auto' : 'required', parallel_tool_calls: false,
+          tools: [...serverTools, ...req.tools.map((t) => ({ type: 'function', name: t.name, description: `${t.title}：${t.description}`, parameters: toolToJsonSchema(t, req.projection?.locale ?? req.locale), strict: true }))],
+          tool_choice: serverTools.length || req.toolChoice === 'auto' || (isDashscopeEndpoint(config.baseUrl) && req.tools.length > 1) ? 'auto' : 'required', parallel_tool_calls: false,
         }),
         ...(req.stream ? { stream: true } : {}),
       };
@@ -51,7 +54,7 @@ export const responsesAdapter: Adapter = {
       });
       let completed: any;
       const items = new Map<number, Record<string, any>>();
-      req.onRequest?.({ apiProtocol: 'responses', tools: structuredClone(body.tools as unknown[] ?? []), toolChoice: body.tool_choice, ...(json ? { toolInstruction: jsonInstruction(req.tools, req.projection?.locale ?? req.locale) } : {}) });
+      req.onRequest?.({ apiProtocol: 'responses', tools: structuredClone(body.tools as unknown[] ?? []), ...(serverToolNames.length ? { serverTools: serverToolNames } : {}), toolChoice: body.tool_choice, ...(json ? { toolInstruction: jsonInstruction(req.tools, req.projection?.locale ?? req.locale) } : {}) });
       const result = await post(url, body, config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}, signal, (e) => {
         if (e.type === 'error' || e.type === 'response.failed') throw new HttpError(200, JSON.stringify(e.error ?? e.response?.error ?? e));
         if (e.type === 'response.output_text.delta') onDelta({ reply: e.delta ?? '' });

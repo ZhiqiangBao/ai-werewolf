@@ -178,7 +178,7 @@ it('席位保留选中模型时的加密快照，模型编辑和变量变化不�
     manager.dispose();
     const seat = store.rooms.get(room.roomId)!.seats[0];
     expect(secrets.decrypt(seat.apiKeyEnc!)).toBe('snapshot-secret');
-    expect(seat).toMatchObject({ model: 'example', baseUrl: 'https://example.com/v1', apiProtocol: 'chat_completions' });
+    expect(seat).toMatchObject({ model: 'example', baseUrl: 'https://example.com/v1', apiProtocol: 'responses' });
     expect(JSON.stringify(manager.modelPresets())).not.toContain('later-secret');
   } finally {
     delete process.env[name];

@@ -1,4 +1,4 @@
-import type { ApiProtocol, DecideObservationPort, ModelRequestInfo, Projection, Seat, ThinkingMode, TokenUsage, ToolCall, ToolMode, ToolSpec } from '@werewolf/protocol';
+import type { ApiProtocol, DecideObservationPort, ModelRequestInfo, Projection, Seat, ServerWebToolsConfig, ThinkingMode, TokenUsage, ToolCall, ToolMode, ToolSpec } from '@werewolf/protocol';
 import type { TranscriptMessage } from './transcript';
 export type { ChatMessage, TranscriptMessage, TranscriptCall, NativeTurn } from './transcript';
 
@@ -19,6 +19,7 @@ export interface AdapterConfig {
   timeoutSec: number;
   thinkingMode?: ThinkingMode;
   maxOutputTokens?: number;
+  serverWebTools?: ServerWebToolsConfig;
 }
 
 export interface DecideRequest {

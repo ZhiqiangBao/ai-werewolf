@@ -8,6 +8,8 @@ export { SPEECH_CONNECTION_TEMPLATES } from './speech';
 export { expandActionTools, canonicalAction, simulationTools, exposeAction, actionMenu } from './action-tools';
 export { API_PROTOCOLS, API_PROTOCOL_LABELS, apiProtocol, apiBase, apiUrl, isDashscopeEndpoint } from './api';
 export type { ApiProtocol, TokenUsage } from './api';
+export { defaultServerWebTools, serverWebToolSupport } from './web-tools';
+export type { CapabilityState, ServerWebTool, ServerWebToolSupport, ServerWebToolsConfig } from './web-tools';
 import type { ApiProtocol, TokenUsage } from './api';
 export { eventPurpose, gameRecordEvents, buildVideoScript, recordedBadgeOutcome } from './recording';
 export type { VideoScriptEntry } from './recording';
@@ -364,13 +366,17 @@ export interface SeatConfigView {
   maxOutputTokens?: number;
   /** 统一的思考档位；接口不支持的档位不能选用。 */
   thinkingMode?: ThinkingMode;
+  /** 服务端网页工具；旧房间缺省为开启，实际请求仍按协议和模型能力过滤。 */
+  serverWebTools?: import('./web-tools').ServerWebToolsConfig;
+  serverWebToolSupport?: import('./web-tools').ServerWebToolSupport;
   /** 选用的模型名单条目。旧房间可能还没有。 */
   modelId?: string | null;
 }
 
 /** 只需要带上要修改的字段。 */
-export interface SeatConfigInput extends Partial<Omit<SeatConfigView, 'seat' | 'apiKeyMasked'>> {
+export interface SeatConfigInput extends Partial<Omit<SeatConfigView, 'seat' | 'apiKeyMasked' | 'serverWebTools'>> {
   seat: Seat;
+  serverWebTools?: Partial<import('./web-tools').ServerWebToolsConfig>;
   /** undefined 表示保持原值，null 表示清除。 */
   apiKey?: string | null;
   /**
@@ -506,6 +512,7 @@ export interface ActResult {
 export interface ModelRequestInfo {
   apiProtocol: ApiProtocol;
   tools: unknown[];
+  serverTools?: import('./web-tools').ServerWebTool[];
   toolChoice?: unknown;
   /** JSON 兼容模式没有原生工具，其实际格式说明保存于此。 */
   toolInstruction?: string;

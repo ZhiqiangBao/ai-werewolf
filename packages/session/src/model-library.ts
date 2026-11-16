@@ -96,7 +96,7 @@ export class ModelLibrary {
       label: m.name,
       model: m.model ?? m.name,
       baseUrl: m.baseUrl,
-      apiProtocol: m.apiProtocol ?? 'chat_completions',
+      apiProtocol: m.apiProtocol ?? 'responses',
       apiKey: this.keyOf(m),
       ...(m.apiKeyEnv ? { apiKeyEnv: m.apiKeyEnv } : {}),
       source: m.source ?? 'added',
@@ -114,7 +114,7 @@ export class ModelLibrary {
     if (!presets.length) return 0;
     const imported = presets.filter((preset) => !this.added.some((model) => model.id === preset.id)).map((preset): SavedModel => ({
       id: preset.id, name: preset.label, model: preset.model, baseUrl: preset.baseUrl,
-      apiProtocol: preset.apiProtocol ?? 'chat_completions', source: 'imported', apiKeyEnc: preset.apiKey ? this.secrets.encrypt(preset.apiKey) : null,
+      apiProtocol: preset.apiProtocol ?? 'responses', source: 'imported', apiKeyEnc: preset.apiKey ? this.secrets.encrypt(preset.apiKey) : null,
     }));
     const previous = this.added; this.added = [...this.added, ...imported]; this.legacyImported = true;
     try { this.persist(); } catch (error) { this.added = previous; this.legacyImported = false; throw error; }
@@ -143,7 +143,7 @@ export class ModelLibrary {
 
   findRaw(id: string): ResolvedModel | undefined { return this.list().find((m) => m.id === id); }
 
-  add(name: string, baseUrl: string, apiKey: string, protocol: ApiProtocol = 'chat_completions', apiKeyEnv = ''): ModelPresetView {
+  add(name: string, baseUrl: string, apiKey: string, protocol: ApiProtocol = 'responses', apiKeyEnv = ''): ModelPresetView {
     const model = name.trim();
     const url = apiBase(baseUrl, protocol);
     const key = apiKey.trim();
@@ -151,7 +151,7 @@ export class ModelLibrary {
     if (!url) throw new LocalizedError('请填写接口地址');
     const env = credentialInput(key, apiKeyEnv);
     if (!key && !env) throw new LocalizedError('请填写密钥');
-    if (this.added.some((m) => this.find(m.id)?.lifecycle !== 'archived' && (m.model ?? m.name) === model && m.baseUrl === url && (m.apiProtocol ?? 'chat_completions') === protocol)) throw new LocalizedError('这个名称、地址和协议已经添加过了');
+    if (this.added.some((m) => this.find(m.id)?.lifecycle !== 'archived' && (m.model ?? m.name) === model && m.baseUrl === url && (m.apiProtocol ?? 'responses') === protocol)) throw new LocalizedError('这个名称、地址和协议已经添加过了');
     const saved: SavedModel = {
       id: `m_${randomBytes(8).toString('hex')}`,
       name: model.slice(0, 120),
@@ -185,7 +185,7 @@ export class ModelLibrary {
     const env = credentialInput(key, apiKeyEnv);
     if (!model) throw new LocalizedError('请填写模型名称');
     if (!url) throw new LocalizedError('请填写接口地址');
-    if (this.added.some((m) => m.id !== id && this.find(m.id)?.lifecycle !== 'archived' && (m.model ?? m.name) === model && m.baseUrl === url && (m.apiProtocol ?? 'chat_completions') === protocol)) throw new LocalizedError('这个名称、地址和协议已经添加过了');
+    if (this.added.some((m) => m.id !== id && this.find(m.id)?.lifecycle !== 'archived' && (m.model ?? m.name) === model && m.baseUrl === url && (m.apiProtocol ?? 'responses') === protocol)) throw new LocalizedError('这个名称、地址和协议已经添加过了');
     const previous = this.added;
     this.added = previous.map((m, i) => {
       if (i !== index) return m;

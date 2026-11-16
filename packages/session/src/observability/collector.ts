@@ -157,9 +157,9 @@ export class RoomObservability {
     return { ...base, ...(seat === undefined ? {} : { seatRef: `s${seat}` }), ...(decisionRef ? { decisionRef } : {}) };
   }
   provider(cfg: SeatRecord): Pick<ObservationFields, 'providerId' | 'modelKey' | 'apiProtocol'> {
-    if (this.closed) return { providerId: 'unknown', modelKey: 'unknown', apiProtocol: cfg.apiProtocol ?? 'chat_completions' };
-    try { return { providerId: this.identities.provider(cfg.baseUrl), modelKey: this.identities.model(cfg.model || 'mock'), apiProtocol: cfg.apiProtocol ?? 'chat_completions' }; }
-    catch { this.stats.callbackErrors++; return { providerId: 'unknown', modelKey: 'unknown', apiProtocol: cfg.apiProtocol ?? 'chat_completions' }; }
+    if (this.closed) return { providerId: 'unknown', modelKey: 'unknown', apiProtocol: cfg.apiProtocol ?? 'responses' };
+    try { return { providerId: this.identities.provider(cfg.baseUrl), modelKey: this.identities.model(cfg.model || 'mock'), apiProtocol: cfg.apiProtocol ?? 'responses' }; }
+    catch { this.stats.callbackErrors++; return { providerId: 'unknown', modelKey: 'unknown', apiProtocol: cfg.apiProtocol ?? 'responses' }; }
   }
   begin(kind: Kind, ref: ObservationRef, fields: SpanData = {}, id = this.id(kind)): ObservationSpan {
     return new ObservationSpan(this, kind, ref, id, fields);

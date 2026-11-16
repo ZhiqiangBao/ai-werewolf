@@ -87,7 +87,7 @@ export function presetsFromQwenSettings(raw: unknown, env: Record<string, string
 }
 
 export function presetView(preset: QwenPreset): ModelPresetView {
-  return { id: preset.id, label: preset.label, model: preset.model, baseUrl: preset.baseUrl, apiProtocol: preset.apiProtocol ?? 'chat_completions', hasKey: !!preset.apiKey, source: 'settings' };
+  return { id: preset.id, label: preset.label, model: preset.model, baseUrl: preset.baseUrl, apiProtocol: preset.apiProtocol ?? 'responses', hasKey: !!preset.apiKey, source: 'settings' };
 }
 
 /** 仅供显式迁移读取旧配置；运行时模型库和 TTS 不调用此函数。 */

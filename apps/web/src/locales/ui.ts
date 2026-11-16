@@ -164,6 +164,7 @@ export const uiMessages: [string, string, string][] = [
   ["温度", "Temperature", "温度"],
   ["当前协议配置使用供应商默认温度。", "This protocol uses the provider’s default temperature.", "このプロトコルでは提供元の既定の温度を使用します。"],
   ["输出方式", "Output mode", "出力方式"],
+  ["服务端网页工具", "Server web tools", "サーバー Web ツール"], ["联网搜索", "Web search", "Web 検索"], ["网页提取", "Web extraction", "Web 抽出"], ["当前模型支持", "Supported by this model", "現在のモデルが対応"], ["当前协议或模型不支持", "Unsupported by this protocol or model", "このプロトコルまたはモデルは非対応"], ["当前网关能力未知", "Gateway capability unknown", "ゲートウェイの対応状況が不明"], ["需要原生工具调用模式", "Native tool mode is required", "ネイティブツール呼び出しが必要"], ["搜索", "Search", "検索"], ["提取", "Extract", "抽出"],
   ["工具调用（推荐）", "Tool calls (recommended)", "ツール呼び出し（推奨）"],
   ["JSON 文本（模型不支持工具时）", "JSON text (for models without tools)", "JSON テキスト（ツール非対応モデル用）"],
   ["技能与旁听超时（秒）", "Skill and listening timeout (seconds)", "能力・傍聴のタイムアウト（秒）"],

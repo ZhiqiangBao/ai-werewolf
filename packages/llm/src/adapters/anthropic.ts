@@ -5,6 +5,7 @@ import { abortedOutcome, failure, HttpError, post, runRequest } from '../transpo
 import { jsonInstruction, parseAssistant, parseJson, tokenUsage } from '../result';
 import type { Adapter, AdapterConfig, TranscriptMessage } from '../types';
 import { observeSync } from '../observation';
+import { nativeServerToolNames, nativeServerTools } from '../server-tools';
 
 export function anthropicInput(messages: TranscriptMessage[], config: AdapterConfig) {
   const binding = protocolBinding({ ...config, apiProtocol: 'anthropic_messages' });
@@ -40,6 +41,8 @@ export const anthropicAdapter: Adapter = {
       const config = { ...req.config, apiProtocol: 'anthropic_messages' as const };
       const url = apiUrl(config.baseUrl, 'anthropic_messages', req.projection?.locale ?? req.locale);
       const json = config.toolMode === 'json' && req.toolChoice !== 'auto';
+      const serverTools = json ? [] : nativeServerTools(config);
+      const serverToolNames = json ? [] : nativeServerToolNames(config);
       const thinking = thinkingParameters(config.baseUrl, config.model, config.thinkingMode, 'anthropic_messages', req.projection?.locale ?? req.locale);
       const budget = (thinking.thinking as { budget_tokens?: number } | undefined)?.budget_tokens ?? 0;
       const max = config.maxOutputTokens ?? 32768;
@@ -52,7 +55,7 @@ export const anthropicAdapter: Adapter = {
       const input = anthropicInput(json ? [...req.messages, { role: 'user', content: jsonInstruction(req.tools, req.projection?.locale ?? req.locale) }] : req.messages, config);
       const body: Record<string, unknown> = { model: config.model, max_tokens: max, ...input, ...thinking, ...(req.stream ? { stream: true } : {}) };
       if (!json) {
-        body.tools = req.tools.map((t) => ({ name: t.name, description: `${t.title}：${t.description}`, input_schema: toolToJsonSchema(t, req.projection?.locale ?? req.locale) }));
+        body.tools = [...serverTools, ...req.tools.map((t) => ({ name: t.name, description: `${t.title}：${t.description}`, input_schema: toolToJsonSchema(t, req.projection?.locale ?? req.locale) }))];
         // auto 同时兼容手动思考、强制思考和旁听，并避免切换 tool_choice 破坏消息缓存。
         // 正式行动仍由本地解析器要求恰好一个工具，失败按现有纠错流程处理。
         body.tool_choice = { type: 'auto', disable_parallel_tool_use: true };
@@ -63,7 +66,7 @@ export const anthropicAdapter: Adapter = {
       const argumentsByIndex = new Map<number, string>();
       let message: any;
       let stopped = false;
-      req.onRequest?.({ apiProtocol: 'anthropic_messages', tools: structuredClone(body.tools as unknown[] ?? []), toolChoice: body.tool_choice, ...(json ? { toolInstruction: jsonInstruction(req.tools, req.projection?.locale ?? req.locale) } : {}) });
+      req.onRequest?.({ apiProtocol: 'anthropic_messages', tools: structuredClone(body.tools as unknown[] ?? []), ...(serverToolNames.length ? { serverTools: serverToolNames } : {}), toolChoice: body.tool_choice, ...(json ? { toolInstruction: jsonInstruction(req.tools, req.projection?.locale ?? req.locale) } : {}) });
       const result = await post(url, body, {
         ...(config.apiKey ? { 'x-api-key': config.apiKey } : {}), 'anthropic-version': '2023-06-01',
       }, signal, (e) => {

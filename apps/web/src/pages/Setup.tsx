@@ -27,7 +27,10 @@ import { copyText, link, seatName, seatStyle } from '../util';
 
 function mergeInput(a: RoomSetupInput, b: RoomSetupInput): RoomSetupInput {
   const seats = new Map((a.seats ?? []).map((s) => [s.seat, s]));
-  for (const s of b.seats ?? []) seats.set(s.seat, { ...seats.get(s.seat), ...s });
+  for (const s of b.seats ?? []) {
+    const previous = seats.get(s.seat);
+    seats.set(s.seat, { ...previous, ...s, ...(s.serverWebTools || previous?.serverWebTools ? { serverWebTools: { ...previous?.serverWebTools, ...s.serverWebTools } } : {}) });
+  }
   return {
     ...a,
     ...b,
@@ -49,8 +52,8 @@ function applyLocal(s: RoomSetupView, input: RoomSetupInput): RoomSetupView {
     seats: s.seats.map((seat) => {
       const change = input.seats?.find((x) => x.seat === seat.seat);
       if (!change) return seat;
-      const { apiKey: _key, presetId: _preset, ...rest } = change;
-      return { ...seat, ...rest };
+      const { apiKey: _key, presetId: _preset, serverWebTools, ...rest } = change;
+      return { ...seat, ...rest, ...(serverWebTools ? { serverWebTools: { search: seat.serverWebTools?.search ?? true, extractor: seat.serverWebTools?.extractor ?? true, ...serverWebTools } } : {}) };
     }),
   };
 }
@@ -372,7 +375,7 @@ function choiceFor(models: ModelPresetView[]) {
       modelId: preset.id,
       model: preset.model,
       baseUrl: preset.baseUrl,
-      apiProtocol: preset.apiProtocol ?? 'chat_completions',
+      apiProtocol: preset.apiProtocol ?? 'responses',
     };
   };
 }
@@ -380,7 +383,7 @@ function choiceFor(models: ModelPresetView[]) {
 function keepThinking(seat: SeatConfigView, next: Omit<SeatConfigInput, 'seat'>): Omit<SeatConfigInput, 'seat'> {
   const baseUrl = next.baseUrl ?? seat.baseUrl;
   const model = next.model ?? seat.model;
-  const protocol = next.apiProtocol ?? seat.apiProtocol;
+  const protocol = next.apiProtocol ?? seat.apiProtocol ?? 'responses';
   const preferred = defaultThinkingMode(baseUrl, model, protocol);
   const mode = seat.thinkingMode ?? preferred;
   const supported = thinkingOptions(baseUrl, model, protocol).some((o) => o.value === mode && o.supported);
@@ -448,7 +451,7 @@ function SeatsPanel({ setup, catalog, models, roomId, token, patchSeat, patch, f
 function selectedId(s: SeatConfigView, models: ModelPresetView[]): string {
   if (s.adapter !== 'openai_compatible') return 'mock';
   if (s.modelId) return s.modelId;
-  return models.find((m) => m.model === s.model && m.baseUrl === s.baseUrl && (m.apiProtocol ?? 'chat_completions') === (s.apiProtocol ?? 'chat_completions'))?.id ?? (s.model ? 'custom' : 'mock');
+  return models.find((m) => m.model === s.model && m.baseUrl === s.baseUrl && (m.apiProtocol ?? 'responses') === (s.apiProtocol ?? 'responses'))?.id ?? (s.model ? 'custom' : 'mock');
 }
 
 function LibraryModelOptions({ models }: { models: ModelPresetView[] }) {
@@ -530,6 +533,10 @@ function SeatRow({
   };
   const thinking = thinkingOptions(s.baseUrl, s.model, s.apiProtocol);
   const thinkingHint = thinking.find((o) => o.value === (s.thinkingMode ?? 'default'));
+  const webTools = s.serverWebTools ?? { search: true, extractor: true };
+  const webSupport = s.serverWebToolSupport ?? { search: 'unknown' as const, extractor: 'unknown' as const };
+  const nativeTools = real && s.toolMode === 'tools';
+  const supportText = (state: 'supported' | 'unsupported' | 'unknown') => state === 'supported' ? t('当前模型支持') : state === 'unsupported' ? t('当前协议或模型不支持') : t('当前网关能力未知');
   return (
     <div className="seat-row">
       <div className="seat-no" style={seatStyle(s.seat)}>
@@ -586,7 +593,7 @@ function SeatRow({
             <>
               <label className="field">
                 {t('接口协议')}
-                <select value={s.apiProtocol ?? 'chat_completions'} onChange={(e) => patchSeat(s.seat, keepThinking(s, { apiProtocol: e.target.value as ApiProtocol, modelId: null }), 0)}>
+                <select value={s.apiProtocol ?? 'responses'} onChange={(e) => patchSeat(s.seat, keepThinking(s, { apiProtocol: e.target.value as ApiProtocol, modelId: null }), 0)}>
                   {API_PROTOCOLS.map((p) => <option key={p} value={p}>{API_PROTOCOL_LABELS[p]}</option>)}
                 </select>
               </label>
@@ -622,6 +629,20 @@ function SeatRow({
                   <option value="json">{t('JSON 文本（模型不支持工具时）')}</option>
                 </select>
               </label>
+              <div className="field" style={{ gridColumn: '1 / -1' }}>
+                <span>{t('服务端网页工具')}</span>
+                <div className="seg" style={{ justifyContent: 'flex-start', flexWrap: 'wrap' }}>
+                  <label title={supportText(webSupport.search)}>
+                    <input type="checkbox" checked={webTools.search} disabled={!nativeTools || webSupport.search === 'unsupported'} onChange={(e) => patchSeat(s.seat, { serverWebTools: { ...webTools, search: e.target.checked } }, 0)} />
+                    {t('联网搜索')}
+                  </label>
+                  <label title={supportText(webSupport.extractor)}>
+                    <input type="checkbox" checked={webTools.extractor} disabled={!nativeTools || !webTools.search || webSupport.extractor === 'unsupported'} onChange={(e) => patchSeat(s.seat, { serverWebTools: { ...webTools, extractor: e.target.checked } }, 0)} />
+                    {t('网页提取')}
+                  </label>
+                </div>
+                <span className="tiny dim">{nativeTools ? `${t('搜索')}：${supportText(webSupport.search)}；${t('提取')}：${supportText(webSupport.extractor)}` : t('需要原生工具调用模式')}</span>
+              </div>
               <label className="field">
                 {t('技能与旁听超时（秒）')}
                 <input type="number" min={90} max={300} value={s.timeoutSec} onChange={(e) => patchSeat(s.seat, { timeoutSec: Number(e.target.value) })} />

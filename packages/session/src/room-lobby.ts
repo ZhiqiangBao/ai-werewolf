@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { DEFAULT_GAME_LOCALE, LocalizedError, THINKING_MODES, apiProtocol, apiUrl, avatarDefaultName, defaultGameTiming, defaultThinkingMode, gameText, isAvatarStyleId, isGameLocale, parseGameTiming, thinkingOptions } from '@werewolf/protocol';
+import { DEFAULT_GAME_LOCALE, LocalizedError, THINKING_MODES, apiProtocol, apiUrl, avatarDefaultName, defaultGameTiming, defaultServerWebTools, defaultThinkingMode, gameText, isAvatarStyleId, isGameLocale, parseGameTiming, serverWebToolSupport, thinkingOptions } from '@werewolf/protocol';
 import type { AvatarStyleId, Catalog, ParticipantInput, RoomSetupInput, RuleValue, Seat, SeatConfigInput, SeatConfigView, SeatTestResult } from '@werewolf/protocol';
 import { DEFAULT_PRESET, allOptions, buildRuleCard, buildRules, engineCatalog, getPreset, validateRules } from '@werewolf/engine';
 import { STYLES, redact, testConnection } from '@werewolf/llm';
@@ -41,6 +41,7 @@ function defaultSeat(seat: Seat, avatarStyle: AvatarStyleId = 'storybook'): Seat
     persona: '',
     toolMode: 'tools',
     timeoutSec: 90,
+    serverWebTools: defaultServerWebTools(),
   };
 }
 
@@ -188,6 +189,16 @@ export class RoomLobbyService {
       if (s.toolMode !== 'tools' && s.toolMode !== 'json') throw new ApiFailure(400, 'BAD_REQUEST', '输出模式只能是 tools 或 json', { key: '输出模式只能是 tools 或 json' });
       seat.toolMode = s.toolMode;
     }
+    if (s.serverWebTools !== undefined) {
+      const next = { ...(seat.serverWebTools ?? defaultServerWebTools()) };
+      for (const key of ['search', 'extractor'] as const) {
+        const value = s.serverWebTools[key];
+        if (value !== undefined && typeof value !== 'boolean') throw new ApiFailure(400, 'BAD_REQUEST', '服务端网页工具开关必须是布尔值', { key: '服务端网页工具开关必须是布尔值' });
+        if (value !== undefined) next[key] = value;
+      }
+      if (next.extractor && !next.search) throw new ApiFailure(400, 'BAD_REQUEST', '网页提取需要同时开启联网搜索', { key: '网页提取需要同时开启联网搜索' });
+      seat.serverWebTools = next;
+    }
     if (s.name !== undefined) {
       const name = text(s.name, 12);
       seat.name = name || avatarDefaultName(rec.avatarStyle ?? 'storybook', seat.seat);
@@ -220,7 +231,7 @@ export class RoomLobbyService {
       seat.modelId = s.modelId === null ? null : preset.id;
       seat.model = preset.model;
       seat.baseUrl = preset.baseUrl;
-      seat.apiProtocol = s.apiProtocol ?? preset.apiProtocol ?? 'chat_completions';
+      seat.apiProtocol = s.apiProtocol ?? preset.apiProtocol ?? 'responses';
       seat.adapter = 'openai_compatible';
       if (typeof s.apiKey !== 'string') {
         if (preset.apiKey) {
@@ -246,7 +257,9 @@ export class RoomLobbyService {
 
   seatView(s: SeatRecord): SeatConfigView {
     const { apiKeyEnc: _enc, apiKeyMask, nameSource: _nameSource, ...rest } = s;
-    return { ...rest, apiProtocol: s.apiProtocol ?? 'chat_completions', ...(s.adapter === 'openai_compatible' ? { thinkingMode: s.thinkingMode ?? defaultThinkingMode(s.baseUrl, s.model, s.apiProtocol) } : {}), apiKeyMasked: apiKeyMask, modelId: s.modelId ? this.models.find(s.modelId)?.id ?? s.modelId : null };
+    const protocol = s.apiProtocol ?? 'responses';
+    const serverWebTools = s.serverWebTools ?? defaultServerWebTools();
+    return { ...rest, apiProtocol: protocol, serverWebTools, serverWebToolSupport: s.adapter === 'openai_compatible' ? serverWebToolSupport(s.baseUrl, s.model, protocol, s.thinkingMode) : undefined, ...(s.adapter === 'openai_compatible' ? { thinkingMode: s.thinkingMode ?? defaultThinkingMode(s.baseUrl, s.model, s.apiProtocol) } : {}), apiKeyMasked: apiKeyMask, modelId: s.modelId ? this.models.find(s.modelId)?.id ?? s.modelId : null };
   }
 
   setupErrors(rec: RoomReadRecord, locale = rec.locale ?? DEFAULT_GAME_LOCALE): string[] {
@@ -332,7 +345,7 @@ export class RoomLobbyService {
   private unavailableModel(seat: SeatRecord): boolean {
     if (seat.controller !== 'ai' || seat.adapter !== 'openai_compatible') return false;
     if (seat.modelId) return this.models.find(seat.modelId)?.lifecycle !== 'active';
-    const matches = this.models.list().filter((m) => m.model === seat.model && m.apiProtocol === (seat.apiProtocol ?? 'chat_completions') && sameModelRoute(m.baseUrl, seat.baseUrl, m.apiProtocol));
+    const matches = this.models.list().filter((m) => m.model === seat.model && m.apiProtocol === (seat.apiProtocol ?? 'responses') && sameModelRoute(m.baseUrl, seat.baseUrl, m.apiProtocol));
     return matches.length > 0 && !matches.some((m) => this.models.find(m.id)?.lifecycle === 'active');
   }
 }
