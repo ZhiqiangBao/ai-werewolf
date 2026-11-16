@@ -12,6 +12,7 @@ import { captionsFromWords, captionContent, sourceCaptionWords, srtDocument } fr
 import { isPlayerSpeech, avatarWaveFrame, verticalScene, type StoryCard } from './vertical-scene';
 import { encodingSettings, videoEncodingArgs } from './encoding';
 import { sceneTransition, sceneFadeFilters } from './transitions';
+import { videoLocale } from './video-locale';
 
 const hash = (b: Buffer | string) => createHash('sha256').update(b).digest('hex');
 interface Item { id: string; quote: string; factReview: string; audioReview: string; excerptNote: string; audioSha256: string; wordStart?: number; wordEnd?: number; story?: StoryCard }
@@ -162,6 +163,8 @@ export async function makeVertical(sourcePath: string, selectionPath: string, ou
 if (process.argv[1]?.replace(/\\/g, '/').endsWith('/vertical-highlight.ts')) {
   const opt = (name: string) => process.argv.find(x => x.startsWith(`--${name}=`))?.slice(name.length + 3);
   const source = opt('source-project'), selection = opt('selection'), output = opt('output-dir'), encoder = opt('encoder');
+  const locale = opt('video-locale');
+  if (locale) { videoLocale(undefined, locale); process.env.VIDEO_LOCALE = locale; }
   assert(source && selection && output && (encoder === 'cpu' || encoder === 'gpu'), 'Required: --source-project=PATH --selection=PATH --output-dir=NEW_PATH --encoder=cpu|gpu');
   await makeVertical(source, selection, output, encoder);
 }

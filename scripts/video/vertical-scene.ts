@@ -46,7 +46,8 @@ export function avatarWaveFrame(samples: Int16Array, frame: number): Buffer {
 
 /** One large focal element; subtitles are burned separately without a box. */
 export async function verticalScene(clip: Clip, theme: string, script: Script, story?: StoryCard) {
-  const locale = videoLocale(script.locale), t = (key: string, ...values: unknown[]) => videoText(locale, key, ...values);
+  // 竖屏是面向用户的画面层；默认使用中文 UI，需展示英文或日文时由 --video-locale 明确指定。
+  const locale = videoLocale(undefined, process.env.VIDEO_LOCALE ?? 'zh-CN'), t = (key: string, ...values: unknown[]) => videoText(locale, key, ...values);
   const art = resolve('apps/web/public/art/moon-village');
   const [background, atlas, table] = await Promise.all([
     loadImage(resolve(art, `village-${clip.phase === 'night' ? 'night' : 'day'}-v1.webp`)),
