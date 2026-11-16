@@ -40,7 +40,7 @@ export async function makeVertical(sourcePath: string, selectionPath: string, ou
   const clips = JSON.parse(await readFile(join(sourceDir, 'clips.json'), 'utf8')) as Clip[];
   const voices = JSON.parse(await readFile(join(sourceDir, 'voices.json'), 'utf8')) as VoiceCatalog;
   const bound = JSON.parse(await readFile(join(sourceDir, 'avatar-theme.json'), 'utf8'));
-  assert(source.perspective === 'god' && script.perspective === 'god' && source.status === 'ended', 'Only completed god projects are supported');
+  assert((source.perspective === 'god' || source.perspective === 'player') && script.perspective === source.perspective && source.status === 'ended', 'Only completed god or player projects are supported');
   assert(source.roomId === script.roomId && selection.roomId === source.roomId && selection.sourceSha256 === hash(sourceBytes), 'Wrong room or source hash');
   assert(selection.reviewed === true && Array.isArray(selection.clips) && selection.clips.length > 0, 'Selection has not been reviewed');
   assert(selection.theme === bound.theme && ['campus','storybook','gufeng','fantasy','urban','future'].includes(selection.theme), 'Avatar theme mismatch');
@@ -75,7 +75,8 @@ export async function makeVertical(sourcePath: string, selectionPath: string, ou
     const inspection = inspectAudio(samples, sampleRate); assert.equal(inspection.issues.length, 0, 'Audio waveform failed inspection');
     const choice = await effectiveAudioAlignment(file, meta, source.locale ?? 'zh-CN');
     const words = choice.meta.sentences.flatMap((sentence: any) => sentence.words);
-    assert(words.every((word: any) => Number.isFinite(word.begin_time) && Number.isFinite(word.end_time) && word.begin_time >= 0 && word.end_time > word.begin_time && word.end_time <= samples.length / sampleRate * 1000 + 1), 'Word timing exceeds source audio');
+    const audioLimitMs = samples.length / sampleRate * 1000;
+    assert(words.every((word: any) => Number.isFinite(word.begin_time) && Number.isFinite(word.end_time) && word.begin_time >= 0 && word.end_time >= word.begin_time && word.end_time <= audioLimitMs + 1), `Word timing exceeds source audio: ${clip.id} max=${Math.max(...words.map((word: any) => word.end_time))} limit=${audioLimitMs}`);
     const captions = captionsFromWords(choice.meta, samples.length / sampleRate, source.locale ?? 'zh-CN');
     assert.equal(captionContent(captions.map(c => c.text).join('')), captionContent(clip.spokenText), 'Caption text mismatch');
     assert(captions.every(c => c.start >= 0 && c.end <= samples.length / sampleRate + .001), 'Caption out of bounds');
@@ -108,35 +109,37 @@ export async function makeVertical(sourcePath: string, selectionPath: string, ou
     const frames = Math.ceil((selectedPcm.length / sampleRate + .2) * 30); totalFrames += frames;
     chosen.push({ clip, pcm: selectedPcm, frames, captions: selectedCaptions, item, alignment: choice.summary ?? { method: 'provider' }, cut });
   }
-  assert(totalFrames / 30 <= 120, 'Selection exceeds 120 seconds');
+  if (source.perspective === 'god') assert(totalFrames / 30 <= 120, 'Selection exceeds 120 seconds');
   const encoding = encodingSettings({ ...process.env, VIDEO_ENCODER: encoder === 'gpu' ? 'h264_nvenc' : 'libx264', VIDEO_REQUIRE_GPU: encoder === 'gpu' ? '1' : '0' });
   const scenes = chosen.map(c => ({ ...c.clip, frames: c.frames }));
   // Exclusive directory creation protects all prior artifacts, including failed attempts.
   await mkdir(output, { recursive: false }); await mkdir(join(output, 'output')); await mkdir(join(output, 'review'));
   await writeFile(join(output, 'encoding-settings.json'), JSON.stringify(encoding, null, 2));
-  let start = 0; const pcmParts: Buffer[] = [], cues: {text: string; start: number; end: number}[] = [], map = [];
-  for (let i = 0; i < chosen.length; i++) {
-    const c = chosen[i], stem = String(i).padStart(3, '0');
+  const starts: number[] = []; let frameCursor = 0;
+  for (const c of chosen) { starts.push(frameCursor); frameCursor += c.frames; }
+  const pcmParts: Buffer[] = Array(chosen.length), cueParts: {text: string; start: number; end: number}[][] = Array(chosen.length), map: any[] = Array(chosen.length);
+  const renderOne = async (i: number) => {
+    const c = chosen[i], start = starts[i], stem = String(i).padStart(3, '0');
     const image = await verticalScene(c.clip, selection.theme, script, c.item.story); await writeFile(join(output, `${stem}.png`), image);
     await writeFile(join(output, `${stem}.ass`), ass(c.captions));
-    const audio = Buffer.alloc(c.frames * 800 * 2); for (let j = 0; j < c.pcm.length; j++) audio.writeInt16LE(c.pcm[j], j * 2); pcmParts.push(audio);
-    cues.push(...c.captions.map(x => ({ ...x, start: x.start + start / 30, end: x.end + start / 30 })));
-    map.push({ ...c.item, startFrame: start, frames: c.frames, sampleCount: c.pcm.length, alignment: c.alignment, ...(c.cut ? { cut: c.cut } : {}) }); start += c.frames;
+    const audio = Buffer.alloc(c.frames * 800 * 2); for (let j = 0; j < c.pcm.length; j++) audio.writeInt16LE(c.pcm[j], j * 2); pcmParts[i] = audio;
+    cueParts[i] = c.captions.map(x => ({ ...x, start: x.start + start / 30, end: x.end + start / 30 }));
+    map[i] = { ...c.item, startFrame: start, frames: c.frames, sampleCount: c.pcm.length, alignment: c.alignment, ...(c.cut ? { cut: c.cut } : {}) };
     const speaking = isPlayerSpeech(c.clip);
     if (speaking) {
       await mkdir(join(output, 'rings', stem), { recursive: true });
-      for (let frame = 0; frame < c.frames; frame++)
-        await writeFile(join(output, 'rings', stem, `${String(frame).padStart(6, '0')}.png`), avatarWaveFrame(c.pcm, frame));
+      for (let frame = 0; frame < c.frames; frame++) await writeFile(join(output, 'rings', stem, `${String(frame).padStart(6, '0')}.png`), avatarWaveFrame(c.pcm, frame));
     }
-    const codec = videoEncodingArgs(encoding);
-    const fade = [`ass=${stem}.ass`, ...sceneFadeFilters(sceneTransition(scenes[i], scenes[i - 1], scenes[i + 1]), c.frames)].join(',');
-    const visual = speaking
+    const codec = videoEncodingArgs(encoding), fade = [`ass=${stem}.ass`, ...sceneFadeFilters(sceneTransition(scenes[i], scenes[i - 1], scenes[i + 1]), c.frames)].join(','), visual = speaking
       ? ['-framerate','30','-i',`rings/${stem}/%06d.png`,'-filter_complex',`[0:v][1:v]overlay=130:370:shortest=1,${fade}[v]`,'-map','[v]']
       : ['-vf', fade];
     await run(process.env.FFMPEG_PATH || 'ffmpeg', ['-hide_banner','-loglevel','error','-n','-loop','1','-framerate','30','-i',`${stem}.png`,...visual,'-frames:v',String(c.frames),...codec,'-r','30',`${stem}.mp4`], output);
     console.log(JSON.stringify({ rendered: i + 1, total: chosen.length, clip: c.clip.id }));
-  }
-  const pcm = Buffer.concat(pcmParts); await writeFile(join(output, 'master.wav'), Buffer.concat([wavHeader(pcm.length / 2, 24000), pcm]));
+  };
+  let cursor = 0; const jobs = Math.max(1, Math.min(2, Number(process.env.VIDEO_JOBS) || 2));
+  const worker = async () => { while (true) { const i = cursor++; if (i >= chosen.length) return; await renderOne(i); } };
+  await Promise.all(Array.from({ length: jobs }, () => worker()));
+  const cues = cueParts.flat(), pcm = Buffer.concat(pcmParts); await writeFile(join(output, 'master.wav'), Buffer.concat([wavHeader(pcm.length / 2, 24000), pcm]));
   await writeFile(join(output, 'list.ffconcat'), 'ffconcat version 1.0\n' + chosen.map((_, i) => `file '${String(i).padStart(3, '0')}.mp4'`).join('\n') + '\n');
   await writeFile(join(output, 'output', 'subtitles.srt'), srtDocument(cues));
   await run(process.env.FFMPEG_PATH || 'ffmpeg', ['-hide_banner','-loglevel','error','-n','-f','concat','-safe','0','-i','list.ffconcat','-i','master.wav','-map','0:v','-map','1:a','-c:v','copy','-c:a','aac','-b:a',`${encoding.audioKbps}k`,'-movflags','+faststart','output/highlight-vertical.mp4'], output);

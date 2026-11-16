@@ -8,13 +8,13 @@
 
 `pnpm video:make` 支持：
 
-- `--asr-provider=auto|local|qwen-token-plan|mimo-token-plan|off`
+- `--asr-provider=auto|local|qwen-token-plan|qwen-dashscope|mimo-token-plan|off`
 - 可选 `--asr-aliases=FILE`
-- 可选 `--alignment-provider=qwen-token-plan`
+- 可选 `--alignment-provider=qwen-token-plan|qwen-dashscope`
 
 ASR 默认关闭（`off`），按需启用，不会因制作视频自动产生识别请求。显式 `auto` 才按语言路由：中文和英语使用本地 Q8，日语使用 Qwen Token Plan 在线 ASR。日语生产只能用在线 Qwen；显式 `local` 或 `mimo-token-plan` 会被拒绝。MiMo 日语结果仅保存在单独实验报告中，不能进入日语生产路由。
 
-`auto` 不会在中文/英语本地服务不可用时改走在线 ASR。选择启用 ASR 后，第一次制作前按源局语言准备路由，并在产生外部 TTS 请求前确认前置条件：中文/英语使用 `auto` 时先完成本机模型注册并确认服务 `ready`；日语或显式 Qwen 路由须确认项目加密模型库中有可解密的 Qwen Token Plan 条目。Qwen ASR 只从 `data/models.json` 和对应项目主密钥读取此凭据，不读取 `WEREWOLF_TTS_API_KEY`；TTS 的凭据来源见 [批量 TTS](tts-batch.md)。如当前机器缺少本地模型，不要假设示例路径存在或擅自下载；在用户授权下显式改选 Qwen，或先取得模型安装授权。`off` 是当前默认值，表示没有执行语义核对；不能标记为语音内容通过。
+`auto` 不会在中文/英语本地服务不可用时改走在线 ASR。选择启用 ASR 后，第一次制作前按源局语言准备路由，并在产生外部 TTS 请求前确认前置条件：中文/英语使用 `auto` 时先完成本机模型注册并确认服务 `ready`；日语或显式 Token Plan Qwen 路由须确认项目加密模型库中有可解密的 Qwen Token Plan 条目；显式 `qwen-dashscope` 路由固定读取 `DASHSCOPE_API_KEY`，使用官方 `qwen-audio-3.1-asr-flash` HTTP 接口，不读取 Token Plan 凭据，也不自动回退。Qwen Token Plan ASR 只从 `data/models.json` 和对应项目主密钥读取此凭据，不读取 `WEREWOLF_TTS_API_KEY`；TTS 的凭据来源见 [批量 TTS](tts-batch.md)。如当前机器缺少本地模型，不要假设示例路径存在或擅自下载；在用户授权下显式改选云端路由，或先取得模型安装授权。`off` 是当前默认值，表示没有执行语义核对；不能标记为语音内容通过。
 
 阶段顺序为：
 
@@ -25,7 +25,7 @@ ASR 默认关闭（`off`），按需启用，不会因制作视频自动产生�
 
 成功的识别结果按音频、provider、模型和选项缓存；复用缓存不会再次请求服务。转写与原稿不一致会列为 `needs-review`，错误或不完整转写列为 `failure`。原稿不会被自动改写。默认 `off` 时跳过此阶段，状态为 `not-checked-explicitly-disabled`。
 
-Q8 的本地识别只提供转写，不提供可用于字幕的词级时间。日语显式启用 Qwen 后可用该次响应的 `--align` 词边界；若缺失或检查失败，保留检查点和原响应，取得可验证且绑定原音的独立词边界后，按下文显式导入。不能添加 `--alignment-provider=qwen-token-plan` 期待它重新请求：Qwen 主识别只复用同一响应，该选项只用于本地/MiMo 核对后的英语补对齐。英语选本地或 MiMo 时，若词时间缺失或检查不通过，明确选择该选项才会额外请求 Qwen，否则以 `alignment-required` 失败。额外对齐请求计入报告的 `alignmentRequests`；可复用的 Qwen 主识别响应不会重复请求。当前外部词边界导入仅支持英语、日语；中文不支持外部补对齐，若原 TTS 字时不可靠须停止并取得可靠字时，不能把 Q8 转写当作对齐。
+Q8 的本地识别只提供转写，不提供可用于字幕的词级时间。显式启用 `qwen-token-plan` 或 `qwen-dashscope` 后可用该次响应的 `--align` 词边界；若缺失或检查失败，保留检查点和原响应，取得可验证且绑定原音的独立词边界后，按下文显式导入。不能添加对齐参数期待它重新请求：Qwen 主识别只复用同一响应；`qwen-dashscope` 直接使用其官方响应中的 `output.sentence.words`，不改用 Token Plan。英语选本地或 MiMo 时，若词时间缺失或检查不通过，明确选择云端 Qwen 路由才会额外请求，否则以 `alignment-required` 失败。额外对齐请求计入报告的 `alignmentRequests`；可复用的云端 ASR 响应不会重复请求。中文若原 TTS 字时不可靠，必须使用显式云端 Qwen 路由取得可靠字时，不能把 Q8 转写当作对齐。
 
 关闭语义核对：
 
@@ -50,9 +50,10 @@ pnpm video:make --room=latest --check-only --asr-provider=auto
 pnpm video:make --room=latest --asr-provider=auto
 pnpm video:make --room=EN_ROOM_ID --asr-provider=local --alignment-provider=qwen-token-plan
 pnpm video:make --room=latest --asr-provider=qwen-token-plan
+pnpm video:make --room=latest --asr-provider=qwen-dashscope
 ```
 
-第二条把 `EN_ROOM_ID` 换成实际英语房间号，在本地识别后明确请求 Qwen 词边界。日语如需内容核对，使用 `--asr-provider=qwen-token-plan`；若现有词时不可靠，可对单个片段运行 `pnpm video:review-audio --provider=qwen-token-plan --clip=CLIP_ID --align`，先设置正确的 `VIDEO_PROJECT_DIR` 与 `WEREWOLF_DATA`。中文可用 Q8 核对内容，但不支持 Qwen 外部补对齐；若源时间不可靠，停止并索取可靠字时。也可用 `--asr-provider=mimo-token-plan` 对支持语言做单独的 MiMo 调用。
+第二条把 `EN_ROOM_ID` 换成实际英语房间号，在本地识别后明确请求 Qwen 词边界。日语如需内容核对，使用任一显式 Qwen 路由；若现有词时不可靠，可对单个片段运行 `pnpm video:review-audio --provider=qwen-dashscope --clip=CLIP_ID --align`，先设置正确的 `VIDEO_PROJECT_DIR` 与 `WEREWOLF_DATA`。中文可用 `qwen-dashscope` 核对原话并取得词边界；若源时间不可靠，不把本地转写当作对齐。也可用 `--asr-provider=mimo-token-plan` 对支持语言做单独的 MiMo 调用。
 
 ### 别名文件
 
@@ -149,7 +150,7 @@ pnpm asr:start
 pnpm video:review-audio --provider=local --align --alignment-provider=qwen-token-plan
 ```
 
-单独的 `video:review-audio` 参数是 `--provider=auto|local|qwen-token-plan|mimo-token-plan`、`--aliases=JSON_FILE`、`--clip=ID`（可重复）、`--align`、`--alignment-provider=qwen-token-plan`。该命令读项目的 `source.json`、`script.json`、`clips.json`，把音频统一转换为 16 kHz、单声道 PCM16 WAV 后送到明确选择的 provider，结果写入 `output/asr-review/`。例如 `pnpm video:review-audio --provider=auto --clip=027-1` 只检查一个已存在的片段；片段 ID 从本项目 clips.json 取得，未知 ID 在请求前失败。上述带补对齐选项的命令用于英语；中文可用 `--provider=local` 核对原话，字时仍须可靠；日语请改用 `--provider=qwen-token-plan`，不得本地预筛。
+单独的 `video:review-audio` 参数是 `--provider=auto|local|qwen-token-plan|qwen-dashscope|mimo-token-plan`、`--aliases=JSON_FILE`、`--clip=ID`（可重复）、`--align`、`--alignment-provider=qwen-token-plan|qwen-dashscope`。该命令读项目的 `source.json`、`script.json`、`clips.json`，把音频统一转换为 16 kHz、单声道 PCM16 WAV 后送到明确选择的 provider，结果写入 `output/asr-review/`。例如 `pnpm video:review-audio --provider=auto --clip=027-1` 只检查一个已存在的片段；片段 ID 从本项目 clips.json 取得，未知 ID 在请求前失败。中文字幕对齐使用 `--provider=qwen-dashscope --align` 或已授权的 Token Plan Qwen；日语可使用任一显式 Qwen 路由，不得本地预筛。
 
 云端调用无隐藏 retry 或 billing fallback。错误报告会隐藏 provider 响应细节和凭据。识别报告包含 request 次数、模型身份、缓存状态、稿件/音频 hash 及逐段状态；将 `output/asr-review/` 视作真实语音私密素材。
 

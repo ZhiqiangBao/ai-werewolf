@@ -25,6 +25,7 @@ describe('external ASR token alignment', () => {
     ['en', "Hello, world!", [token(' ', 5, 20), token('Hello', 25, 180), token(',', 180, 200), token(' ', 200, 240), token('world', 250, 480), token('!', 480, 500), token(' ', 500, 510)]],
     ['ja', 'こんにちは、世界。', [token('こんにちは', 10, 210), token('、', 210, 230), token(' ', 230, 260), token('世界', 270, 480), token('。', 480, 500)]],
     ['en', "Don't go.", [token('Don', 10, 100), token("'", 100, 120), token('t', 120, 150), token(' ', 150, 170), token('go', 180, 320), token('.', 320, 340)]],
+    ['zh', '我说五号和八号。', [token('我说', 10, 100), token('5号', 120, 220), token('和', 230, 270), token('8号', 280, 400), token('。', 400, 430)]],
   ])('preserves actual word boundaries and source for %s', (locale, text, words) => {
     const result = align(input(text, words, locale));
     expect(result.words.map((word) => word.text).join('')).toBe(text);

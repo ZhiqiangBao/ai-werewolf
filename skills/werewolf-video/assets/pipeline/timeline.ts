@@ -23,18 +23,21 @@ const englishSmall = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'sev
 const englishTens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
 const japaneseDigits = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
 const englishSymbols: Record<string, string> = { '+': 'plus', '≥': 'greaterthanorequalto', '≤': 'lessthanorequalto', '>': 'greaterthan', '<': 'lessthan', '=': 'equals', '%': 'percent' };
-function numberReading(raw: string, language: 'en' | 'ja'): string | undefined {
-  if (!/^(?:0|[1-9]\d?)(?:\.\d{1,3})?$/.test(raw)) return undefined;
+function numberReading(raw: string, language: 'en' | 'ja' | 'zh'): string | undefined {
+  const pattern = language === 'zh' ? /^(?:0|[1-9]\d*)(?:\.\d{1,3})?$/ : /^(?:0|[1-9]\d?)(?:\.\d{1,3})?$/;
+  if (!pattern.test(raw)) return undefined;
   const [whole, fraction] = raw.split('.'), n = Number(whole);
   if (language === 'ja' && fraction !== undefined) return undefined;
   const integer = language === 'en'
     ? n < 20 ? englishSmall[n] : englishTens[Math.floor(n / 10)] + (n % 10 ? englishSmall[n % 10] : '')
-    : n < 10 ? japaneseDigits[n] : (n >= 20 ? japaneseDigits[Math.floor(n / 10)] : '') + '十' + (n % 10 ? japaneseDigits[n % 10] : '');
-  return integer + (fraction === undefined ? '' : 'point' + [...fraction].map((digit) => englishSmall[Number(digit)]).join(''));
+    : language === 'ja'
+      ? n < 10 ? japaneseDigits[n] : (n >= 20 ? japaneseDigits[Math.floor(n / 10)] : '') + '十' + (n % 10 ? japaneseDigits[n % 10] : '')
+      : whole.length > 2 ? `${[...whole.slice(0, -2)].map((digit) => japaneseDigits[Number(digit)]).join('')}${Number(whole.slice(-2)) >= 10 && Number(whole.slice(-2)) < 20 ? '十' + (whole.endsWith('10') ? '' : japaneseDigits[Number(whole.slice(-1))]) : [...whole.slice(-2)].map((digit) => japaneseDigits[Number(digit)]).join('')}` : n < 10 ? japaneseDigits[n] : n < 20 ? '十' + (n % 10 ? japaneseDigits[n % 10] : '') : n < 100 ? japaneseDigits[Math.floor(n / 10)] + '十' + (n % 10 ? japaneseDigits[n % 10] : '') : whole;
+  return integer + (fraction === undefined ? '' : language === 'zh' ? '点' + [...fraction].map((digit) => japaneseDigits[Number(digit)]).join('') : 'point' + [...fraction].map((digit) => englishSmall[Number(digit)]).join(''));
 }
 
 /** Canonical letters retain the exact source span; a number remains one indivisible span. */
-function normalizedSpans(text: string, language: 'en' | 'ja') {
+function normalizedSpans(text: string, language: 'en' | 'ja' | 'zh') {
   const chars = [...text], normalized: string[] = [], spans: SourceSpan[] = [];
   for (let i = 0; i < chars.length;) {
     const dayNightConnector = language === 'en' && chars[i] === '-' && /(?:^|[^a-z])(?:day|night)$/i.test(chars.slice(0, i).join(''));
@@ -49,7 +52,7 @@ function normalizedSpans(text: string, language: 'en' | 'ja') {
       i += numeric.length; continue;
     }
     if (Object.hasOwn(englishSymbols, chars[i])) {
-      const symbol = language === 'en' ? englishSymbols[chars[i]] : chars[i];
+      const symbol = language === 'en' ? englishSymbols[chars[i]] : language === 'zh' ? (symbolReadings[chars[i]] ?? captionContent(chars[i])) : chars[i];
       for (const char of symbol) { normalized.push(char); spans.push({ start: i, end: i + 1, numeric: false }); }
       i++; continue;
     }
@@ -63,7 +66,7 @@ function normalizedSpans(text: string, language: 'en' | 'ja') {
 /** Source-codepoint ranges for strict supported-language alignment. */
 export function captionSpans(text: string, locale: string) {
   const language = new Intl.Locale(locale).language;
-  if (language !== 'en' && language !== 'ja') throw Error('External transcript alignment supports en and ja only');
+  if (language !== 'en' && language !== 'ja' && language !== 'zh') throw Error('External transcript alignment supports en, ja, and zh');
   return normalizedSpans(text, language);
 }
 
@@ -83,7 +86,7 @@ export function assertNonUniformWordTimes(words: { begin_time: number; end_time:
 export function normalizedCaptionText(text: string, locale: string) {
   const language = new Intl.Locale(locale).language;
   if (language === 'en' || language === 'ja') return normalizedSpans(text, language).normalized;
-  if (language === 'zh') return [...spokenText(text, locale)].map((char) => symbolReadings[char] ?? captionContent(char)).join('').toLocaleLowerCase('en');
+  if (language === 'zh') return captionSpans(text, locale).normalized;
   return captionContent(text).toLocaleLowerCase('en');
 }
 

@@ -61,7 +61,9 @@ const media = JSON.parse(execFileSync(ffprobe, ['-v', 'error', '-show_streams', 
 const picture = media.streams.find((s: any) => s.codec_type === 'video'), audio = media.streams.find((s: any) => s.codec_type === 'audio');
 assert.equal(picture.width, 1920); assert.equal(picture.height, 1080); assert.equal(picture.r_frame_rate, '30/1');
 assert.equal(Number(picture.nb_frames), timeline.frames); assert.equal(audio.codec_name, 'aac');
-assert(Math.abs(Number(picture.duration) - timeline.duration) < 1 / FPS);
+// MP4 stream duration may end on the last frame timestamp rather than its full frame interval.
+// The exact frame count above is the authoritative picture duration for this CFR export.
+assert(Math.abs(Number(picture.duration) - Number(picture.nb_frames) / FPS) < 2 / FPS);
 assert(Math.abs(Number(audio.duration) - timeline.duration) < .05);
 assert.equal(media.chapters.length, source.chapters.length);
 const report = { roomId: source.roomId, video, bytes: (await stat(video)).size, durationSeconds: timeline.duration, frames: timeline.frames,

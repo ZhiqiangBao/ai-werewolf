@@ -16,7 +16,7 @@ const args = new Map(process.argv.slice(2).map((a) => { const i = a.indexOf('=')
 const stages = ['export', 'plan', 'preflight', 'tts', 'audit-audio', 'review-audio', 'timeline', 'render', 'preview', 'verify'] as const;
 const supported = new Set(['--help', '--room', '--player-seat', '--prepare-only', '--check-only', '--through', '--encoder', '--encoding-profile', '--video-quality', '--theme', '--video-locale', '--voices', '--narration', '--data-dir', '--project-dir', '--resume', '--repair-audio', '--tts-provider', '--tts-adapter', '--tts-model', '--video-kbps', '--max-video-kbps', '--audio-kbps', '--asr-provider', '--asr-aliases', '--alignment-provider']);
 for (const key of args.keys()) if (!supported.has(key)) throw Error(`Unknown option ${key}`);
-if (args.has('--help')) { console.log('video:make --room=latest|ID [--player-seat=N] [--prepare-only | --check-only] [--through=STAGE] [--data-dir=DIR] [--project-dir=DIR] [--encoder=auto|cpu|gpu] [--encoding-profile=upload|compact] [--video-quality=15..40] [--video-kbps=N --max-video-kbps=N] [--video-locale=zh-CN|en|ja] [--repair-audio] [--tts-model=qwen-audio-3.0-tts-plus|qwen-audio-3.1-tts-flash] [--tts-provider=ID --tts-adapter=FILE] [--asr-provider=auto|local|qwen-token-plan|mimo-token-plan|off] [--asr-aliases=FILE] [--alignment-provider=qwen-token-plan] [--theme=campus|storybook|gufeng|fantasy|urban|future] [--voices=FILE] [--narration=FILE]\nASR is off by default; enable it explicitly or review selected clips when needed. Local model files must already be installed.'); process.exit(0); }
+if (args.has('--help')) { console.log('video:make --room=latest|ID [--player-seat=N] [--prepare-only | --check-only] [--through=STAGE] [--data-dir=DIR] [--project-dir=DIR] [--encoder=auto|cpu|gpu] [--encoding-profile=upload|compact] [--video-quality=15..40] [--video-kbps=N --max-video-kbps=N] [--video-locale=zh-CN|en|ja] [--repair-audio] [--tts-model=qwen-audio-3.0-tts-plus|qwen-audio-3.1-tts-flash] [--tts-provider=ID --tts-adapter=FILE] [--asr-provider=auto|local|qwen-token-plan|qwen-dashscope|mimo-token-plan|off] [--asr-aliases=FILE] [--alignment-provider=qwen-token-plan|qwen-dashscope] [--theme=campus|storybook|gufeng|fantasy|urban|future] [--voices=FILE] [--narration=FILE]\nASR is off by default; enable it explicitly or review selected clips when needed. Local model files must already be installed.'); process.exit(0); }
 encodingSettings({ ...process.env,
   ...(args.has('--encoding-profile') ? { VIDEO_ENCODING_PROFILE: args.get('--encoding-profile')! } : {}),
   ...(args.has('--video-quality') ? { VIDEO_QUALITY: args.get('--video-quality')! } : {}),
@@ -29,9 +29,9 @@ if (args.has('--player-seat') && args.has('--repair-audio')) throw Error('Player
 const requestedAsr = args.get('--asr-provider') || 'off';
 const requestedTtsModel = args.get('--tts-model');
 if (requestedTtsModel) environmentForTtsModel(requestedTtsModel);
-if (!['auto', 'local', 'qwen-token-plan', 'mimo-token-plan', 'off'].includes(requestedAsr)) throw Error('Unsupported ASR provider');
+if (!['auto', 'local', 'qwen-token-plan', 'qwen-dashscope', 'mimo-token-plan', 'off'].includes(requestedAsr)) throw Error('Unsupported ASR provider');
 const alignmentProvider = args.get('--alignment-provider');
-if (alignmentProvider && alignmentProvider !== 'qwen-token-plan') throw Error('Unsupported alignment provider');
+if (alignmentProvider && !['qwen-token-plan', 'qwen-dashscope'].includes(alignmentProvider)) throw Error('Unsupported alignment provider');
 if (requestedAsr === 'off' && alignmentProvider) throw Error('Alignment provider requires audio review');
 if (args.has('--asr-aliases') && !existsSync(resolve(root, args.get('--asr-aliases')!))) throw Error('Missing --asr-aliases file');
 const dataRoot = resolve(root, args.get('--data-dir') || 'data');

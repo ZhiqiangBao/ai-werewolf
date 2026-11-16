@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { projectQwenTokenPlanKey } from './project-models';
 import { mimoConnection } from './speech/mimo';
 
-export type AsrProvider = 'local' | 'qwen-token-plan' | 'mimo-token-plan';
+export type AsrProvider = 'local' | 'qwen-token-plan' | 'qwen-dashscope' | 'mimo-token-plan';
 export type LocalAsrBackend = 'transformers' | 'gguf';
 export interface LocalAsrRuntime { device: string; dtype: string; versions: Record<string, string | null>; [key: string]: unknown }
 export interface AsrOptions { provider?: AsrProvider; locale?: string; dataDir?: string; signal?: AbortSignal }
@@ -43,18 +43,19 @@ export function asrLanguage(locale: unknown): 'zh' | 'en' | 'ja' {
 export function asrProviderForLocale(provider: AsrProvider | 'auto', locale: unknown): AsrProvider {
   const language = asrLanguage(locale);
   const effective = provider === 'auto' ? (language === 'ja' ? 'qwen-token-plan' : 'local') : provider;
-  if (!['local', 'qwen-token-plan', 'mimo-token-plan'].includes(effective)) throw Error('Unsupported ASR provider');
-  if (language === 'ja' && effective !== 'qwen-token-plan') throw Error('Local and MiMo ASR are restricted to zh or en clips');
+  if (!['local', 'qwen-token-plan', 'qwen-dashscope', 'mimo-token-plan'].includes(effective)) throw Error('Unsupported ASR provider');
+  if (language === 'ja' && !['qwen-token-plan', 'qwen-dashscope'].includes(effective)) throw Error('Local and MiMo ASR are restricted to zh or en clips');
   return effective;
 }
 export const QWEN_ASR_MODEL = 'qwen-audio-3.0-asr-flash';
+export const QWEN_DASHSCOPE_ASR_MODEL = 'qwen-audio-3.1-asr-flash';
 export const MIMO_ASR_MODEL = 'mimo-v2.5-asr';
 /** Parse the same provider response for fresh recognition and persisted cache checks. */
 export function parseCloudAsrResponse(provider: Exclude<AsrProvider, 'local'>, value: unknown): { text: string; truncated: boolean | null } {
   const raw = value as any;
   let text: unknown, truncated: boolean | null;
-  if (provider === 'qwen-token-plan') {
-    if (raw?.code || raw?.error) throw Error('Qwen Token Plan ASR response failed');
+  if (provider === 'qwen-token-plan' || provider === 'qwen-dashscope') {
+    if (raw?.code || raw?.error) throw Error(`${provider} ASR response failed`);
     text = raw?.output?.sentence?.text;
     truncated = raw?.output?.finish_reason === 'length' ? true : raw?.output?.finish_reason === 'stop' ? false : null;
   } else {
@@ -65,6 +66,7 @@ export function parseCloudAsrResponse(provider: Exclude<AsrProvider, 'local'>, v
   return { text, truncated };
 }
 const QWEN_ENDPOINT = 'https://token-plan.maas.qianwenaiapi.com/api/v1/services/aigc/multimodal-generation/generation';
+const QWEN_DASHSCOPE_ENDPOINT = 'https://maas.qianwenaiapi.com/api/v1/services/aigc/multimodal-generation/generation';
 export const asrAudioSha256 = (audio: Buffer) => createHash('sha256').update(audio).digest('hex');
 
 /** All providers receive exactly the same measured mono 16 kHz PCM16 WAV bytes. */
@@ -151,6 +153,10 @@ export async function transcribeAudio(audio: Buffer, options: AsrOptions = {}): 
     const key = projectQwenTokenPlanKey(); if (!key?.startsWith('sk-sp-')) throw Error('Qwen Token Plan credential is unavailable');
     endpoint = QWEN_ENDPOINT; headers = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', 'X-DashScope-SSE': 'disable' };
     body = JSON.stringify({ model: QWEN_ASR_MODEL, input: { messages: [{ role: 'user', content: [{ type: 'input_audio', input_audio: { data: `data:audio/wav;base64,${audio.toString('base64')}` } }] }] }, parameters: { format: 'wav', sample_rate: '16000' } });
+  } else if (provider === 'qwen-dashscope') {
+    const key = process.env.DASHSCOPE_API_KEY?.trim(); if (!key || key.startsWith('sk-sp-')) throw Error('DashScope ASR credential is unavailable');
+    endpoint = QWEN_DASHSCOPE_ENDPOINT; headers = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', 'X-DashScope-SSE': 'disable' };
+    body = JSON.stringify({ model: QWEN_DASHSCOPE_ASR_MODEL, input: { messages: [{ role: 'user', content: [{ type: 'input_audio', input_audio: { data: `data:audio/wav;base64,${audio.toString('base64')}` } }] }] }, parameters: { format: 'wav', sample_rate: '16000' } });
   } else {
     const connection = mimoConnection({ billing: 'token-plan' }), key = process.env[connection.apiKeyEnv]?.trim();
     if (!key) throw Error('MiMo Token Plan credential is unavailable');
@@ -169,7 +175,7 @@ export async function transcribeAudio(audio: Buffer, options: AsrOptions = {}): 
     text = raw.transcription; model = raw.model.repo; revision = raw.model.revision; truncated = raw.truncated;
   } else {
     ({ text, truncated } = parseCloudAsrResponse(provider, raw));
-    model = provider === 'qwen-token-plan' ? QWEN_ASR_MODEL : MIMO_ASR_MODEL; revision = null;
+    model = provider === 'qwen-token-plan' ? QWEN_ASR_MODEL : provider === 'qwen-dashscope' ? QWEN_DASHSCOPE_ASR_MODEL : MIMO_ASR_MODEL; revision = null;
   }
   if (typeof text !== 'string' || (provider !== 'local' && !text.trim())) throw Error(`${provider} ASR returned no transcript`);
   return { provider, inputAudioSha256: hash, model, revision, text, rawResult: raw, truncated, elapsedMs: Math.round(performance.now() - started), options: { language: 'auto' },

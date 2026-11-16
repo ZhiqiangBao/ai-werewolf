@@ -80,7 +80,7 @@ export async function verticalScene(clip: Clip, theme: string, script: Script, s
   g.textAlign = 'left'; g.fillStyle = '#f4d795'; g.font = 'bold 48px VideoSans'; g.fillText(brandTitle, brandLeft + 96, 190);
   g.fillStyle = '#d5cdb6'; g.font = '21px VideoSans'; g.fillText(t('AI 狼人杀'), brandLeft + 99, 230);
   const recordedVote = clip.type === 'vote.result' ? clip.data : clip.voiceKey === 'commentator' ? script.events.find(event => event.sourceSeq === clip.sourceSeq && event.type === 'vote.result')?.data : undefined;
-  const stage = recordedVote ? recordedVote.kind === 'sheriff' ? (recordedVote.round > 1 ? t('警长补充投票') : t('警长投票')) : t('放逐投票') : clip.type === 'wolf.chat' ? t('狼队密谈') : isPlayerSpeech(clip) ? t('发言') : t('全知视角');
+  const stage = recordedVote ? recordedVote.kind === 'sheriff' ? (recordedVote.round > 1 ? t('警长补充投票') : t('警长投票')) : t('放逐投票') : clip.type === 'wolf.chat' ? t('狼队密谈') : isPlayerSpeech(clip) ? t('发言') : script.perspective === 'player' ? t('{0}号玩家视角', script.playerSeat) : t('全知视角');
   g.font = '27px VideoSans'; g.fillStyle = '#d7dfd1'; g.textAlign = 'center';
   const stageText = `${phase}  ·  ${stage}`;
   g.save(); g.translate(540 - g.measureText(stageText).width / 2 - 40, 286); g.scale(1.2, 1.2); g.strokeStyle = '#e8cf96'; g.lineWidth = 1.5;
@@ -171,7 +171,7 @@ export async function verticalScene(clip: Clip, theme: string, script: Script, s
     if (story.detail) { g.font = '28px VideoSans'; g.fillStyle = '#d9e3d9'; const y = 1305 + lines.length * 47; g.strokeText(story.detail, 540, y, 920); g.fillText(story.detail, 540, y, 920); }
     g.restore();
   }
-  const marker = clip.type === 'hosting.choice' ? t('行动转述') : clip.type === 'wolf.chat' ? t('狼队密谈') : t('节选');
-  g.font = '23px VideoSans'; g.textAlign = 'left'; g.fillStyle = '#b7d6ca'; g.fillText(marker, 65, story ? 370 : 1375);
+  const marker = clip.type === 'hosting.choice' ? t('行动转述') : clip.type === 'wolf.chat' ? t('狼队密谈') : '';
+  if (marker) { g.font = '23px VideoSans'; g.textAlign = 'left'; g.fillStyle = '#b7d6ca'; g.fillText(marker, 65, story ? 370 : 1375); }
   return canvas.toBuffer('image/png') as Buffer;
 }

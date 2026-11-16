@@ -6,7 +6,7 @@ import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { LOCAL_GGUF_FILE, LOCAL_GGUF_SHA256, MIMO_ASR_MODEL, QWEN_ASR_MODEL, asrAudioSha256, asrProviderForLocale, assertCanonicalAsrWav, localModelIdentity, parseCloudAsrResponse, transcribeAudio, validLocalRuntime, type AsrProvider, type AsrResult } from '../../packages/session/src/asr';
+import { LOCAL_GGUF_FILE, LOCAL_GGUF_SHA256, MIMO_ASR_MODEL, QWEN_ASR_MODEL, QWEN_DASHSCOPE_ASR_MODEL, asrAudioSha256, asrProviderForLocale, assertCanonicalAsrWav, localModelIdentity, parseCloudAsrResponse, transcribeAudio, validLocalRuntime, type AsrProvider, type AsrResult } from '../../packages/session/src/asr';
 import { reviewAudioContent, type AudioContentReview, type TranscriptAlias } from './audio-content-review';
 import { compareAsrText } from './asr-comparison';
 import { assertAuthorizedProject, assertPlayerSources } from './integrity';
@@ -17,10 +17,10 @@ import { captionsFromWords } from './timeline';
 import { readPcm } from './audio';
 
 type AliasMap = Record<string, TranscriptAlias[]>;
-export interface BatchReviewOptions { directory?: string; provider?: AsrProvider | 'auto'; aliases?: AliasMap; asrDataDir?: string; signal?: AbortSignal; align?: boolean; alignmentProvider?: 'qwen-token-plan'; clipIds?: string[] }
+export interface BatchReviewOptions { directory?: string; provider?: AsrProvider | 'auto'; aliases?: AliasMap; asrDataDir?: string; signal?: AbortSignal; align?: boolean; alignmentProvider?: 'qwen-token-plan' | 'qwen-dashscope'; clipIds?: string[] }
 export interface BatchReviewItem { clipId: string; status: 'matching' | 'needs-review' | 'failure'; audioSha256?: string; inputAudioSha256?: string; sourceSha256?: string; transcriptSha256?: string; aliasesSha256?: string; settingsSha256?: string; transcriptFile?: string; cached?: boolean; truncated?: boolean | null; contentReview?: AudioContentReview; comparison?: ReturnType<typeof compareAsrText>; reason?: string; alignment?: string; alignmentProvider?: string; alignmentCached?: boolean; recognitionRequests?: number; alignmentRequests?: number }
 const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
-const cloudIdentity = (provider: Exclude<AsrProvider, 'local'>) => provider === 'qwen-token-plan' ? { model: QWEN_ASR_MODEL, revision: null } : { model: MIMO_ASR_MODEL, revision: null };
+const cloudIdentity = (provider: Exclude<AsrProvider, 'local'>) => provider === 'qwen-token-plan' ? { model: QWEN_ASR_MODEL, revision: null } : provider === 'qwen-dashscope' ? { model: QWEN_DASHSCOPE_ASR_MODEL, revision: null } : { model: MIMO_ASR_MODEL, revision: null };
 const stable = (value: unknown): string => Array.isArray(value) ? `[${value.map(stable).join(',')}]` : value && typeof value === 'object' ? `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${JSON.stringify(k)}:${stable(v)}`).join(',')}}` : JSON.stringify(value);
 const localCacheKey = (inputSha: string, result: AsrResult) => digest(stable({ inputAudioSha256: inputSha, provider: 'local', model: result.model, revision: result.revision, backend: result.backend, runtime: result.runtime, options: { language: 'auto' } }));
 function validLocalResult(result: AsrResult, inputSha: string, expected: ReturnType<typeof localModelIdentity>) {
@@ -64,7 +64,7 @@ export async function reviewVideoAudio(options: BatchReviewOptions = {}, transcr
   const provider = asrProviderForLocale(options.provider ?? 'auto', locale);
   assert(typeof locale === 'string', 'ASR requires an explicit locale');
   assert(script.locale === locale, 'ASR script and source locales differ');
-  if (options.alignmentProvider && options.alignmentProvider !== 'qwen-token-plan') throw Error('Unsupported alignment provider');
+  if (options.alignmentProvider && !['qwen-token-plan', 'qwen-dashscope'].includes(options.alignmentProvider)) throw Error('Unsupported alignment provider');
   if (options.clipIds && options.clipIds.some((id) => !clips.some((clip) => clip.id === id))) throw Error('Unknown ASR clip');
   assert(aliases && typeof aliases === 'object' && !Array.isArray(aliases), 'Aliases must be keyed by clip ID');
   for (const [id, list] of Object.entries(aliases)) {
@@ -156,7 +156,7 @@ export async function reviewVideoAudio(options: BatchReviewOptions = {}, transcr
         catch { needsAlignment = true; }
         if (!needsAlignment) item.alignment = selected.summary ? 'existing-external-transcript' : 'provider-timestamps';
         else if (selected.summary) throw Error('Previously selected alignment cannot be used');
-        else if (provider === 'qwen-token-plan') {
+        else if (provider === 'qwen-token-plan' || provider === 'qwen-dashscope') {
           try {
             const response = await readFile(transcriptFile, 'utf8');
             const alignment = createAudioAlignment({ audio: rawAudio, metadata: metadataBytes, asrResponse: response, locale, aliases: aliases[clip.id] ?? [] });
@@ -164,13 +164,13 @@ export async function reviewVideoAudio(options: BatchReviewOptions = {}, transcr
             await saveAudioAlignment(clip.audioFile, response, locale, aliases[clip.id] ?? []);
             item.alignment = 'independent-qwen-word-times'; item.alignmentProvider = provider; item.alignmentCached = cached;
           } catch { item.status = 'failure'; item.reason = 'alignment-required: independent Qwen word boundaries could not be verified'; }
-        } else if (options.alignmentProvider === 'qwen-token-plan') {
+        } else if (options.alignmentProvider === 'qwen-token-plan' || options.alignmentProvider === 'qwen-dashscope') {
           if (new Intl.Locale(locale).language === 'zh') {
             item.status = 'failure'; item.reason = 'alignment-required: external transcript alignment does not support zh'; item.alignmentRequests = 0;
           } else {
-            const result = await reviewVideoAudio({ ...options, provider: 'qwen-token-plan', alignmentProvider: undefined, clipIds: [clip.id] }, transcribe);
+            const result = await reviewVideoAudio({ ...options, provider: options.alignmentProvider, alignmentProvider: undefined, clipIds: [clip.id] }, transcribe);
             const aligned = result.items[0];
-            item.alignmentProvider = 'qwen-token-plan'; item.alignmentCached = aligned.cached; item.alignmentRequests = aligned.recognitionRequests ?? 0;
+            item.alignmentProvider = options.alignmentProvider; item.alignmentCached = aligned.cached; item.alignmentRequests = aligned.recognitionRequests ?? 0;
             if (aligned.status === 'matching') item.alignment = aligned.alignment;
             else { item.status = aligned.status; item.reason = aligned.reason; }
           }
@@ -191,10 +191,10 @@ export async function reviewVideoAudio(options: BatchReviewOptions = {}, transcr
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const { values } = parseArgs({ strict: true, allowPositionals: false, options: { provider: { type: 'string' }, clip: { type: 'string', multiple: true }, aliases: { type: 'string' }, align: { type: 'boolean' }, 'alignment-provider': { type: 'string' }, help: { type: 'boolean' } } });
-  if (values.help) { console.log('VIDEO_PROJECT_DIR=DIR node --import tsx scripts/video/review-audio.ts [--provider=auto|local|qwen-token-plan|mimo-token-plan] [--clip=ID ...] [--aliases=JSON_FILE] [--align] [--alignment-provider=qwen-token-plan]'); process.exit(0); }
+  if (values.help) { console.log('VIDEO_PROJECT_DIR=DIR node --import tsx scripts/video/review-audio.ts [--provider=auto|local|qwen-token-plan|qwen-dashscope|mimo-token-plan] [--clip=ID ...] [--aliases=JSON_FILE] [--align] [--alignment-provider=qwen-token-plan|qwen-dashscope]'); process.exit(0); }
   const provider = (values.provider ?? 'auto') as AsrProvider | 'auto';
   const aliases = values.aliases ? JSON.parse(await readFile(resolve(values.aliases), 'utf8')) as AliasMap : undefined;
-  const report = await reviewVideoAudio({ provider, aliases, align: values.align, clipIds: values.clip, alignmentProvider: values['alignment-provider'] as 'qwen-token-plan' | undefined });
+  const report = await reviewVideoAudio({ provider, aliases, align: values.align, clipIds: values.clip, alignmentProvider: values['alignment-provider'] as 'qwen-token-plan' | 'qwen-dashscope' | undefined });
   console.log(JSON.stringify({ roomId: report.roomId, provider: report.provider, matching: report.items.filter((item) => item.status === 'matching').length,
     needsReview: report.items.filter((item) => item.status === 'needs-review').length, failures: report.items.filter((item) => item.status === 'failure').length }));
   if (report.items.some((item) => item.status !== 'matching')) process.exitCode = 1;

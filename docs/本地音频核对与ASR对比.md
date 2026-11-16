@@ -8,8 +8,8 @@
 ## 生产路由与自动工作流
 
 - 当前视频 TTS 使用既有在线 Qwen Token Plan；本轮没有部署新的本地 TTS。TTS provider 与 ASR provider 是分开的配置。
-- workflow 参数为 `--asr-provider=auto|local|qwen-token-plan|mimo-token-plan|off`、`--asr-aliases=FILE` 和可选 `--alignment-provider=qwen-token-plan`。默认 `off`，先核对原稿与 TTS 标签；显式 `auto` 才对中文、英语选择本地 Q8，对日语选择 Qwen Token Plan 在线识别。显式 `local` 或 MiMo 日语请求会失败，不会静默改路由。
-- 工作流先生成音频并做 waveform 检查，在明确启用时运行独立 ASR 复核，再完成完整音频/字幕时间审计，最后进入 timeline。英语、日语的 Qwen 同一次真实响应词边界通过逐字内容、时间、音频与稿件绑定检查时，自动复用该响应建立 sidecar，不多发识别请求。英语若选本地或 MiMo 且词时间不可用或不可靠，必须明确指定 `--alignment-provider=qwen-token-plan`，否则以 `alignment-required` 失败。中文暂不支持外部词边界导入，原 TTS 字时不可靠时在额外云请求前停止，不发送无效补对齐请求。
+- workflow 参数为 `--asr-provider=auto|local|qwen-token-plan|qwen-dashscope|mimo-token-plan|off`、`--asr-aliases=FILE` 和可选 `--alignment-provider=qwen-token-plan|qwen-dashscope`。默认 `off`，先核对原稿与 TTS 标签；显式 `auto` 才对中文、英语选择本地 Q8，对日语选择 Qwen Token Plan 在线识别。显式 `qwen-dashscope` 固定使用 `DASHSCOPE_API_KEY` 与官方 `qwen-audio-3.1-asr-flash`；不静默改路由。
+- 工作流先生成音频并做 waveform 检查，在明确启用时运行独立 ASR 复核，再完成完整音频/字幕时间审计，最后进入 timeline。Qwen 同一次真实响应词边界通过逐字内容、时间、音频与稿件绑定检查时，自动复用该响应建立 sidecar，不多发识别请求。中文原 TTS 字时不可靠时，使用显式 `qwen-dashscope` 或已授权的 Token Plan Qwen 取得独立词边界；不把本地转写当作对齐。
 - ASR 成功结果缓存按输入音频、provider、模型和设置绑定。差异报告为 `needs-review`；workflow 不自动改写原稿。默认或显式 `off` 会在状态报告中记为 `not-checked-explicitly-disabled`，跳过语义核对但仍执行完整时间审计，不能声称 ASR 通过。
 - `--prepare-only` 与 `--check-only` 分别停在 plan 与 preflight，不会启动本地 ASR daemon。选择本地路由后，daemon 仅在 workflow 到达 review-audio 阶段时按需启动。完整操作命令见 [本地 ASR 操作指南](../skills/werewolf-video/references/local-asr.md)。
 

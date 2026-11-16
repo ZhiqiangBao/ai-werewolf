@@ -65,7 +65,7 @@ pnpm video:make --room=ROOM_ID --encoding-profile=upload --resume
 
 完整片默认使用 `upload` 编码配置；只有明确需要小体积本地副本时才选 `--encoding-profile=compact`。可用 `--video-quality=N` 覆盖编码质量值；NVENC 使用该值，CPU 路线使用 `N - 2` 作为 CRF。参数和实际码率限制见[上传画质与体积控制](references/compression.md)。
 
-如要求独立识别，显式加入适合本局的 `--asr-provider=auto|local|qwen-token-plan|mimo-token-plan`，具体限制和补对齐选项见[音频核对指南](references/local-asr.md)。默认 `off` 不能声称独立听写已完成。`--resume` 重做门禁并复用有效缓存；先看 `workflow-status.json` 与对应阶段报告，再针对失败原因修正。完整片默认采用 `upload` 配置；编码器、profile、质量覆盖和实际码率限制见[制作前准备](references/preproduction.md)、[硬件](references/hardware.md)和[上传画质与体积控制](references/compression.md)。
+如要求独立识别，显式加入适合本局的 `--asr-provider=auto|local|qwen-token-plan|qwen-dashscope|mimo-token-plan`，具体限制和补对齐选项见[音频核对指南](references/local-asr.md)。默认 `off` 不能声称独立听写已完成。`--resume` 重做门禁并复用有效缓存；先看 `workflow-status.json` 与对应阶段报告，再针对失败原因修正。完整片默认采用 `upload` 配置；编码器、profile、质量覆盖和实际码率限制见[制作前准备](references/preproduction.md)、[硬件](references/hardware.md)和[上传画质与体积控制](references/compression.md)。
 
 高光与精华按[编辑版制作](references/edited-video.md)先验证选段，再对每个格式使用独立输出目录合成。进度 JSON 的 `rendered`、`total` 与 `cached` 显示执行进展；成功后查看 `output/verification.json`、`source-map.json`、`subtitles.srt` 和 MP4。相同输入身份且缓存通过校验才复用；输入、格式、编码器、编码配置或源画面改变时使用新输出目录，避免旧片段和新成片混淆。编码失败先读日志，核实 FFmpeg 和所选编码器；GPU 失败不谎报成功。不要清理正在运行的渲染。
 
