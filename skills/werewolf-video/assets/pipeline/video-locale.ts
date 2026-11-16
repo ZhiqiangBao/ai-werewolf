@@ -13,15 +13,28 @@ export function registerVideoLanguage(pack: VideoLanguage): void {
   packs.set(pack.id, Object.freeze({ ...pack, messages: Object.freeze(Object.assign(Object.create(null), pack.messages)) }));
 }
 export function videoLocale(source?: string, override = process.env.VIDEO_LOCALE): string {
-  const locale = override || source || 'zh-CN';
+  const locale = override || source || systemVideoLocale();
   if (!packs.has(locale)) throw Error(`Unsupported video language: ${locale}`);
   return locale;
 }
-/** The video UI language must come from the caller's UI-language bridge, never from room dialogue. */
+function supportedSystemLocale(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  try {
+    const language = new Intl.Locale(raw.replace(/\..*$/, '').replace(/_/g, '-')).language.toLowerCase();
+    return language === 'zh' ? 'zh-CN' : language === 'ja' ? 'ja' : language === 'en' ? 'en' : undefined;
+  } catch { return undefined; }
+}
+/** Resolve the host OS/process locale to one of the registered video UI packs. */
+export function systemVideoLocale(): string {
+  for (const raw of [process.env.LC_ALL, process.env.LC_MESSAGES, process.env.LANG, Intl.DateTimeFormat().resolvedOptions().locale]) {
+    const locale = supportedSystemLocale(raw);
+    if (locale) return locale;
+  }
+  return 'en';
+}
+/** The video UI language comes from an explicit UI bridge, then the recorded UI binding, then the host system locale. */
 export function videoUiLocale(recordedUiLocale?: string, override = process.env.VIDEO_LOCALE): string {
-  const locale = recordedUiLocale || override;
-  if (!locale) throw Error('Video UI language is not recorded for this room; pass --video-locale or set VIDEO_LOCALE. Room locale only controls recorded dialogue and facts.');
-  return videoLocale(undefined, locale);
+  return videoLocale(recordedUiLocale, override);
 }
 export function videoText(locale: string, key: string, ...values: unknown[]): string {
   let pack = packs.get(locale);
@@ -37,7 +50,7 @@ const roles: Record<string, string> = { werewolf: '狼人', seer: '预言家', w
 export function videoRole(locale: string, role: string, fallback: string): string { return Object.hasOwn(roles, role) ? videoText(locale, roles[role]) : fallback; }
 registerVideoLanguage({ id: 'zh-CN', messages: { '查验结果：狼人': '狼人', '查验结果：好人': '好人' } });
 registerVideoLanguage({ id: 'en', fallback: 'zh-CN', messages: {
-  '身份未知':'Unknown', '{0}号玩家视角':'Seat {0} view', '本人身份 · 自动循环滚动':'Your role · scrolling', '本人身份默认简介（zh-CN）':'Default role summary (zh-CN)', '存活 {0} 人':'Alive {0}', '开枪目标':'Shot target',
+  '身份未知':'Unknown', '准备':'Setup', '终局':'Final', '出局':'OUT', '投票者':'Voters', '玩家':'Player', '行动':'Action', '解说':'Narrator', '{0}号玩家视角':'Seat {0} view', '本人身份 · 自动循环滚动':'Your role · scrolling', '本人身份默认简介（zh-CN）':'Default role summary (zh-CN)', '存活 {0} 人':'Alive {0}', '开枪目标':'Shot target',
   '第{0}天':'Day {0}', '第{0}夜':'Night {0}', '狼人':'Werewolf', '预言家':'Seer', '女巫':'Witch', '守卫':'Guard', '猎人':'Hunter', '平民':'Villager', '白痴':'Idiot', '觉醒隐狼':'Awakened Hidden Wolf', '魔镜少女':'Mirror Maiden',
   '放逐':'Exile', '毒药':'Poison', '狼刀':'Wolf', '猎枪':'Shot', '自爆':'Reveal', '同守同救':'Clash', '夜晚':'Night', '其他':'Other',
   '退水':'Withdrew', '上警':'Candidate', '发言中':'Speaking', '守护目标':'Guarded', '查验目标':'Inspected', '使用解药':'Saved', '使用毒药':'Poisoned', '狼刀目标':'Wolf target', '警长投票':'Sheriff vote', '放逐投票':'Exile vote', '{0}号':'Seat {0}', '{0} 票':'{0} votes',

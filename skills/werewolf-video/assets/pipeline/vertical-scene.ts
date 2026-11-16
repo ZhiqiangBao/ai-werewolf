@@ -68,12 +68,14 @@ export async function verticalScene(clip: Clip, theme: string, script: Script, s
     g.font = `bold ${size}px ${number ? 'Georgia, serif' : 'VideoSans'}`;
     g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#4c3826'; g.fillText(text, x + width / 2, y + 33, width - 20); g.restore();
   };
-  const phase = clip.phase === 'day' || clip.phase === 'night' ? videoChapter(locale, clip.day, clip.phase, clip.phase) : clip.phase.toUpperCase();
+  const phase = clip.phase === 'day' || clip.phase === 'night'
+    ? videoChapter(locale, clip.day, clip.phase, clip.phase)
+    : t(clip.phase === 'setup' ? '准备' : clip.phase === 'end' ? '终局' : '其他');
   const brandTitle = t('月影议事厅');
-  g.font = 'bold 48px Georgia, serif'; const brandLeft = (1080 - g.measureText(brandTitle).width - 96) / 2;
+  g.font = 'bold 48px VideoSans'; const brandLeft = (1080 - g.measureText(brandTitle).width - 96) / 2;
   g.save(); g.translate(brandLeft, 146); g.scale(1.6, 1.6); g.strokeStyle = '#f0d398'; g.lineWidth = 1.5;
   g.stroke(new Path2D('m24 2 19 11v22L24 46 5 35V13L24 2Z m-11 11 8 5h6l8-5-2 18-9 8-9-8-2-18Z m0 0 9 16-7 2 M35 13l-9 16 7 2 M22 29h4l-2 5-2-5Z M18 24l3 1 M30 24l-3 1 M24 7v4 M22 9h4')); g.restore();
-  g.textAlign = 'left'; g.fillStyle = '#f4d795'; g.font = 'bold 48px Georgia, serif'; g.fillText(brandTitle, brandLeft + 96, 190);
+  g.textAlign = 'left'; g.fillStyle = '#f4d795'; g.font = 'bold 48px VideoSans'; g.fillText(brandTitle, brandLeft + 96, 190);
   g.fillStyle = '#d5cdb6'; g.font = '21px VideoSans'; g.fillText(t('AI 狼人杀'), brandLeft + 99, 230);
   const recordedVote = clip.type === 'vote.result' ? clip.data : clip.voiceKey === 'commentator' ? script.events.find(event => event.sourceSeq === clip.sourceSeq && event.type === 'vote.result')?.data : undefined;
   const stage = recordedVote ? recordedVote.kind === 'sheriff' ? (recordedVote.round > 1 ? t('警长补充投票') : t('警长投票')) : t('放逐投票') : clip.type === 'wolf.chat' ? t('狼队密谈') : isPlayerSpeech(clip) ? t('发言') : t('全知视角');
@@ -128,7 +130,7 @@ export async function verticalScene(clip: Clip, theme: string, script: Script, s
         g.save(); const roleName = videoRole(locale, player.role, player.roleName); g.font = 'bold 42px VideoSans'; const width = Math.max(110, g.measureText(roleName).width + 26);
         g.translate(x + 4, y + 35); g.scale(.5, .5); badge(roleName, 0, 0, width, 42); g.restore();
       }
-      if (!state.alive.has(player.seat)) at('OUT', x, y + 12, 32, 110);
+      if (!state.alive.has(player.seat)) at(t('出局'), x, y + 12, 32, 110);
       if (state.sheriff === player.seat) {
         g.beginPath(); g.arc(x + 48, y - 48, 23, 0, Math.PI * 2); g.fillStyle = '#f3cf6b'; g.fill();
         g.fillStyle = '#30200a'; g.font = 'bold 24px VideoSans'; g.fillText('S', x + 48, y - 39);
@@ -140,8 +142,8 @@ export async function verticalScene(clip: Clip, theme: string, script: Script, s
       const rows = recordedVote.rows.slice(0, 9), spacing = Math.min(65, 290 / Math.max(rows.length, 1));
       rows.forEach((row: any, i: number) => {
         const player = script.cast.find(c => c.seat === row.target), y = 765 + i * spacing;
-        at(`${row.target} · ${player?.name ?? 'Unknown'}   ${row.weight} VOTES`, 540, y, Math.min(31, spacing * .55), 460);
-        at(`Voters: ${(row.voters ?? []).join(', ') || '—'}`, 540, y + spacing * .38, Math.min(22, spacing * .36), 450);
+        at(`${row.target} · ${player?.name ?? t('身份未知')}   ${t('{0} 票', row.weight)}`, 540, y, Math.min(31, spacing * .55), 460);
+        at(`${t('投票者')}：${(row.voters ?? []).join(', ') || '—'}`, 540, y + spacing * .38, Math.min(22, spacing * .36), 450);
       });
     } else {
       // Compact center emblem identifies the host while leaving the table visible.
@@ -152,7 +154,9 @@ export async function verticalScene(clip: Clip, theme: string, script: Script, s
         g.beginPath(); g.ellipse(0, 0, 76, 42, 0, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.arc(0, 0, 20, 0, Math.PI * 2); g.fill();
       }
       g.restore();
-      at(clip.data.presentationOnly && clip.seat !== undefined ? `PLAYER ${clip.seat} · ACTION` : clip.voiceKey === 'judge' ? 'JUDGE' : 'NARRATOR', 540, 930, 37, 440);
+      at(clip.data.presentationOnly && clip.seat !== undefined
+        ? `${t('玩家')} ${clip.seat} · ${t('行动')}`
+        : clip.voiceKey === 'judge' ? t('法官') : t('解说'), 540, 930, 37, 440);
     }
   }
   if (story) {
