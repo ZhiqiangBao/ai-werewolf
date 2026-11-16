@@ -1,7 +1,6 @@
 {
   "name": "ai-werewolf",
   "private": true,
-  "packageManager": "pnpm@11.21.0",
   "type": "module",
   "scripts": {
     "i18n:check": "tsx scripts/check-locales.ts",

@@ -30,9 +30,9 @@ export const BUILTIN_PRESETS: PresetDef[] = [
   {
     id: 'idiot12',
     name: '十二人预女猎白',
-    description: '狼人 ×4、平民 ×4，预言家、女巫、猎人、白痴。用来演示新增身份只需注册模块。',
+    description: '狼人 ×4、平民 ×4，预言家、女巫、猎人、白痴。屠边，有警长。',
     roles: [...times('werewolf', 4), 'seer', 'witch', 'hunter', 'idiot', ...times('villager', 4)],
-    tag: '扩展示例',
+    tag: '标准',
   },
 ];
 
