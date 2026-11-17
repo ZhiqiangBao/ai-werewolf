@@ -130,16 +130,26 @@ export async function verticalScene(clip: Clip, theme: string, script: Script, s
       if (!state.alive.has(player.seat)) { g.fillStyle = 'rgba(15,18,25,.72)'; g.fillRect(x - 66, y - 66, 132, 132); }
       g.restore();
       g.beginPath(); g.arc(x, y, 66, 0, Math.PI * 2); g.lineWidth = 5; g.strokeStyle = state.alive.has(player.seat) ? '#e3d2a3' : '#9c9c9c'; g.stroke();
-      at(`${player.seat} · ${player.name}`, x, y + 92, 27, 180);
       if (story?.focusSeats?.includes(player.seat)) {
         g.save(); const roleName = player.role === 'unknown' ? t('身份未知') : videoRole(locale, player.role, player.roleName); g.font = 'bold 42px VideoSans'; const width = Math.max(110, g.measureText(roleName).width + 26);
-        g.translate(x + 4, y + 35); g.scale(.5, .5); badge(roleName, 0, 0, width, 42); g.restore();
+        g.translate(x - width / 4, y - 102); g.scale(.5, .5); badge(roleName, 0, 0, width, 42); g.restore();
       }
       if (!state.alive.has(player.seat)) at(t('出局'), x, y + 12, 32, 110);
       if (state.sheriff === player.seat) {
         g.beginPath(); g.arc(x + 48, y - 48, 23, 0, Math.PI * 2); g.fillStyle = '#f3cf6b'; g.fill();
         g.fillStyle = '#30200a'; g.font = 'bold 24px VideoSans'; g.fillText('S', x + 48, y - 39);
       }
+    });
+    // Draw labels after every avatar, inside its lower edge, so neighboring
+    // portraits cannot cover names on the closely spaced sides of the table.
+    script.cast.forEach((player, i) => {
+      const angle = -Math.PI / 2 + 2 * Math.PI * i / count;
+      const x = 540 + Math.cos(angle) * 412, y = 820 + Math.sin(angle) * 280;
+      const label = `${player.seat} · ${player.name}`;
+      g.save(); g.font = 'bold 27px VideoSans';
+      const width = Math.min(180, g.measureText(label).width + 16);
+      g.fillStyle = 'rgba(9,15,28,.88)'; g.beginPath(); g.roundRect(x - width / 2, y + 31, width, 36, 8); g.fill();
+      at(label, x, y + 58, 27, width - 12); g.restore();
     });
     if (Array.isArray(recordedVote?.rows)) {
       const title = recordedVote.kind === 'sheriff' ? (recordedVote.round > 1 ? t('警长补充投票') : t('警长投票')) : recordedVote.kind === 'exile' ? t('放逐投票') : t('投票');
