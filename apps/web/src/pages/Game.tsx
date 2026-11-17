@@ -230,7 +230,7 @@ function HostGame({ roomId, token, room, projection: p, presentation, refresh }:
           </div>
           <div className="game-right">
             <ThoughtFeed thoughts={p.thoughts} seats={p.seats} events={p.events} locale={p.locale ?? room.locale} />
-            <EventLog events={p.events} seats={p.seats} mode="god" locale={p.locale ?? room.locale} onRead={speech.read} controls={<SpeechControls player={speech} />} />
+            <EventLog events={p.events} seats={p.seats} mode="god" roles={p.god.roles} locale={p.locale ?? room.locale} onRead={speech.read} controls={<SpeechControls player={speech} />} />
           </div>
         </div>
       </div>
@@ -305,7 +305,7 @@ export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
           </div>
           <div className="game-right">
             <ThoughtFeed thoughts={p.thoughts} seats={p.seats} events={p.events} locale={p.locale ?? room.locale} />
-            <EventLog events={p.events} seats={p.seats} mode="seat" locale={p.locale ?? room.locale} mySeat={room.seat} onRead={speech.read} controls={<SpeechControls player={speech} />} />
+            <EventLog events={p.events} seats={p.seats} mode="seat" roles={p.me ? [{ seat: p.me.seat, role: p.me.role }] : []} locale={p.locale ?? room.locale} mySeat={room.seat} onRead={speech.read} controls={<SpeechControls player={speech} />} />
           </div>
         </div>
       </div>

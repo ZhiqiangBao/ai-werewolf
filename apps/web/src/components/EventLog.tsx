@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { GameEvent, SeatInfo } from '@werewolf/protocol';
-import { gameRecordEvents } from '@werewolf/protocol';
+import { gameRecordEvents, nightRoundSummary, projectNightRound } from '@werewolf/protocol';
 import { gameText } from '@werewolf/protocol';
 import { useI18n } from '../i18n';
 import { audienceText, phaseLabel, seatName, seatStyle } from '../util';
@@ -18,6 +18,7 @@ interface Props {
   onRead?: (event: GameEvent) => void;
   controls?: ReactNode;
   locale: string | undefined;
+  roles?: { seat: number; role: string }[];
 }
 
 const SPEECH_KIND: Record<string, string> = {
@@ -30,7 +31,7 @@ const SPEECH_KIND: Record<string, string> = {
 
 const DEATH_TYPES = new Set(['exile', 'explode', 'hunter.shot', 'idiot.flip']);
 
-export function EventLog({ events, seats, mode, mySeat, onRead, controls, locale }: Props) {
+export function EventLog({ events, seats, mode, mySeat, onRead, controls, locale, roles }: Props) {
   const { t } = useI18n();
   const box = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -98,7 +99,7 @@ export function EventLog({ events, seats, mode, mySeat, onRead, controls, locale
             return (
               <Fragment key={e.seq}>
                 {divider}
-                {e.type !== 'phase' && <EventItem e={e} nameOf={nameOf} scope={scopeLabel(e)} onRead={onRead} locale={locale} />}
+                {e.type !== 'phase' && <EventItem e={e} nameOf={nameOf} scope={scopeLabel(e)} onRead={onRead} locale={locale} roles={roles} />}
               </Fragment>
             );
           })}
@@ -119,7 +120,7 @@ export function EventLog({ events, seats, mode, mySeat, onRead, controls, locale
   );
 }
 
-function EventItem({ e, nameOf, scope, onRead, locale }: { e: GameEvent; nameOf: (s: number) => string; scope: string | null; onRead?: (event: GameEvent) => void; locale?: string }) {
+function EventItem({ e, nameOf, scope, onRead, locale, roles }: { e: GameEvent; nameOf: (s: number) => string; scope: string | null; onRead?: (event: GameEvent) => void; locale?: string; roles?: { seat: number; role: string }[] }) {
   const { t } = useI18n();
   const p = e.payload;
   const meta = scope ? <span className="meta">{scope}</span> : null;
@@ -158,9 +159,13 @@ function EventItem({ e, nameOf, scope, onRead, locale }: { e: GameEvent; nameOf:
   if (DEATH_TYPES.has(e.type) || (e.type === 'dawn' && ((p.deaths as number[] | undefined)?.length ?? 0) > 0)) cls.push('death');
   if (e.type.startsWith('sheriff.') || e.type.startsWith('badge.')) cls.push('sheriff');
   if (e.audience !== 'public') cls.push('private');
+  const actor = Array.isArray(e.audience) && e.audience.length === 1 ? e.audience[0] : undefined;
+  const round = actor === undefined ? null : projectNightRound(e, roles?.find((role) => role.seat === actor)?.role);
+  const roundText = e.type === 'wolf.kill.result' ? gameText(locale, '轮次：{0}', gameText(locale, '狼人')) : round ? nightRoundSummary(round, locale) : null;
   return (
     <div className={cls.join(' ')}>
       <pre style={{ display: 'inline' }}>{e.text}</pre>
+      {roundText && <div className="meta">{roundText}</div>}
       {meta}
     </div>
   );

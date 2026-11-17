@@ -1,4 +1,5 @@
 import { roleData } from '../role-data';
+import { isUnifiedAwakenedNight } from '../rules';
 import { gameText, isEnglishGameLocale } from '@werewolf/protocol';
 import type { RuleSet, ToolSpec } from '@werewolf/protocol';
 import type { ParamSpec, Seat } from '@werewolf/protocol';
@@ -19,7 +20,7 @@ function knifeOf(ctx: Ctx): Seat | null {
 }
 
 function choosesAntidoteTarget(rules: RuleSet): boolean {
-  return rules.awakenedNightVersion === 2 && rules.roles.includes('werewolf') && rules.roles.includes('awakened_wolf');
+  return isUnifiedAwakenedNight(rules.awakenedNightVersion) && rules.roles.includes('werewolf') && rules.roles.includes('awakened_wolf');
 }
 
 function wolfAttackTargets(ctx: Ctx): Seat[] {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import type { Clip, Script, VoiceCatalog } from './project';
 import { buildClips, splitSpeech, spokenText, validateSpeechParts, validateEnglishPossessiveClips } from './project';
 import { replay } from './replay';
-import { hostingChoice } from './hosting';
+import { hostingChoice, wolfSeatLine } from './hosting';
 import { open, readFile } from 'node:fs/promises';
 import { FPS, SAMPLE_RATE, loadScript, projectDir } from './project';
 import { wavHeader } from './audio';
@@ -120,16 +120,22 @@ export function assertPlayerSources(source: Script, script: Script, clips: Clip[
       continue;
     }
     assert.equal(clip.type, 'hosting.choice', 'Generated character dialogue is forbidden');
-    assert(!entries.find((e) => e.sourceSeq === clip.sourceSeq)?.data.systemFallback, 'System fallback cannot become a model choice');
     const fact = source.events.find((f) => f.sourceSeq === clip.sourceSeq);
     assert(fact, 'Recorded action is missing');
     const d = fact.data;
+    const automatic = new Set<number>(Array.isArray(d.fallbackSeats) ? d.fallbackSeats.filter((seat: unknown): seat is number => typeof seat === 'number') : []);
+    assert(!d.systemFallback && !automatic.has(clip.seat), 'System fallback cannot become a model choice');
     const actor = Array.isArray(fact.audience) && fact.audience.length === 1 ? fact.audience[0] : undefined;
     const expected = hostingChoice(source.locale ?? 'zh-CN', fact.type, d);
     if (fact.type === 'speech.order') {
       const sheriff = replay(source, fact.sourceSeq - 1).sheriff;
       assert.equal(clip.seat, sheriff);
       assert.equal(clip.text, expected);
+    } else if (fact.type === 'wolf.kill.result') {
+      const picks = Array.isArray(d.picks) ? d.picks : [];
+      const pick = picks.find((item: unknown) => Array.isArray(item) && item[0] === clip.seat);
+      assert(Array.isArray(pick), 'Action narration assigned to the wrong actor');
+      assert.equal(clip.text, wolfSeatLine(source.locale ?? 'zh-CN', pick[1]), 'Action narration added unrecorded speech');
     } else {
       assert.equal(clip.seat, actor, 'Action narration assigned to the wrong actor');
       assert(expected, 'This event cannot authorize generated character dialogue');

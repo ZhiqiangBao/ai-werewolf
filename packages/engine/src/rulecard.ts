@@ -36,7 +36,7 @@ export function buildRuleCard(rules: RuleSet): string {
   const gods = mods.filter((m) => m.category === 'god').map((m) => gameText(rules.locale, m.name));
   const hasHunter = mods.some((m) => m.id === 'hunter');
   const hunterShotVersion = rules.hunterShotVersion;
-  const isUnifiedAwakenedNight = rules.awakenedNightVersion === 2;
+  const unifiedAwakenedNight = rules.awakenedNightVersion === 2 || rules.awakenedNightVersion === 3;
   const canExplode = mods.some((m) => m.canExplode) && v['explode.enabled'] === true;
   const sheriff = v['sheriff.enabled'] === true;
   const electionExplosionPolicy = v['sheriff.explodeInElection'];
@@ -46,7 +46,7 @@ export function buildRuleCard(rules: RuleSet): string {
     v['sheriff.timing'] === 'before_announcement';
   const has = (id: string) => rules.roles.includes(id);
   const nightOrderNames = rules.nightOrder.map((id) => {
-    if (isUnifiedAwakenedNight && id === 'awakened_mimic') return gameText(rules.locale, "觉醒隐狼模仿或发动已学技能");
+    if (unifiedAwakenedNight && (id === 'awakened_mimic' || id === 'awakened')) return gameText(rules.locale, "觉醒隐狼模仿或发动已学技能");
     return phaseNames.get(id) ?? (id === 'werewolf' ? gameText(rules.locale, "狼人") : id);
   });
   const canHunterBeShot = hasHunter && has('awakened_wolf') && hunterShotVersion === 2 && rules.deathResolutionVersion === 2;

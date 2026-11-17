@@ -3,6 +3,7 @@ import { replay } from './replay';
 import { videoText } from './video-locale';
 
 const required = new Set(['phase', 'witch.knife', 'witch.idle', 'sheriff.start', 'sheriff.order', 'speech.order', 'vote.result', 'dawn', 'badge.transfer', 'badge.tear']);
+const copiedSkillName: Record<string, string> = { awakened_poison: '模仿毒药', awakened_guard: '增强守护', awakened_claw: '额外爪击' };
 
 /** 行动转述只使用已记录的动作；完整性校验也以此规则核对。 */
 export function hostingChoice(locale: string, type: string, data: Record<string, any>): string | undefined {
@@ -16,8 +17,26 @@ export function hostingChoice(locale: string, type: string, data: Record<string,
     case 'witch.poison': return t('我用毒药毒{0}号。', data.target);
     case 'witch.idle': return t('今晚不用药。');
     case 'speech.order': return t('我选{0}，从{1}号开始。', t(data.direction === 'counterclockwise' ? '逆时针' : '顺时针'), data.order?.[0]);
+    case 'awakened.mimic': return typeof data.target === 'number' ? t('我模仿{0}号。', data.target) : undefined;
+    case 'awakened.wait':
+    case 'awakened.skip':
+    case 'mirror.skip': return t('本夜不发动技能。');
+    case 'awakened.skill': {
+      const name = copiedSkillName[data.tool];
+      return name && typeof data.target === 'number' ? t('我使用{0}，目标是{1}号。', t(name), data.target) : undefined;
+    }
+    case 'mirror.result': return typeof data.target === 'number' ? t('我使用{0}，目标是{1}号。', t('模仿魔镜'), data.target) : undefined;
+    case 'awakened.knife':
+      if (!Object.prototype.hasOwnProperty.call(data, 'target')) return undefined;
+      return data.target === null ? t('我今晚空刀。') : typeof data.target === 'number' ? t('我今晚刀{0}号。', data.target) : undefined;
     default: return undefined;
   }
+}
+
+export function wolfSeatLine(locale: string, target: unknown): string | undefined {
+  const t = (key: string, ...args: unknown[]) => videoText(locale, key, ...args);
+  if (target === null) return t('我今晚空刀。');
+  return typeof target === 'number' ? t('我今晚刀{0}号。', target) : undefined;
 }
 
 /** Presentation cues reconstruct recorded actions; the immutable fact stream is never extended. */
@@ -30,13 +49,17 @@ export function completeHosting(source: Script, edited: Script): Script {
   const chapters = source.chapters.map((chapter) => {
     const entries: Entry[] = [];
     let wolfOpened = false;
-    const cue = (anchor: Entry, key: string, text: string, seat?: number, data: Record<string, unknown> = {}) => {
+    const cue = (anchor: Entry, key: string, text: string, seat?: number, data: Record<string, unknown> = {}, speaker?: string) => {
       entries.push({ sourceSeq: anchor.sourceSeq, type: seat === undefined ? 'hosting.judge' : 'hosting.choice',
-        speaker: seat === undefined ? '法官' : `${seat}号`, voiceKey: seat === undefined ? 'judge' : `seat-${seat}`,
+        speaker: seat === undefined ? '法官' : (speaker ?? `${seat}号`), voiceKey: seat === undefined ? 'judge' : `seat-${seat}`,
         ...(seat === undefined ? {} : { seat }), text, visibility: anchor.visibility,
         data: { presentationOnly: true, presentationKey: key, replayThrough: anchor.sourceSeq - 1,
           provenance: seat === undefined ? '流程衔接' : '按该事件记录的行动转述，非玩家原话', ...data } });
     };
+    const fallen = (data: Record<string, any>) => new Set<number>(Array.isArray(data.fallbackSeats) ? data.fallbackSeats.filter((seat: unknown) => typeof seat === 'number') : []);
+    const summary = (seat: number, kind: 'kill' | 'pass', target?: unknown) => kind === 'kill'
+      ? (target === null ? t('系统托管，{0}号今晚空刀。', seat) : typeof target === 'number' ? t('系统托管，{0}号的攻击目标记为{1}号。', seat, target) : undefined)
+      : t('系统托管，{0}号本夜不发动技能。', seat);
     for (const original of chapter.entries) {
       let e = bySeq.get(original.sourceSeq) ?? (required.has(original.type) ? original : undefined);
       if (!e) { entries.push(...editedEntries.filter((comment) => comment.sourceSeq === original.sourceSeq && comment.data.editorialAfter)); continue; }
@@ -55,10 +78,47 @@ export function completeHosting(source: Script, edited: Script): Script {
         cue(original, 'wolves-open', t('狼人请睁眼，确认同伴。请商量今晚的击杀目标。'));
         wolfOpened = true;
       }
-      if (e.type === 'wolf.kill.result') {
-        if (!wolfOpened) cue(original, 'wolves-open', t('狼人请睁眼。'));
-        cue(original, 'wolves-vote', t('狼人请确认今晚的击杀目标。'));
-        judge(t(typeof d.knife === 'number' ? '确认刀口{0}号。狼人请闭眼。' : '确认今晚空刀。狼人请闭眼。', d.knife));
+      if (e.type === 'wolf.kill.result' || e.type === 'awakened.knife') {
+        const automatic = fallen(d);
+        if (!wolfOpened) cue(original, 'wolves-open', t('狼人请睁眼，请提交今晚的攻击目标。'));
+        wolfOpened = true;
+        if (e.type === 'awakened.knife') {
+          const line = hostingChoice(locale, e.type, d);
+          const backed = roleSeat !== undefined && (d.systemFallback || automatic.has(roleSeat));
+          if (backed) {
+            const text = summary(roleSeat, 'kill', d.target);
+            if (text) cue(original, 'wolf-summary', text, undefined, { actionSummary: true });
+          } else if (roleSeat && line) {
+            cue(original, 'wolf-choice', line, roleSeat, { target: d.target }, t('觉醒隐狼'));
+          }
+        } else {
+          for (const pick of Array.isArray(d.picks) ? d.picks : []) {
+            if (!Array.isArray(pick) || typeof pick[0] !== 'number') continue;
+            const [seat, target] = pick as [number, number | null];
+            if (automatic.has(seat)) {
+              const text = summary(seat, 'kill', target);
+              if (text) cue(original, `wolf-summary-${seat}`, text, undefined, { actionSummary: true });
+              continue;
+            }
+            const line = wolfSeatLine(locale, target);
+            if (!line) continue;
+            const awakened = source.cast.find((player) => player.seat === seat)?.role === 'awakened_wolf';
+            cue(original, `wolf-choice-${seat}`, line, seat, { target }, awakened ? t('觉醒隐狼') : t('{0}号狼人', seat));
+          }
+        }
+        judge(t('狼人请闭眼。'));
+      }
+      if (d.round?.roundKind === 'awakened' && ['awakened.mimic', 'awakened.wait', 'awakened.skill', 'awakened.skip', 'mirror.result', 'mirror.skip'].includes(e.type)) {
+        const automatic = fallen(d);
+        const backed = roleSeat !== undefined && (d.systemFallback || automatic.has(roleSeat));
+        cue(original, 'awakened-open', t('觉醒隐狼请睁眼。'));
+        cue(original, 'awakened-prompt', t('觉醒隐狼请提交本夜行动。'));
+        const line = hostingChoice(locale, e.type, d);
+        if (backed && roleSeat !== undefined) {
+          const text = summary(roleSeat, 'pass');
+          if (text) cue(original, 'awakened-summary', text, undefined, { actionSummary: true });
+        } else if (roleSeat && line) cue(original, 'awakened-choice', line, roleSeat, { target: d.target }, t('觉醒隐狼'));
+        judge(t('觉醒隐狼请闭眼。'));
       }
       if (e.type === 'seer.result' || e.type === 'seer.skip') {
         cue(original, 'seer-open', t('预言家请睁眼，请选择今晚要查验的一名玩家。'));

@@ -79,7 +79,7 @@ export function buildMessages(
   ].join('\n');
 
   const pub = p.events.filter((e) => e.audience === 'public' && !e.payload.announced).map((value) => render(value, p.locale));
-  const priv = p.events.filter((e) => e.audience !== 'public' && !e.payload.announced).map((value) => render(value, p.locale));
+  const priv = p.events.filter((e) => e.audience !== 'public' && !e.payload.announced && e.type !== 'awakened.identity').map((value) => render(value, p.locale));
   const task = p.task;
   const user = [
     gameText(p.locale, "【公共日志】（「」内是玩家原话）"),

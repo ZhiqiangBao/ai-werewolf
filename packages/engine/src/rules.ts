@@ -29,12 +29,21 @@ export function deriveNightOrder(roles: string[], awakenedNightVersion: RuleSet[
     const mod = getRole(id);
     for (const phase of [...(mod.nightPhase ? [mod.nightPhase] : []), ...(mod.nightPhases ?? [])]) phases.set(phase.id, phase.order);
   }
-  if (awakenedNightVersion === 2 && roles.includes('awakened_wolf')) {
+  if (isUnifiedAwakenedNight(awakenedNightVersion) && roles.includes('awakened_wolf')) {
     phases.delete('awakened_knife');
     phases.delete('awakened_skill');
     if (!phases.has('werewolf')) phases.set('werewolf', getRole('werewolf').nightPhase!.order);
   }
+  if (awakenedNightVersion === 3 && roles.includes('awakened_wolf')) {
+    phases.delete('awakened_mimic');
+    phases.set('awakened', 5);
+  }
   return [...phases.entries()].sort((a, b) => a[1] - b[1]).map(([id]) => id);
+}
+
+/** 版本 2 和 3 共用结算；只有版本 3 把询问收成 night:awakened。 */
+export function isUnifiedAwakenedNight(version: RuleSet['awakenedNightVersion']): boolean {
+  return version === 2 || version === 3;
 }
 
 export interface BuildRulesOptions {
@@ -45,7 +54,7 @@ export interface BuildRulesOptions {
   deathResolutionVersion?: 1 | 2;
   hunterShotVersion?: 1 | 2;
   electionExplosionVersion?: 1 | 2;
-  awakenedNightVersion?: 1 | 2;
+  awakenedNightVersion?: 1 | 2 | 3;
   /** 允许改动开局页不可改的选项（测试与自定义版型用）。 */
   allowFixed?: boolean;
   /** 自定义身份列表，覆盖版型自带的身份。 */
@@ -69,7 +78,7 @@ export function buildRules(
     const v = coerce(o, raw);
     if (v !== undefined) values[key] = v;
   }
-  const awakenedNightVersion = opts.awakenedNightVersion ?? 2;
+  const awakenedNightVersion = opts.awakenedNightVersion ?? 3;
   return {
     locale,
     toolsetVersion: opts.toolsetVersion ?? 2,
@@ -102,7 +111,7 @@ export function validateRules(rules: RuleSet, locale: string | undefined = rules
   if (rules.hunterShotVersion === 2 && rules.deathResolutionVersion !== 2) errors.push(gameText(language, '猎枪触发版本 2 要求出局结算版本 2'));
   if (rules.electionExplosionVersion !== undefined && ![1, 2].includes(rules.electionExplosionVersion)) errors.push(gameText(language, '警长延期公告版本只支持 1 或 2'));
   if (rules.electionExplosionVersion === 2 && rules.deathResolutionVersion !== 2) errors.push(gameText(language, '警长延期公告版本 2 要求出局结算版本 2'));
-  if (rules.awakenedNightVersion !== undefined && ![1, 2].includes(rules.awakenedNightVersion)) errors.push(gameText(language, '觉醒隐狼夜间流程版本只支持 1 或 2'));
+  if (rules.awakenedNightVersion !== undefined && ![1, 2, 3].includes(rules.awakenedNightVersion)) errors.push(gameText(language, '觉醒隐狼夜间流程版本只支持 1、2 或 3'));
   if (rules.roles.length !== rules.playerCount) errors.push(gameText(language, '人数 {0} 与身份数量 {1} 不一致', rules.playerCount, rules.roles.length));
   if (rules.playerCount < 4 || rules.playerCount > 20) errors.push(gameText(language, '人数需要在 4 到 20 之间'));
   const counts = new Map<string, number>();

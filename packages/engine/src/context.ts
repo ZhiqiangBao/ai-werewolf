@@ -1,5 +1,5 @@
 import { localizeTool } from '@werewolf/protocol';
-import type { Audience, GameEvent, RuleValue, Seat, ToolSpec } from '@werewolf/protocol';
+import type { Audience, GameEvent, NightActionRound, RuleValue, Seat, ToolSpec } from '@werewolf/protocol';
 import { expandActionTools } from '@werewolf/protocol';
 import { getRole, modulesIn } from './registry';
 import { seatTools } from './catalog';
@@ -49,7 +49,7 @@ export class Ctx {
     return v as T;
   }
 
-  emit(type: string, audience: Audience, text: string, payload: Record<string, unknown> = {}): GameEvent {
+  emit(type: string, audience: Audience, text: string, payload: Record<string, unknown> = {}, round?: NightActionRound): GameEvent {
     const ev: GameEvent = {
       seq: ++this.state.seq,
       day: this.state.day,
@@ -58,6 +58,7 @@ export class Ctx {
       audience: Array.isArray(audience) ? [...new Set(audience)].sort((a, b) => a - b) : audience,
       text,
       payload,
+      ...(round ? { round } : {}),
     };
     this.events.push(ev);
     return ev;
@@ -67,8 +68,8 @@ export class Ctx {
     return this.emit(type, 'public', text, payload);
   }
 
-  priv(seats: Seat[], type: string, text: string, payload?: Record<string, unknown>): GameEvent {
-    return this.emit(type, seats, text, payload);
+  priv(seats: Seat[], type: string, text: string, payload: Record<string, unknown> = {}, round?: NightActionRound): GameEvent {
+    return this.emit(type, seats, text, payload, round);
   }
 
   god(type: string, text: string, payload?: Record<string, unknown>): GameEvent {

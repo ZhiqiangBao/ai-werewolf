@@ -9,6 +9,7 @@ import { inspectRole, inspectionKnowledge, inspectionAppendix, mirrorTool } from
 import { err, seatParam } from './tools';
 import { seatLabel } from './text';
 import { getRole } from './registry';
+import { awakenedActionRound } from './awakened-night';
 
 const action = (name: string, title: string, description: string, seats?: Seat[], locale: string | undefined = 'zh-CN'): ToolSpec => ({
   name, title, description, params: seats ? [seatParam('targetSeat', gameText(locale, '目标玩家'), seats, undefined)] : [],
@@ -20,9 +21,9 @@ export const clawTool = (seats: Seat[], locale: string | undefined = 'zh-CN') =>
 
 export const copiedDefinition = (role: string): string => getRole(role).copiedAbility ?? 'none';
 const mirrorTargets = (ctx: Ctx, seat: Seat, instance: AbilityInstance) => ctx.alive().filter((s) => s !== seat && !abilityState(instance, 'mirror').checks.some((c) => c.target === s));
-const skip = (ctx: Ctx, seat: Seat) => ctx.priv([seat], 'awakened.skip', gameText(ctx.rules.locale, '你本夜未使用模仿技能。'));
+const skip = (ctx: Ctx, seat: Seat) => ctx.priv([seat], 'awakened.skip', gameText(ctx.rules.locale, '你本夜未使用模仿技能。'), {}, awakenedActionRound(ctx, seat, 'skip', null));
 function announce(ctx: Ctx, seat: Seat, tool: string, target: Seat): void {
-  ctx.priv([seat], 'awakened.skill', gameText(ctx.rules.locale, '你对{0}使用了{1}。', seatLabel(target, ctx.rules.locale), tool === 'awakened_poison' ? gameText(ctx.rules.locale, '模仿毒药') : tool === 'awakened_guard' ? gameText(ctx.rules.locale, '增强守护') : gameText(ctx.rules.locale, '额外爪击')), { tool, target });
+  ctx.priv([seat], 'awakened.skill', gameText(ctx.rules.locale, '你对{0}使用了{1}。', seatLabel(target, ctx.rules.locale), tool === 'awakened_poison' ? gameText(ctx.rules.locale, '模仿毒药') : tool === 'awakened_guard' ? gameText(ctx.rules.locale, '增强守护') : gameText(ctx.rules.locale, '额外爪击')), { tool, target }, awakenedActionRound(ctx, seat, 'skill', target));
   ctx.state.night!.lines.push(gameText(ctx.rules.locale, '觉醒隐狼（{0}）{1}：{2}', seatLabel(seat, ctx.rules.locale), tool, seatLabel(target, ctx.rules.locale)));
 }
 const fallback = () => ({ tool: 'awakened_skip_skill', args: {} });

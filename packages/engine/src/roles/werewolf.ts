@@ -5,6 +5,8 @@ import type { Ctx } from '../context';
 import { seatLabel, seatList } from '../text';
 import { seatParam, textParam } from '../tools';
 import type { RoleModule, Step } from '../types';
+import { isUnifiedAwakenedNight } from '../rules';
+import { askAwakenedKnife, awakenedKnifeSeats, decideAwakenedKnife, fallbackAwakenedKnife } from '../awakened-night';
 
 type Pick = [Seat, Seat | null];
 
@@ -17,7 +19,7 @@ export function wolfKillTargets(ctx: Ctx, inheritor?: Seat): Seat[] {
 }
 
 export function wolfKillFallbackTarget(ctx: Ctx, inheritor?: Seat): Seat | null {
-  if (ctx.rules.awakenedNightVersion !== 2 || ctx.opt<boolean>('wolf.allowEmpty')) return null;
+  if (!isUnifiedAwakenedNight(ctx.rules.awakenedNightVersion) || ctx.opt<boolean>('wolf.allowEmpty')) return null;
   return wolfKillTargets(ctx, inheritor)[0] ?? null;
 }
 
@@ -91,10 +93,12 @@ export const werewolf: RoleModule = {
 
   steps: {
     'night:werewolf': {
-      run(ctx) {
+      run(ctx, step) {
+        if (step.awakenedKnife) { askAwakenedKnife(ctx, step); return; }
         const wolves = ctx.wolfTeam();
         if (!wolves.length) {
-          if (ctx.rules.awakenedNightVersion === 2 && ctx.seatsOf('awakened_wolf').length) ctx.pushFront({ type: 'night:awakened_knife' });
+          if (ctx.rules.awakenedNightVersion === 3 && awakenedKnifeSeats(ctx).length) ctx.pushFront({ type: 'night:werewolf', awakenedKnife: true });
+          else if (ctx.rules.awakenedNightVersion === 2 && ctx.seatsOf('awakened_wolf').length) ctx.pushFront({ type: 'night:awakened_knife' });
           return;
         }
         const steps: Step[] = [];
@@ -104,6 +108,13 @@ export const werewolf: RoleModule = {
         }
         steps.push({ type: 'wolf.kill', round: 1 });
         ctx.pushFront(...steps);
+      },
+      decide(ctx, step, subs) {
+        if (step.awakenedKnife) decideAwakenedKnife(ctx, subs);
+      },
+      fallback(ctx, step, seat) {
+        if (step.awakenedKnife) return fallbackAwakenedKnife(ctx, seat);
+        return { tool: 'wolf_kill', args: { target: wolfKillFallbackTarget(ctx, seat) } };
       },
     },
 

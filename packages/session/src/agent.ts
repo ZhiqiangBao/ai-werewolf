@@ -156,7 +156,7 @@ export function eventToMessage(
   hint: TurnHint,
   latestTalk: boolean,
 ): TranscriptMessage | null {
-  if (e.payload.announced === true || eventPurpose(e) === 'diagnostic') return null;
+  if (e.payload.announced === true || eventPurpose(e) === 'diagnostic' || e.type === 'awakened.identity') return null;
   const content = e.payload.content;
   const speaker = e.payload.seat;
   if ((e.type === 'speech' || e.type === 'wolf.chat') && typeof content === 'string' && typeof speaker === 'number') {

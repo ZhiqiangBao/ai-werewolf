@@ -10,7 +10,8 @@ import { abilityAction, abilityNightSteps, findAbility, grantAbility } from '../
 import { copiedDefinition, poisonTool, guardTool, clawTool, skipSkill } from '../copied-abilities';
 import { roleData } from '../role-data';
 import { allRoleChecks, inspectionAppendix, inspectionKnowledge, mirrorTool } from './inspection';
-import { wolfKillFallbackTarget, wolfKillTargets } from './werewolf';
+import { isUnifiedAwakenedNight } from '../rules';
+import { askAwakenedKnife, awakenedActionRound, awakenedEmptyKillTool, awakenedKillTool, decideAwakenedKnife, fallbackAwakenedKnife } from '../awakened-night';
 
 const data = (ctx: Ctx, seat: Seat) => roleData(ctx.player(seat), 'awakened_wolf').awakened;
 const learnedAbility = (ctx: Ctx, seat: Seat) => {
@@ -21,8 +22,6 @@ const holders = (ctx: Ctx) => ctx.seatsOf('awakened_wolf');
 const action = (name: string, title: string, description: string, seats?: Seat[], locale: string | undefined = 'zh-CN'): ToolSpec => ({
   name, title, description, params: seats ? [seatParam('targetSeat', gameText(locale, "目标玩家"), seats, undefined)] : [],
 });
-const killTool = (seats: Seat[], locale: string | undefined = 'zh-CN') => action('awakened_kill', gameText(locale, "提交继承狼刀"), gameText(locale, "对 targetSeat 提交继承狼刀。填写目标座位号，例如 {\"targetSeat\":3}。"), seats, locale);
-const emptyKill = (locale: string | undefined = 'zh-CN') => action('awakened_empty_kill', gameText(locale, "继承狼刀空刀"), gameText(locale, "继承狼刀选择空刀。无参数，填写 {}。"), undefined, locale);
 const mimicTool = (seats: Seat[], locale: string | undefined = 'zh-CN') => action('awakened_mimic', gameText(locale, "模仿一名玩家"), gameText(locale, "模仿 targetSeat 指定的玩家。填写目标座位号，例如 {\"targetSeat\":3}。"), seats, locale);
 const waitTool = (locale: string | undefined = 'zh-CN') => action('awakened_wait', gameText(locale, "本夜暂不模仿"), gameText(locale, "本夜不模仿。无参数，填写 {}。"), undefined, locale);
 export const awakenedWolf: RoleModule = {
@@ -36,7 +35,7 @@ export const awakenedWolf: RoleModule = {
     { id: 'awakened_skill', order: 45, name: '觉醒隐狼模仿技能' },
   ],
   tools: ({ seats, rules }) => [
-    mimicTool(seats, rules.locale), waitTool(rules.locale), killTool(seats, rules.locale), ...(rules.values['wolf.allowEmpty'] ? [emptyKill(rules.locale)] : []),
+    mimicTool(seats, rules.locale), waitTool(rules.locale), awakenedKillTool(seats, rules.locale), ...(rules.values['wolf.allowEmpty'] ? [awakenedEmptyKillTool(rules.locale)] : []),
     mirrorTool(seats, rules.locale, rules.inspectionVersion === 2), poisonTool(seats, rules.locale), guardTool(seats, rules.locale), clawTool(seats, rules.locale), skipSkill(rules.locale),
     ...(hunter.tools?.({ seat: 0, seats, rules }) ?? []),
   ],
@@ -44,7 +43,6 @@ export const awakenedWolf: RoleModule = {
     for (const seat of seats) {
       ctx.player(seat).data.awakened = { learned: null, knifeFromNight: null };
       ctx.player(seat).data.roleChecks = [];
-      ctx.priv([seat], 'awakened.identity', gameText(ctx.rules.locale, "你是觉醒隐狼，真实阵营始终为狼人。你与其他狼人互不知晓身份，不参与他们的密谈，也不能自爆。"));
     }
   },
   inspectRole: (ctx, seat) => data(ctx, seat).learned?.role ?? 'awakened_wolf',
@@ -71,7 +69,7 @@ export const awakenedWolf: RoleModule = {
   },
   ruleCard(rules) {
     const has = (id: string) => rules.roles.includes(id);
-    const isUnifiedNightOrder = rules.awakenedNightVersion === 2;
+    const isUnifiedNightOrder = isUnifiedAwakenedNight(rules.awakenedNightVersion);
     const canContinueShot = has('hunter') && has('awakened_wolf') &&
       rules.hunterShotVersion === 2 && rules.deathResolutionVersion === 2;
     const details: string[] = [];
@@ -116,7 +114,7 @@ export const awakenedWolf: RoleModule = {
       const d = data(ctx, seat);
       if (d.knifeFromNight === null && !ctx.alive().some((s) => s !== seat && ctx.roleOf(s).faction === 'wolf')) {
         d.knifeFromNight = ctx.state.day;
-        const text = ctx.rules.awakenedNightVersion === 2 && !ctx.rules.roles.includes('werewolf')
+        const text = isUnifiedAwakenedNight(ctx.rules.awakenedNightVersion) && !ctx.rules.roles.includes('werewolf')
           ? gameText(ctx.rules.locale, "你从今晚开始负责普通狼人的攻击。")
           : gameText(ctx.rules.locale, "其余狼人已经全部出局，你从今晚开始继承普通狼刀。");
         ctx.priv([seat], 'awakened.inherit', text, { night: ctx.state.day });
@@ -154,42 +152,57 @@ export const awakenedWolf: RoleModule = {
       decide(ctx, _step, subs) {
         for (const [s, call] of Object.entries(subs)) {
           const seat = Number(s);
-          if (call.tool === 'awakened_wait') { ctx.priv([seat], 'awakened.wait', gameText(ctx.rules.locale, "本夜暂不模仿，保留模仿机会。")); continue; }
+          if (call.tool === 'awakened_wait') {
+            ctx.priv([seat], 'awakened.wait', gameText(ctx.rules.locale, "本夜暂不模仿，保留模仿机会。"), {}, awakenedActionRound(ctx, seat, 'wait', null));
+            continue;
+          }
           const target = call.args.targetSeat as Seat;
           const role = ctx.player(target).role;
           const abilityId = `mimic:${seat}`;
           grantAbility(ctx, seat, copiedDefinition(role), { id: abilityId, active: false, activeFromNight: ctx.state.day + 1, activateAfterNight: ctx.state.day, source: 'awakened_mimic' });
           data(ctx, seat).learned = { target, role, learnedNight: ctx.state.day, activeFromNight: ctx.state.day + 1, active: false, abilityId };
-          ctx.priv([seat], 'awakened.mimic', gameText(ctx.rules.locale, "你模仿了{0}，目标真实身份为{1}。你的查验表现已改变，技能在当夜结束后获得。", seatLabel(target, ctx.rules.locale), gameText(ctx.rules.locale, getRole(role).name)), { target, role, activeFromNight: ctx.state.day + 1 });
+          ctx.priv([seat], 'awakened.mimic', gameText(ctx.rules.locale, "你模仿了{0}，目标真实身份为{1}。你的查验表现已改变，技能在当夜结束后获得。", seatLabel(target, ctx.rules.locale), gameText(ctx.rules.locale, getRole(role).name)), { target, role, activeFromNight: ctx.state.day + 1 }, awakenedActionRound(ctx, seat, 'mimic', target));
           ctx.state.night?.lines.push(gameText(ctx.rules.locale, "觉醒隐狼（{0}）模仿 {1}（{2}）", seatLabel(seat, ctx.rules.locale), seatLabel(target, ctx.rules.locale), gameText(ctx.rules.locale, getRole(role).name)));
         }
       },
       fallback: (ctx) => ({ tool: 'awakened_wait', args: {} }),
     },
-    'night:awakened_knife': {
+    'night:awakened': {
       run(ctx, step) {
-        const actors = holders(ctx).filter((s) => data(ctx, s).knifeFromNight !== null);
-        if (!actors.length) return;
-        ctx.ask({ step, actors, tools: (seat) => {
-          const targets = ctx.rules.awakenedNightVersion === 2 ? wolfKillTargets(ctx, seat)
-            : ctx.alive().filter((s) => ctx.opt<boolean>('wolf.allowTeammateTarget') || ctx.roleOf(s).faction !== 'wolf');
-          return [killTool(targets, ctx.rules.locale), ...(ctx.opt<boolean>('wolf.allowEmpty') ? [emptyKill(ctx.rules.locale)] : [])];
-        }, prompt: () => gameText(ctx.rules.locale, "你已继承普通狼刀，请独立提交今晚刀口。"), title: gameText(ctx.rules.locale, "第{0}夜 · 继承狼刀", ctx.state.day), publicStage: gameText(ctx.rules.locale, "夜晚") });
-      },
-      decide(ctx, _step, subs) {
-        for (const [s, call] of Object.entries(subs)) {
-          const seat = Number(s), target = call.tool === 'awakened_empty_kill' ? null : call.args.targetSeat as Seat;
-          const n = ctx.state.night!;
-          n.knife = target;
-          if (target !== null) n.attacks.push({ target, kind: 'wolf', by: [seat] });
-          ctx.priv([seat], 'awakened.knife', target === null ? gameText(ctx.rules.locale, "你今晚的继承狼刀为空刀。") : gameText(ctx.rules.locale, "你的继承狼刀选择了{0}。", seatLabel(target, ctx.rules.locale)), { target });
-          n.lines.push(gameText(ctx.rules.locale, "觉醒隐狼（{0}）继承狼刀：{1}", seatLabel(seat, ctx.rules.locale), target === null ? gameText(ctx.rules.locale, "空刀") : seatLabel(target, ctx.rules.locale)));
+        const actors = holders(ctx).filter((seat) => !data(ctx, seat).learned && ctx.alive().some((other) => other !== seat));
+        if (actors.length) {
+          ctx.ask({ step, actors, tools: (seat) => [mimicTool(ctx.alive().filter((other) => other !== seat), ctx.rules.locale), waitTool(ctx.rules.locale)],
+            prompt: () => gameText(ctx.rules.locale, "选择一名其他存活玩家模仿，或本夜暂不模仿。模仿身份立即生效，技能在当夜结束后获得。"),
+            title: gameText(ctx.rules.locale, "第{0}夜 · 模仿", ctx.state.day), publicStage: gameText(ctx.rules.locale, "夜晚") });
+          return;
         }
+        if (step.abilityId) { abilityAction.run(ctx, step); return; }
+        const steps = abilityNightSteps(ctx, holders(ctx), 'night:awakened');
+        if (!steps.length) return;
+        const [first, ...rest] = steps;
+        ctx.pushFront(...rest);
+        abilityAction.run(ctx, first);
       },
-      fallback(ctx, _step, seat) {
-        const targetSeat = wolfKillFallbackTarget(ctx, seat);
-        return targetSeat === null ? { tool: 'awakened_empty_kill', args: {} } : { tool: 'awakened_kill', args: { targetSeat } };
+      validate(ctx, step, seat, call) {
+        if (step.abilityId) return abilityAction.validate?.(ctx, step, seat, call) ?? null;
+        return awakenedWolf.steps?.['night:awakened_mimic']?.validate?.(ctx, step, seat, call) ?? null;
       },
+      decide(ctx, step, subs) {
+        if (step.abilityId) {
+          abilityAction.decide?.(ctx, step, subs);
+          return;
+        }
+        awakenedWolf.steps?.['night:awakened_mimic']?.decide?.(ctx, step, subs);
+      },
+      fallback(ctx, step, seat) {
+        if (step.abilityId) return abilityAction.fallback!(ctx, step, seat);
+        return { tool: 'awakened_wait', args: {} };
+      },
+    },
+    'night:awakened_knife': {
+      run: askAwakenedKnife,
+      decide(ctx, _step, subs) { decideAwakenedKnife(ctx, subs); },
+      fallback: (ctx, _step, seat) => fallbackAwakenedKnife(ctx, seat),
     },
     'night:awakened_skill': {
       run(ctx, step) {

@@ -11,7 +11,7 @@ export type { ApiProtocol, TokenUsage } from './api';
 export { defaultServerWebTools, serverWebToolSupport } from './web-tools';
 export type { CapabilityState, ServerWebTool, ServerWebToolSupport, ServerWebToolsConfig } from './web-tools';
 import type { ApiProtocol, TokenUsage } from './api';
-export { eventPurpose, gameRecordEvents, buildVideoScript, recordedBadgeOutcome } from './recording';
+export { eventPurpose, gameRecordEvents, buildVideoScript, recordedBadgeOutcome, projectNightRound, nightRoundSummary } from './recording';
 export type { VideoScriptEntry } from './recording';
 export { THINKING_MODES, thinkingOptions, thinkingParameters, defaultThinkingMode } from './thinking';
 export type { ThinkingMode, ThinkingOption } from './thinking';
@@ -22,6 +22,18 @@ export type GamePhase = 'setup' | 'night' | 'day' | 'end';
 /** 'public' 表示全体（含出局者与观战）；数组是写入时冻结的座位号列表，空数组表示只有上帝视角可见。 */
 export type Audience = 'public' | Seat[];
 
+export type NightRoundKind = 'awakened' | 'wolf';
+export type NightActionKind = 'mimic' | 'wait' | 'skill' | 'skip' | 'kill';
+
+/** 版本 3 写在新事件上。版本 1、2 不回填，展示时按事件类型推导。 */
+export interface NightActionRound {
+  roundKind: NightRoundKind;
+  roundId: string;
+  actionKind: NightActionKind;
+  actorSeatId: number;
+  targetSeatId: number | null;
+}
+
 export interface GameEvent {
   seq: number;
   day: number;
@@ -30,6 +42,7 @@ export interface GameEvent {
   audience: Audience;
   text: string;
   payload: Record<string, unknown>;
+  round?: NightActionRound;
 }
 
 // ---------------------------------------------------------------------------
@@ -165,8 +178,8 @@ export interface RuleSet {
   hunterShotVersion?: 1 | 2;
   /** 缺省／1 保留历史延期公告时点；新局 2 在出局结算后仍继续游戏时才公布延期。 */
   electionExplosionVersion?: 1 | 2;
-  /** 缺省／1 保留原夜间步骤及单目标解药；2 合并觉醒隐狼轮次，并允许在适用版型选择解药目标。 */
-  awakenedNightVersion?: 1 | 2;
+  /** 缺省／1 保留原夜间步骤及单目标解药；2 合并询问顺序但仍分步；新局 3 使用 night:awakened，继承刀在 night:werewolf 提交。 */
+  awakenedNightVersion?: 1 | 2 | 3;
   presetId: string;
   /** 新版型的项目规则版本；旧房间缺省不补写历史。 */
   presetVersion?: number;

@@ -5,6 +5,7 @@ import { getRole } from '../registry';
 import { seatParam } from '../tools';
 import { seatLabel } from '../text';
 import { abilityState } from '../abilities';
+import { awakenedActionRound } from '../awakened-night';
 
 export interface RoleCheck { night: number; target: Seat; role: string }
 
@@ -29,7 +30,7 @@ export function mirrorTool(seats: Seat[], locale: string | undefined = 'zh-CN', 
 
 export function inspectRole(ctx: Ctx, seat: Seat, target: Seat | null, checks?: RoleCheck[]): void {
   if (target === null) {
-    ctx.priv([seat], 'mirror.skip', gameText(ctx.rules.locale, "本夜没有查验。"));
+    ctx.priv([seat], 'mirror.skip', gameText(ctx.rules.locale, "本夜没有查验。"), {}, awakenedActionRound(ctx, seat, 'skip', null));
     return;
   }
   const mod = ctx.roleOf(target);
@@ -37,7 +38,7 @@ export function inspectRole(ctx: Ctx, seat: Seat, target: Seat | null, checks?: 
   const check: RoleCheck = { night: ctx.state.day, target, role };
   (checks ?? (ctx.player(seat).data.roleChecks ??= []) as RoleCheck[]).push(check);
   const roleName = gameText(ctx.rules.locale, getRole(role).name);
-  ctx.priv([seat], 'mirror.result', gameText(ctx.rules.locale, "查验结果：{0}的身份表现为{1}。", seatLabel(target, ctx.rules.locale), roleName), { target, role, roleName });
+  ctx.priv([seat], 'mirror.result', gameText(ctx.rules.locale, "查验结果：{0}的身份表现为{1}。", seatLabel(target, ctx.rules.locale), roleName), { target, role, roleName }, awakenedActionRound(ctx, seat, 'skill', target));
   ctx.state.night?.lines.push(gameText(ctx.rules.locale, "魔镜查验（{0}）查验 {1}：{2}", seatLabel(seat, ctx.rules.locale), seatLabel(target, ctx.rules.locale), roleName));
 }
 

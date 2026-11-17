@@ -1,5 +1,58 @@
 import { gameText } from './locale';
-import type { GameEvent, GodProjection, RoomBrief, Seat, Thought } from './index';
+import type { GameEvent, GodProjection, NightActionKind, NightActionRound, NightRoundKind, RoomBrief, Seat, Thought } from './index';
+
+const PRIVATE_STATUS = new Set(['awakened.identity', 'awakened.inherit', 'awakened.activated']);
+
+function singleSeat(event: GameEvent): Seat | undefined {
+  return Array.isArray(event.audience) && event.audience.length === 1 && Number.isInteger(event.audience[0]) ? event.audience[0] : undefined;
+}
+
+function recordedTarget(value: unknown): Seat | null {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
+}
+
+function derivedRound(day: number, roundKind: NightRoundKind, actionKind: NightActionKind, actorSeatId: Seat, targetSeatId: number | null): NightActionRound {
+  return { roundKind, roundId: `night-${day}-${roundKind === 'wolf' ? 'wolf' : 'awakened'}`, actionKind, actorSeatId, targetSeatId };
+}
+
+/** 版本 3 使用事件上的 round。更早的存档只在读取时推导，不回写。 */
+export function projectNightRound(event: GameEvent, actorRole?: string): NightActionRound | null {
+  if (event.round) return event.round;
+  const actor = singleSeat(event);
+  if (actor === undefined) return null;
+  const target = recordedTarget(event.payload.target);
+  switch (event.type) {
+    case 'awakened.mimic': return derivedRound(event.day, 'awakened', 'mimic', actor, target);
+    case 'awakened.wait': return derivedRound(event.day, 'awakened', 'wait', actor, null);
+    case 'awakened.skill': return derivedRound(event.day, 'awakened', 'skill', actor, target);
+    case 'awakened.skip': return derivedRound(event.day, 'awakened', 'skip', actor, null);
+    case 'awakened.knife': return derivedRound(event.day, 'wolf', 'kill', actor, event.payload.target === null ? null : target);
+    case 'mirror.result': return actorRole === 'awakened_wolf' ? derivedRound(event.day, 'awakened', 'skill', actor, target) : null;
+    case 'mirror.skip': return actorRole === 'awakened_wolf' ? derivedRound(event.day, 'awakened', 'skip', actor, null) : null;
+    default: return null;
+  }
+}
+
+export function nightRoundSummary(round: NightActionRound, locale?: string): string {
+  const action: Record<NightActionKind, string> = { mimic: '模仿', wait: '空过', skip: '空过', skill: '技能', kill: '刀人' };
+  const target = round.targetSeatId === null ? gameText(locale, '无') : gameText(locale, '{0}号', round.targetSeatId);
+  return gameText(locale, '轮次：{0} · 行动：{1} · 目标：{2} · 座位：{3}', gameText(locale, round.roundKind === 'awakened' ? '觉醒隐狼' : '狼人'), gameText(locale, action[round.actionKind]), target, round.actorSeatId);
+}
+
+function fallbackSeatsBefore(events: GameEvent[], seq: number): number[] {
+  const seats: number[] = [];
+  for (let index = events.length - 1; index >= 0; index--) {
+    const event = events[index];
+    if (event.seq >= seq) continue;
+    if (event.type === 'action.fallback' && Array.isArray(event.audience)) {
+      for (const seat of event.audience) if (!seats.includes(seat)) seats.push(seat);
+      continue;
+    }
+    if (event.type === 'judge' || eventPurpose(event) === 'diagnostic') continue;
+    break;
+  }
+  return seats;
+}
 
 /** 从实际事实回填旧思考卡片的警徽结果；不从思考文本猜目标。 */
 export function recordedBadgeOutcome(thought: Thought, events: GameEvent[]): { text: string; automatic: boolean } | null {
@@ -24,7 +77,7 @@ export function eventPurpose(e: GameEvent): 'gameplay' | 'agent' | 'diagnostic' 
 /** 只接收调用方已按权限过滤的事件；不改变原始日志或 Agent 上下文。 */
 export function gameRecordEvents(events: GameEvent[], locale: string | undefined = 'zh-CN'): GameEvent[] {
   return events.flatMap((e) => {
-    if (eventPurpose(e) !== 'gameplay' || e.payload.announced === true || ['wolf.team', 'night.resolution'].includes(e.type)) return [];
+    if (eventPurpose(e) !== 'gameplay' || e.payload.announced === true || ['wolf.team', 'night.resolution', 'awakened.identity'].includes(e.type)) return [];
     const p = e.payload;
     const isSeat = (value: unknown): value is Seat => typeof value === 'number' && Number.isInteger(value) && value > 0;
     const actorSeat = Array.isArray(e.audience) && e.audience.length === 1 && isSeat(e.audience[0]) ? e.audience[0] : undefined;
@@ -72,8 +125,9 @@ export interface VideoScriptEntry {
 export function buildVideoScript(p: GodProjection, room: RoomBrief) {
   if (p.viewer.kind !== 'god' || room.viewer !== 'host') throw new Error(gameText(p.locale, "只有上帝视角可以导出完整剪辑稿"));
   const chapters: { day: number; phase: GameEvent['phase']; title: string; entries: VideoScriptEntry[] }[] = [];
-  const narrated = gameRecordEvents(p.events, p.locale);
+  const narrated = gameRecordEvents(p.events, p.locale).filter((event) => !PRIVATE_STATUS.has(event.type));
   const narratedBySeq = new Map(narrated.map((e) => [e.seq, e]));
+  const roleOf = new Map(p.god.roles.map((role) => [role.seat, role.role]));
   for (const e of narrated) {
     const key = `${e.day}:${e.phase}`;
     let chapter = chapters.at(-1);
@@ -84,6 +138,11 @@ export function buildVideoScript(p: GodProjection, room: RoomBrief) {
     const speech = e.type === 'speech' || e.type === 'wolf.chat';
     const seat = speech && typeof e.payload.seat === 'number' ? e.payload.seat : undefined;
     const { decisionId: _decision, step: _step, prompt: _prompt, announced: _announced, ...data } = e.payload;
+    const actor = singleSeat(e);
+    const round = projectNightRound(e, actor === undefined ? undefined : roleOf.get(actor));
+    if (round) data.round = round;
+    const fallbackSeats = fallbackSeatsBefore(p.events, e.seq);
+    if (fallbackSeats.length) data.fallbackSeats = fallbackSeats;
     const previous = p.events.findLast((event) => event.seq < e.seq);
     const actingSeat = seat ?? (Array.isArray(e.audience) && e.audience.length === 1 ? e.audience[0] : undefined);
     if (previous?.type === 'action.fallback' && (e.type === 'speech.order' ||
@@ -103,9 +162,14 @@ export function buildVideoScript(p: GodProjection, room: RoomBrief) {
     ruleCard: p.ruleCard,
     cast: p.god.roles.map((r) => ({ seat: r.seat, name: p.seats.find((s) => s.seat === r.seat)?.name ?? gameText(p.locale, "{0}号", r.seat), role: r.role, roleName: r.roleName, factionName: r.factionName, voiceKey: `seat-${r.seat}` })),
     // 已被合并播报的出局等事实仍供画面重建，spoken=false 避免重复配音。
-    events: p.events.filter((e) => eventPurpose(e) === 'gameplay' && e.type !== 'wolf.team').map((e) => {
+    events: p.events.filter((e) => eventPurpose(e) === 'gameplay' && e.type !== 'wolf.team' && e.type !== 'awakened.identity').map((e) => {
       const { decisionId: _decision, step: _step, prompt: _prompt, announced: _announced, ...data } = e.payload;
-      return { sourceSeq: e.seq, day: e.day, phase: e.phase, type: e.type, audience: e.audience, spoken: narratedBySeq.has(e.seq), text: narratedBySeq.get(e.seq)?.text ?? e.text, data };
+      const actor = singleSeat(e);
+      const round = projectNightRound(e, actor === undefined ? undefined : roleOf.get(actor));
+      if (round) data.round = round;
+      const fallbackSeats = fallbackSeatsBefore(p.events, e.seq);
+      if (fallbackSeats.length) data.fallbackSeats = fallbackSeats;
+      return { sourceSeq: e.seq, day: e.day, phase: e.phase, type: e.type, audience: e.audience, spoken: narratedBySeq.has(e.seq) && !PRIVATE_STATUS.has(e.type), text: narratedBySeq.get(e.seq)?.text ?? e.text, data };
     }),
     chapters, result: p.result ?? null,
   };

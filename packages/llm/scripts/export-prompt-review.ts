@@ -21,7 +21,7 @@ hidden.ok(4, 'awakened_mimic', { targetSeat: 5 });
 const mimicNotice = hidden.view(4).events.find((e) => e.type === 'awakened.mimic')!.text;
 hidden.night();
 const activeNotice = hidden.view(4).events.find((e) => e.type === 'awakened.activated')!.text;
-hidden.toNight(); hidden.until((g) => g.pending?.step.type === 'night:awakened_skill');
+hidden.toNight(); hidden.until((g) => g.pending?.step.type === 'night:awakened' || g.pending?.step.type === 'night:awakened_skill');
 const inheriting = makeHidden();
 inheriting.ok(4, 'awakened_mimic', { targetSeat: 9 }); inheriting.night();
 inheriting.removeSeats(1, 2, 3); inheriting.toNight();
