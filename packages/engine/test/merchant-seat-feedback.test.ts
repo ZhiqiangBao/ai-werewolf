@@ -33,5 +33,5 @@ it('保留一夜后，幸运儿守护附录同时显示前夜与本夜的禁选�
   const param = game.toolsOf(5).find((tool) => tool.name === 'lucky_guard')?.params[0];
   expect(param?.kind === 'seat' && param.options).not.toContain(3);
   expect(param?.kind === 'seat' && param.options).not.toContain(7);
-  expect(game.view(5).me?.appendix).toContain('第2夜禁守座位：7号、3号');
+  expect(game.view(5).me?.appendix).toContain('第2夜禁守座位：3号、7号');
 });

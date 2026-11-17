@@ -367,6 +367,8 @@ describe('狼王', () => {
     game.ok(6, 'wolf_king_shoot', { targetSeat: 7 });
     expect(game.state.deaths.find((death) => death.seat === 7)).toMatchObject({ via: 'shot', by: 6 });
     expect(game.view(8).seats[5].revealedRole).toBe('wolf_king');
+    expect(game.spectator().stage).toBe('6号遗言中');
+    expect(game.spectator().seats[5].active).toBe(true);
     expect(game.spectator().seats[6].alive).toBe(false);
     game.until((g) => !!g.state.result, (_seat, tools) => {
       if (tools.some((tool) => tool.name === 'vote')) {

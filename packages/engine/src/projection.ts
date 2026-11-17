@@ -34,8 +34,9 @@ function publicTurn(state: GameState, events: GameEvent[], viewer: Viewer) {
   if (pending && viewer.kind !== 'god' && state.rules.roles.includes('wolf_king') &&
       !(viewer.kind === 'seat' && pending.actors.includes(viewer.seat))) {
     const last = events.findLast((event) => event.audience === 'public');
-    if (last && (last.type === 'exile' || last.type === 'explode' || last.type === 'wolf_king.shot' || last.type === 'hunter.shot' ||
-        (last.type === 'dawn' && Array.isArray(last.payload.deaths) && last.payload.deaths.length > 0))) {
+    const deathAnnounced = last && (last.type === 'exile' || last.type === 'explode' || last.type === 'hunter.shot' ||
+      (last.type === 'dawn' && Array.isArray(last.payload.deaths) && last.payload.deaths.length > 0));
+    if (deathAnnounced && !state.players.some((p) => p.revealed && (p.revealedAs ?? p.role) === 'wolf_king')) {
       return { stage: gameText(state.rules.locale, '法官结算中'), actor: undefined };
     }
   }
