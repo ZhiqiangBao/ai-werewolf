@@ -38,10 +38,16 @@ export function draftNarration(script: Script) {
     else if (e.type === 'dawn') {
       const event = script.events.find((f) => f.sourceSeq === e.sourceSeq)!;
       const resolution = script.events.findLast((f) => f.sourceSeq < e.sourceSeq && f.type === 'night.resolution' && f.day === event.day);
-      const guarded = resolution?.data.rows?.find((r: any) => r.blocked && r.blockers?.includes('guard'));
+      const guarded = resolution?.data.rows?.find((r: any) => r.kind === 'wolf' && r.blocked && r.blockers?.includes('guard'));
       if (guarded) {
         say(e.text, '法官先公布出局或平安夜');
-        edits[e.sourceSeq].after = [{ text: `守卫守中${guarded.target}号，挡住了狼刀。`, reason: '结算后解释实际守护效果' }];
+        const guards = script.events.filter((f) => f.day === event.day && f.sourceSeq < e.sourceSeq && f.data.target === guarded.target && (f.type === 'guard.protect' || f.type === 'lucky.guard'));
+        const roles = [...new Set(guards.map((f) => f.type === 'guard.protect' ? '守卫' : '幸运儿'))];
+        const source = roles.join('和');
+        const text = guarded.blockers.includes('antidote')
+          ? `${guarded.target}号同时受到${source ? `${source}的` : ''}守护和解药保护，狼刀未造成出局。`
+          : source ? `${source}守护${guarded.target}号，挡住了狼刀。` : `对${guarded.target}号的守护挡住了狼刀。`;
+        edits[e.sourceSeq].after = [{ text, reason: '结算后根据记录的守护行动解释实际效果' }];
       }
     } else if (e.type === 'review') {
       const nights = script.chapters.filter((c) => c.phase === 'night').length;

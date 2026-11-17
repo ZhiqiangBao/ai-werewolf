@@ -100,7 +100,8 @@ export async function verticalScene(clip: Clip, theme: string, script: Script, s
     const state = replay(script, clip.data.replayThrough ?? clip.sourceSeq);
     badge(String(clip.seat), 270, 1008, 72, 46, true);
     g.font = 'bold 36px VideoSans';
-    const roleName = player.role === 'unknown' ? t('身份未知') : videoRole(locale, player.role, player.roleName);
+    const visibleRole = player.role === 'unknown' ? state.revealed.get(player.seat) : player.role;
+    const roleName = visibleRole ? videoRole(locale, visibleRole, player.roleName) : t('身份未知');
     const roleWidth = Math.max(112, Math.min(230, Math.ceil(g.measureText(roleName).width) + 32));
     badge(roleName, 810 - roleWidth, 1008, roleWidth, 36);
     g.font = '30px VideoSans'; g.lineWidth = 5; g.strokeStyle = '#111927'; g.fillStyle = '#e7ebe5';

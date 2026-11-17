@@ -4,6 +4,7 @@ export interface ReplayState { day: number; phase: string; alive: Set<number>; d
 export function replay(script: Script, seq: number): ReplayState {
   const state: ReplayState = { day: 0, phase: 'setup', alive: new Set(script.cast.map((s) => s.seat)), sheriff: null, deaths: new Map(), revealed: new Map(),
     candidates: new Set(), withdrawn: new Set(), election: false, recent: [], result: null };
+  const pendingDeaths = new Map<number, DeathCause[]>();
   for (const e of script.events) {
     if (e.sourceSeq > seq) break;
     state.day = e.day; state.phase = e.phase;
@@ -23,8 +24,21 @@ export function replay(script: Script, seq: number): ReplayState {
     if (e.audience === 'public' && e.type === 'wolf_king.shot' && p.role === 'wolf_king') state.revealed.set(p.shooter, 'wolf_king');
     if (e.audience === 'public' && e.type === 'wolf_king.decline' && p.role === 'wolf_king') state.revealed.set(p.seat, 'wolf_king');
     if (e.audience === 'public' && e.type === 'explode' && p.role === 'wolf_king') state.revealed.set(p.seat, 'wolf_king');
-    if (e.type === 'night.resolution' && script.perspective === 'god') for (const d of p.deaths ?? []) { const seat = typeof d === 'number' ? d : d.seat; state.alive.delete(seat); state.deaths.set(seat, deathCauses('night', typeof d === 'number' ? [] : d.causes ?? [], true)); }
-    if (e.type === 'dawn') for (const seat of p.deaths ?? []) { state.alive.delete(seat); if (!state.deaths.has(seat)) state.deaths.set(seat, ['night']); }
+    if (e.type === 'night.resolution' && script.perspective === 'god') {
+      pendingDeaths.clear();
+      for (const death of p.deaths ?? []) {
+        const seat = typeof death === 'number' ? death : death.seat;
+        const causes = typeof death === 'number' ? [] : death.causes ?? [];
+        pendingDeaths.set(seat, deathCauses('night', causes, true));
+      }
+    }
+    if (e.type === 'dawn') {
+      for (const seat of p.deaths ?? []) {
+        state.alive.delete(seat);
+        if (!state.deaths.has(seat)) state.deaths.set(seat, pendingDeaths.get(seat) ?? ['night']);
+      }
+      pendingDeaths.clear();
+    }
     if (e.type === 'badge.transfer') state.sheriff = p.to;
     if (['badge.tear', 'badge.lost'].includes(e.type)) state.sheriff = null;
     if (e.type === 'game.end') { state.result = p.result; state.election = false; }
