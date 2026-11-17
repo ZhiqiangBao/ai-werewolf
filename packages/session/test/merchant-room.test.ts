@@ -4,6 +4,64 @@ import { mockAdapter, mockDecision, type Adapter, type DecideRequest } from '@we
 import type { GameEvent, GodProjection, Projection, ToolCall } from '@werewolf/protocol';
 import { MemoryStore, RoomManager, SecretBox } from '../src/index';
 
+it('私密行动的推进间隔只发给当前行动人和房主，其他席位不能通过订阅或提交探测', async () => {
+  let now = 1_000_000;
+  const manager = new RoomManager({ store: new MemoryStore(), secrets: SecretBox.ephemeral(), tickMs: 0, now: () => now });
+  const { roomId, hostToken } = manager.createRoom();
+  const timing = { speech: { limitSec: 90, intervalMs: 1000 }, vote: { limitSec: 90, intervalMs: 1000 }, skill: { limitSec: 90, intervalMs: 1000 } };
+  const setup = manager.updateSetup(roomId, hostToken, { presetId: 'merchant12', timing,
+    seats: Array.from({ length: 12 }, (_, i) => ({ seat: i + 1, controller: 'human' as const })) });
+  for (const { token } of setup.tokens.seats) manager.participate(roomId, token, { ready: true });
+  const token = (seat: number) => setup.tokens.seats[seat - 1].token;
+  const view = (seat: number) => manager.view(roomId, token(seat));
+  try {
+    manager.start(roomId, hostToken);
+    const roles = (manager.view(roomId, hostToken).projection as GodProjection).god.roles;
+    const merchant = roles.find((p) => p.role === 'miracle_merchant')!.seat;
+    const guard = roles.find((p) => p.role === 'guard')!.seat;
+    const observer = roles.find((p) => p.role === 'villager')!.seat;
+    let merchantUpdates = 0, observerUpdates = 0, spectatorUpdates = 0;
+    manager.subscribe(roomId, token(merchant), () => { merchantUpdates++; });
+    manager.subscribe(roomId, token(observer), () => { observerUpdates++; });
+    manager.subscribe(roomId, setup.tokens.spectator, () => { spectatorUpdates++; });
+    merchantUpdates = observerUpdates = spectatorUpdates = 0;
+
+    const badCall = { decisionId: 'unknown', tool: 'speak', args: { content: '过' } };
+    const before = manager.act(roomId, token(observer), badCall);
+    observerUpdates = 0;
+    expect(manager.act(roomId, token(merchant), { decisionId: view(merchant).projection!.task!.decisionId,
+      tool: 'merchant_gift_guard', args: { targetSeat: guard } })).toEqual({ ok: true });
+    expect(observerUpdates).toBe(0);
+    expect(spectatorUpdates).toBe(0);
+    expect(manager.act(roomId, token(observer), badCall)).toEqual(before);
+    const guardTask = view(guard).projection!.task!;
+    expect(manager.act(roomId, token(observer), { decisionId: guardTask.decisionId, tool: 'guard_skip', args: {} }))
+      .toMatchObject({ ok: false, error: { code: 'NOT_YOUR_TURN' } });
+    expect(() => manager.act(roomId, token(guard), { decisionId: guardTask.decisionId, tool: 'guard_skip', args: {} }))
+      .toThrow('推进间隔尚未结束');
+    observerUpdates = 0;
+    expect(view(guard).presentation?.actionAvailableAt).toBe(now + 1000);
+    expect(manager.view(roomId, hostToken).presentation?.actionAvailableAt).toBe(now + 1000);
+    expect(view(merchant).presentation?.actionAvailableAt).toBeUndefined();
+    expect(view(observer).presentation?.actionAvailableAt).toBeUndefined();
+    expect(manager.view(roomId, setup.tokens.spectator).presentation?.actionAvailableAt).toBeUndefined();
+    expect(observerUpdates).toBe(0);
+    expect(spectatorUpdates).toBe(0);
+
+    merchantUpdates = 0;
+    now += 1001;
+    expect(manager.act(roomId, token(guard), { decisionId: view(guard).projection!.task!.decisionId,
+      tool: 'guard_skip', args: {} })).toEqual({ ok: true });
+    expect(merchantUpdates).toBe(0);
+    expect(observerUpdates).toBe(0);
+    expect(spectatorUpdates).toBe(0);
+    expect(view(merchant).presentation?.actionAvailableAt).toBeUndefined();
+  } finally {
+    manager.dispose();
+    await manager.whenDisposed();
+  }
+});
+
 it('奇迹商人房间恢复未用和已用能力，并保留双守的跨夜限制和私密边界', async () => {
   const store = new MemoryStore();
   const secrets = SecretBox.ephemeral();

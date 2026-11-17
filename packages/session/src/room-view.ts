@@ -50,9 +50,17 @@ export class RoomViewService {
   }
 
   view(rec: RoomReadRecord, viewer: Viewer): ViewResponse {
-    return { room: this.brief(rec, viewer), projection: rec.state ? this.project(rec, viewer) : null,
+    const projection = rec.state ? this.project(rec, viewer) : null;
+    const actionAvailableAt = this.visibleActionAvailableAt(rec, viewer, projection);
+    return { room: this.brief(rec, viewer), projection,
       presentation: { deaths: (rec.state?.deaths ?? []).map((d) => ({ seat: d.seat, day: d.day, causes: deathCauses(d.via, d.causes, viewer.role === 'host') })),
-        ...(rec.actionAvailableAt ? { actionAvailableAt: rec.actionAvailableAt } : {}) } };
+        ...(actionAvailableAt ? { actionAvailableAt } : {}) } };
+  }
+
+  private visibleActionAvailableAt(rec: RoomReadRecord, viewer: Viewer, projection: Projection | null): number | undefined {
+    if (viewer.role === 'host') return rec.actionAvailableAt;
+    if (viewer.role !== 'seat' || !projection) return undefined;
+    return (projection.task && !projection.task.submitted) || projection.interrupts.length ? rec.actionAvailableAt : undefined;
   }
 
   speechLocale(rec: RoomReadRecord): string {
@@ -148,11 +156,12 @@ export class RoomViewService {
   }
 
   private signature(rec: RoomReadRecord, viewer: Viewer): string {
-    const room = [rec.status, rec.paused, rec.avatarStyle, rec.actionAvailableAt, rec.seats.map((s) => [s.seat, s.name, s.controller]), this.participants(rec)];
+    const room = [rec.status, rec.paused, rec.avatarStyle, rec.seats.map((s) => [s.seat, s.name, s.controller]), this.participants(rec)];
     if (!rec.state) return JSON.stringify([room, rec.presetId, rec.ruleValues]);
     const p = this.project(rec, viewer);
     return JSON.stringify([
       room,
+      this.visibleActionAvailableAt(rec, viewer, p),
       p.version,
       p.stage,
       p.task?.decisionId ?? null,
