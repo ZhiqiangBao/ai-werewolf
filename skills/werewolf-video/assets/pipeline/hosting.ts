@@ -54,7 +54,8 @@ export function completeHosting(source: Script, edited: Script): Script {
         speaker: seat === undefined ? '法官' : (speaker ?? `${seat}号`), voiceKey: seat === undefined ? 'judge' : `seat-${seat}`,
         ...(seat === undefined ? {} : { seat }), text, visibility: anchor.visibility,
         data: { presentationOnly: true, presentationKey: key, replayThrough: anchor.sourceSeq - 1,
-          provenance: seat === undefined ? '流程衔接' : '按该事件记录的行动转述，非玩家原话', ...data } });
+          provenance: seat === undefined ? '流程衔接' : '按该事件记录的行动转述，非玩家原话',
+          ...Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined)) } });
     };
     const fallen = (data: Record<string, any>) => new Set<number>(Array.isArray(data.fallbackSeats) ? data.fallbackSeats.filter((seat: unknown) => typeof seat === 'number') : []);
     const summary = (seat: number, kind: 'kill' | 'pass', target?: unknown) => kind === 'kill'

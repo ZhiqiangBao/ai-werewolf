@@ -35,13 +35,16 @@ it('网页导出的上帝剪辑稿按旧房间事实主持，重新导入可还�
     { seq: 5, day: 6, phase: 'day', type: 'action.fallback', audience: [1], text: '', payload: {} },
     { seq: 6, day: 6, phase: 'day', type: 'speech.order', audience: 'public', text: '从2号开始。', payload: { direction: 'clockwise', order: [2, 3] } },
     { seq: 7, day: 6, phase: 'day', type: 'exile', audience: 'public', text: '已合并播报。', payload: { seat: 2, announced: true } },
+    { seq: 8, day: 7, phase: 'night', type: 'guard.skip', audience: [8], text: '守卫选择空守。', payload: {} },
   ];
   const room: RoomBrief = { roomId: 'fixture', status: 'ended', paused: false, viewer: 'host', presetName: '', seats: [] };
   const projection = projectGod(game.state, events);
-  const script = JSON.parse(JSON.stringify(buildHostedVideoScript(projection, room))) as ReturnType<typeof buildHostedVideoScript>;
+  const hosted = buildHostedVideoScript(projection, room);
+  const script = JSON.parse(JSON.stringify(hosted)) as typeof hosted;
+  expect(script.chapters).toStrictEqual(hosted.chapters);
   const lines = script.chapters.flatMap((chapter) => chapter.entries);
   expect(lines.filter((entry) => entry.type === 'hosting.choice').map((entry) => [entry.voiceKey, entry.text])).toEqual([
-    ['seat-1', '我使用模仿魔镜，目标是12号。'], ['seat-1', '我今晚刀2号。'],
+    ['seat-1', '我使用模仿魔镜，目标是12号。'], ['seat-1', '我今晚刀2号。'], ['seat-8', '今晚空守。'],
   ]);
   expect(lines.some((entry) => entry.text === '觉醒隐狼请睁眼。')).toBe(true);
   expect(lines.some((entry) => entry.text === '狼人请闭眼。')).toBe(true);
