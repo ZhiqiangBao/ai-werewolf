@@ -19,7 +19,7 @@ for (const [file, family] of [['msyh.ttc', 'GameCN'], ['msyhbd.ttc', 'GameCNBold
   const path = `C:/Windows/Fonts/${file}`; if (existsSync(path)) GlobalFonts.registerFromPath(path, family);
 }
 const W = 1920, H = 1080, CX = 714, CY = 520;
-const colors: Record<string, string> = { werewolf: '#ff8d94', seer: '#c3a6f6', witch: '#cfabf6', hunter: '#f2c57c', guard: '#8fcfe9', villager: '#b1d4bd' };
+const colors: Record<string, string> = { werewolf: '#ff8d94', wolf_king: '#ff8d94', miracle_merchant: '#f2c57c', seer: '#c3a6f6', witch: '#cfabf6', hunter: '#f2c57c', guard: '#8fcfe9', villager: '#b1d4bd' };
 const paths: Record<string, string> = {
   mic: 'M9 5a3 3 0 0 1 6 0v6a3 3 0 0 1-6 0V5Z M5 10v1a7 7 0 0 0 14 0v-1 M12 18v4 M8 22h8',
   eye: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z',
@@ -30,6 +30,8 @@ const paths: Record<string, string> = {
   shield: 'M12 2 3 6v6c0 6 9 10 9 10s9-4 9-10V6l-9-4Z M8 12l3 3 5-6',
   potion: 'M9 2h6 M10 2v6l-6 10a3 3 0 0 0 2.6 4h10.8a3 3 0 0 0 2.6-4L14 8V2 M7 15h10',
   target: 'M21 12a9 9 0 1 1-9-9 M17 2v5h5 M21 3l-9 9 M16 12a4 4 0 1 1-4-4',
+  gift: 'M4 9h16v12H4V9Z M3 6h18v3H3V6Z M12 6v15 M12 6C4-1 4 8 12 6C20-1 20 8 12 6Z',
+  wolfKing: 'M4 8 7 4l5 3 5-3 3 4-1 9-7 5-7-5Z M7 11l3 2 M17 11l-3 2 M10 17l2 1 2-1 M8 3l4 2 4-2',
   person: 'M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z M4 21v-2a8 8 0 0 1 16 0v2',
   wolf: 'm13 13 8 5h6l8-5-2 18-9 8-9-8-2-18Z M13 13l9 16-7 2 M35 13l-9 16 7 2 M22 29h4l-2 5-2-5Z M18 24l3 1 M30 24l-3 1',
   gavel: 'm4 9 8-7 6 7-8 7-6-7Z M11 13l10 11 M2 23h11 M4 20h7',
@@ -76,7 +78,7 @@ export async function createSceneRenderer(script: Script, options?: { theme?: st
     g.drawImage(atlas, (i % 4) * cellW, Math.floor(i / 4) * cellH, cellW, cellH, x, y, size, size);
     if (dim) { g.fillStyle = 'rgba(6,15,26,.68)'; g.fillRect(x, y, size, size); } g.restore();
   }
-  function roleIcon(c: Cast) { return c.role === 'werewolf' ? 'wolf' : c.role === 'seer' ? 'eye' : c.role === 'guard' ? 'shield' : c.role === 'witch' ? 'potion' : c.role === 'hunter' ? 'target' : 'person'; }
+  function roleIcon(c: Cast) { return c.role === 'miracle_merchant' ? 'gift' : c.role === 'wolf_king' ? 'wolfKing' : c.role === 'werewolf' ? 'wolf' : c.role === 'seer' ? 'eye' : c.role === 'guard' ? 'shield' : c.role === 'witch' ? 'potion' : c.role === 'hunter' ? 'target' : 'person'; }
   function speakerPanel(clip: TimedClip, state: ReplayState) {
     const identity = speakerIdentity(script, clip, locale), { panel, avatar, identity: label, divider } = subtitleLayout;
     const tint = identity.kind === 'commentator' ? (clip.phase === 'night' ? '#d3bfff' : '#79549a') : ui.accent;
@@ -100,6 +102,8 @@ export async function createSceneRenderer(script: Script, options?: { theme?: st
   }
   function seat(c: Cast, i: number, state: ReplayState, clip: TimedClip) {
     const { cos, sin } = seatPosition(i, script.cast.length), x = CX + cos * 565, y = CY + sin * 292 + (sin < -.7 ? -12 : 10);
+    const revealed = state.revealed.get(c.seat);
+    if (c.role === 'unknown' && revealed) c = { ...c, role: revealed };
     const active = clip.seat === c.seat, alive = state.alive.has(c.seat), tint = colors[c.role] ?? '#c4d4cb';
     const left = x - 58, top = y - 60;
     if (active) {
@@ -185,7 +189,7 @@ export async function createSceneRenderer(script: Script, options?: { theme?: st
     const offset = Math.floor((clip.startFrame / 30 * RULE_SCROLL_SPEED) % rules.cycleHeight);
     g.drawImage(rules.image, 0, offset, RULE_VIEW.width, RULE_VIEW.height, RULE_VIEW.x, RULE_VIEW.y, RULE_VIEW.width, RULE_VIEW.height);
     text(locale === (script.locale ?? 'zh-CN') ? t('来自本局规则 · 连续滚动不随发言重置') : t('规则正文原语言：{0}', script.locale ?? 'zh-CN'), 1458, 842, 15, ui.muted, false, 'left', 405);
-    const aliveWolves = script.cast.filter((c) => c.role === 'werewolf' && state.alive.has(c.seat)).length;
+    const aliveWolves = script.cast.filter((c) => (c.role === 'werewolf' || c.role === 'wolf_king') && state.alive.has(c.seat)).length;
     round(1456, 866, 408, 35, 12, ui.chip); text(script.perspective === 'player' ? t('存活 {0} 人', state.alive.size) : t('存活 {0} 人     狼人 {1}     好人 {2}', state.alive.size, aliveWolves, state.alive.size - aliveWolves), 1660, 883, 17, ui.muted, false, 'center', 396);
     speakerPanel(clip, state);
     // Timestamped subtitles are burned in this empty strip by the encoder.

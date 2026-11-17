@@ -194,6 +194,15 @@ function legacyMockDecision(p: Projection, tools: ToolSpec[]): ToolCall {
 
   const spec = tools[0];
   switch (spec.name) {
+    case 'merchant_gift': {
+      const targets = optionsOf(spec, 'target');
+      const skill = spec.params.find((param) => param.name === 'skill');
+      if (!targets.length || skill?.kind !== 'choice' || !skill.options.length || r() < 0.25) {
+        return has('merchant_wait') ? { tool: 'merchant_wait', args: {} }
+          : { tool: spec.name, args: { target: null, skill: null } };
+      }
+      return { tool: spec.name, args: { target: pick(r, targets), skill: pick(r, skill.options).value } };
+    }
     case 'wolf_discuss': {
       const t = wolfTarget(k, p, k.alive);
       return { tool: spec.name, args: { content: t === null ? '今晚空刀吧。' : `今晚刀 ${t}号。` } };
@@ -228,6 +237,7 @@ function legacyMockDecision(p: Projection, tools: ToolSpec[]): ToolCall {
       if (seer !== undefined && r() < 0.7) return { tool: spec.name, args: { target: seer } };
       return { tool: spec.name, args: { target: r() < 0.3 || !options.length ? null : pick(r, options) } };
     }
+    case 'wolf_king_shoot':
     case 'hunter_shoot': {
       const options = optionsOf(spec, 'target');
       const accused = k.accused.filter((s) => options.includes(s) && !cleared(k, s));

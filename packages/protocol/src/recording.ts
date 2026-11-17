@@ -14,7 +14,7 @@ function recordedTarget(value: unknown): Seat | null {
 }
 
 function derivedRound(day: number, roundKind: NightRoundKind, actionKind: NightActionKind, actorSeatId: Seat, targetSeatId: number | null): NightActionRound {
-  return { roundKind, roundId: `night-${day}-${roundKind === 'wolf' ? 'wolf' : 'awakened'}`, actionKind, actorSeatId, targetSeatId };
+  return { roundKind, roundId: `night-${day}-${roundKind === 'lucky' ? `lucky-${actorSeatId}` : roundKind}`, actionKind, actorSeatId, targetSeatId };
 }
 
 /** 版本 3 使用事件上的 round。更早的存档只在读取时推导，不回写。 */
@@ -24,6 +24,10 @@ export function projectNightRound(event: GameEvent, actorRole?: string): NightAc
   if (actor === undefined) return null;
   const target = recordedTarget(event.payload.target);
   switch (event.type) {
+    case 'merchant.gift': return derivedRound(event.day, 'merchant', 'gift', actor, target);
+    case 'merchant.wait': return derivedRound(event.day, 'merchant', 'wait', actor, null);
+    case 'lucky.inspect': case 'lucky.poison': case 'lucky.guard': return derivedRound(event.day, 'lucky', 'skill', actor, target);
+    case 'lucky.skip': return derivedRound(event.day, 'lucky', 'skip', actor, null);
     case 'awakened.mimic': return derivedRound(event.day, 'awakened', 'mimic', actor, target);
     case 'awakened.wait': return derivedRound(event.day, 'awakened', 'wait', actor, null);
     case 'awakened.skill': return derivedRound(event.day, 'awakened', 'skill', actor, target);
@@ -36,9 +40,9 @@ export function projectNightRound(event: GameEvent, actorRole?: string): NightAc
 }
 
 export function nightRoundSummary(round: NightActionRound, locale?: string): string {
-  const action: Record<NightActionKind, string> = { mimic: '模仿', wait: '空过', skip: '空过', skill: '技能', kill: '刀人' };
+  const action: Record<NightActionKind, string> = { gift: '交易', mimic: '模仿', wait: '空过', skip: '空过', skill: '技能', kill: '刀人' };
   const target = round.targetSeatId === null ? gameText(locale, '无') : gameText(locale, '{0}号', round.targetSeatId);
-  return gameText(locale, '轮次：{0} · 行动：{1} · 目标：{2} · 座位：{3}', gameText(locale, round.roundKind === 'awakened' ? '觉醒隐狼' : '狼人'), gameText(locale, action[round.actionKind]), target, round.actorSeatId);
+  return gameText(locale, '轮次：{0} · 行动：{1} · 目标：{2} · 座位：{3}', gameText(locale, ({ awakened: '觉醒隐狼', wolf: '狼人', merchant: '奇迹商人', lucky: '幸运儿' } as const)[round.roundKind]), gameText(locale, action[round.actionKind]), target, round.actorSeatId);
 }
 
 function fallbackSeatsBefore(events: GameEvent[], seq: number): number[] {

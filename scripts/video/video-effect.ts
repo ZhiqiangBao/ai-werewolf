@@ -14,7 +14,7 @@ export const videoEffectVersion = 'skill-overlay-v3';
 /** Only documented action types receive a target label; unrelated targets are not wolf attacks. */
 export function actionTargetLabel(type: string): string | undefined {
   return ({ 'guard.protect': '守护目标', 'seer.result': '查验目标', 'mirror.result': '查验目标', 'witch.save': '使用解药',
-    'witch.poison': '使用毒药', 'wolf.kill.result': '狼刀目标', 'awakened.knife': '狼刀目标', 'hunter.shot': '开枪目标', 'shot': '开枪目标' } as Record<string, string>)[type];
+    'lucky.poison': '使用毒药', 'lucky.guard': '守护目标', 'lucky.inspect': '查验目标', 'witch.poison': '使用毒药', 'wolf.kill.result': '狼刀目标', 'awakened.knife': '狼刀目标', 'wolf_king.shot': '开枪目标', 'hunter.shot': '开枪目标', 'shot': '开枪目标' } as Record<string, string>)[type];
 }
 
 type EffectClip = Pick<TimedClip, 'sourceSeq' | 'type' | 'data' | 'text' | 'part' | 'seat' | 'startFrame'>;

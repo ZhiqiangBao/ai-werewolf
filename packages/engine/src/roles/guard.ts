@@ -3,18 +3,26 @@ import { gameText, isEnglishGameLocale } from '@werewolf/protocol';
 import type { RuleSet, ToolSpec } from '@werewolf/protocol';
 import type { Seat } from '@werewolf/protocol';
 import type { Ctx } from '../context';
-import { seatLabel } from '../text';
+import { seatLabel, seatList } from '../text';
 import { err, seatParam } from '../tools';
 import type { ResolutionRow, RoleModule } from '../types';
+import { guardedSeats } from '../lucky-abilities';
 
 const lastOf = (ctx: Ctx, seat: Seat) => roleData(ctx.player(seat), 'guard').last ?? null;
 
-function targetsFor(ctx: Ctx, seat: Seat): Seat[] {
+function bannedTargets(ctx: Ctx, seat: Seat, night: number): Seat[] {
+  if (!ctx.opt<boolean>('guard.noConsecutive')) return [];
+  if (ctx.rules.roles.includes('miracle_merchant')) return guardedSeats(ctx, seat, night - 1);
   const last = lastOf(ctx, seat);
+  return last === null ? [] : [last];
+}
+
+function targetsFor(ctx: Ctx, seat: Seat): Seat[] {
+  const banned = bannedTargets(ctx, seat, ctx.state.day);
   return ctx
     .alive()
     .filter((x) => ctx.opt<boolean>('guard.allowSelf') || x !== seat)
-    .filter((x) => !(ctx.opt<boolean>('guard.noConsecutive') && x === last));
+    .filter((x) => !banned.includes(x));
 }
 
 export const guard: RoleModule = {
@@ -52,6 +60,16 @@ export const guard: RoleModule = {
 
   appendix(ctx, seat) {
     const log = roleData(ctx.player(seat), 'guard').log ?? [];
+    if (ctx.rules.roles.includes('miracle_merchant')) {
+      const next = ctx.state.phase === 'night' && !log.some((entry) => entry.night === ctx.state.day) ? ctx.state.day : ctx.state.day + 1;
+      const banned = bannedTargets(ctx, seat, next);
+      return [
+        log.length
+          ? gameText(ctx.rules.locale, "你的守护记录：{0}。", log.map((r) => gameText(ctx.rules.locale, "第{0}夜 {1}", r.night, r.target === null ? gameText(ctx.rules.locale, "空守") : seatLabel(r.target, ctx.rules.locale))).join('；'))
+          : gameText(ctx.rules.locale, "你还没有守护记录。"),
+        gameText(ctx.rules.locale, '第{0}夜禁守座位：{1}。', next, banned.length ? seatList(banned, ctx.rules.locale) : gameText(ctx.rules.locale, '无')),
+      ];
+    }
     if (!log.length) return [gameText(ctx.rules.locale, "你还没有守护记录。")];
     const last = log[log.length - 1];
     return [
@@ -86,7 +104,7 @@ export const guard: RoleModule = {
       validate(ctx, _step, seat, call) {
         const t = call.args.target;
         if (t === null || t === undefined) return null;
-        if (t === lastOf(ctx, seat) && ctx.opt<boolean>('guard.noConsecutive')) {
+        if (typeof t === 'number' && bannedTargets(ctx, seat, ctx.state.day).includes(t)) {
           return err('GUARD_REPEAT', gameText(ctx.rules.locale, "不能连续两晚守护同一名玩家"));
         }
         if (t === seat && !ctx.opt<boolean>('guard.allowSelf')) return err('TARGET_SELF_FORBIDDEN', gameText(ctx.rules.locale, "本局规则不允许守护自己"));

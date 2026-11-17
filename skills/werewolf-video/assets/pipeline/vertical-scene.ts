@@ -130,8 +130,8 @@ export async function verticalScene(clip: Clip, theme: string, script: Script, s
       if (!state.alive.has(player.seat)) { g.fillStyle = 'rgba(15,18,25,.72)'; g.fillRect(x - 66, y - 66, 132, 132); }
       g.restore();
       g.beginPath(); g.arc(x, y, 66, 0, Math.PI * 2); g.lineWidth = 5; g.strokeStyle = state.alive.has(player.seat) ? '#e3d2a3' : '#9c9c9c'; g.stroke();
-      if (story?.focusSeats?.includes(player.seat)) {
-        g.save(); const roleName = player.role === 'unknown' ? t('身份未知') : videoRole(locale, player.role, player.roleName); g.font = 'bold 42px VideoSans'; const width = Math.max(110, g.measureText(roleName).width + 26);
+      if (story?.focusSeats?.includes(player.seat) || state.revealed.has(player.seat)) {
+        g.save(); const role = player.role === 'unknown' ? state.revealed.get(player.seat) ?? player.role : player.role; const roleName = role === 'unknown' ? t('身份未知') : videoRole(locale, role, player.roleName); g.font = 'bold 42px VideoSans'; const width = Math.max(110, g.measureText(roleName).width + 26);
         g.translate(x - width / 4, y - 102); g.scale(.5, .5); badge(roleName, 0, 0, width, 42); g.restore();
       }
       if (!state.alive.has(player.seat)) at(t('出局'), x, y + 12, 32, 110);

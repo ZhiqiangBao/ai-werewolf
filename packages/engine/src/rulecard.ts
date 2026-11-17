@@ -47,16 +47,19 @@ export function buildRuleCard(rules: RuleSet): string {
   const has = (id: string) => rules.roles.includes(id);
   const nightOrderNames = rules.nightOrder.map((id) => {
     if (unifiedAwakenedNight && (id === 'awakened_mimic' || id === 'awakened')) return gameText(rules.locale, "觉醒隐狼模仿或发动已学技能");
+    if (id === 'werewolf' && has('wolf_king')) return gameText(rules.locale, '狼队');
     return phaseNames.get(id) ?? (id === 'werewolf' ? gameText(rules.locale, "狼人") : id);
   });
-  const canHunterBeShot = hasHunter && has('awakened_wolf') && hunterShotVersion === 2 && rules.deathResolutionVersion === 2;
+  if (has('miracle_merchant')) nightOrderNames.push(gameText(rules.locale, '幸运儿技能'));
+  const canHunterBeShot = hasHunter && (has('awakened_wolf') || has('wolf_king')) && hunterShotVersion === 2 && rules.deathResolutionVersion === 2;
   const causes: string[] = [];
   const attackBlockers = [
     ...(has('guard') ? [gameText(rules.locale, "守卫的保护")] : []),
+    ...(has('miracle_merchant') ? [gameText(rules.locale, "幸运儿的守护")] : []),
     ...(has('awakened_wolf') && has('guard') ? [gameText(rules.locale, "模仿守卫的保护")] : []),
     ...(has('witch') ? [gameText(rules.locale, "女巫的解药")] : []),
   ];
-  const hasWolfAttack = has('werewolf') || has('awakened_wolf');
+  const hasWolfAttack = has('werewolf') || has('awakened_wolf') || has('wolf_king');
   if (hasWolfAttack) causes.push(attackBlockers.length
     ? gameText(rules.locale, "狼人选择攻击玩家，且攻击未被{0}阻止时，该玩家出局。", naturalList(attackBlockers, rules.locale, 'or'))
     : gameText(rules.locale, "狼人选择攻击玩家时，该玩家出局。"));
@@ -65,16 +68,23 @@ export function buildRuleCard(rules: RuleSet): string {
       ? "女巫或模仿女巫使用毒药，且毒药未被本局可用的防护挡住时，目标出局。"
       : "女巫或模仿女巫使用毒药时，目标出局。")
     : gameText(rules.locale, "女巫使用毒药时，目标出局。"));
+  if (has('miracle_merchant')) {
+    causes.push(gameText(rules.locale, "幸运儿使用毒药时，目标出局。"));
+    causes.push(gameText(rules.locale, "奇迹商人向狼人赠予技能后，商人因反噬出局；守护和解药不能阻止反噬。"));
+  }
+  if (has('wolf_king')) causes.push(gameText(rules.locale, "狼王获准并实际开枪后，被击中的玩家出局。"));
   causes.push(gameText(rules.locale, "白天放逐投票确定并由法官确认的玩家出局。"));
   if (canExplode) causes.push(gameText(rules.locale, "狼人按本局允许的时机自爆后立即出局。"));
-  const hasGuardAndSaveOut = has('guard') && has('witch') && v['resolve.guardAndSaveKills'] === true;
-  const guardAndSaveActorsText = has('awakened_wolf') && has('guard')
+  const hasGuardAndSaveOut = (has('guard') || has('miracle_merchant')) && has('witch') && v['resolve.guardAndSaveKills'] === true;
+  const guardAndSaveActorsText = has('miracle_merchant')
+    ? gameText(rules.locale, has('guard') && has('awakened_wolf') ? "守卫、模仿守卫或幸运儿" : has('guard') ? "守卫或幸运儿" : "幸运儿")
+    : has('awakened_wolf') && has('guard')
     ? gameText(rules.locale, "守卫或模仿守卫")
     : gameText(rules.locale, "守卫");
   const canHunterCauseShot = hasHunter && (
     (hasWolfAttack && v['hunter.shootOnKnife'] === true) ||
     v['hunter.shootOnVote'] === true ||
-    (has('witch') && v['hunter.shootOnPoison'] === true) ||
+    ((has('witch') || has('miracle_merchant')) && v['hunter.shootOnPoison'] === true) ||
     (hasGuardAndSaveOut && v['hunter.shootOnGuardAndSave'] === true) ||
     canHunterBeShot
   );
@@ -129,12 +139,41 @@ export function buildRuleCard(rules: RuleSet): string {
     ? "· 女巫或模仿女巫的毒药不会取消目标当夜尚未完成的行动。"
     : "· 女巫的毒药不会取消目标当夜尚未完成的行动。"));
   for (const mod of new Set(rules.nightOrder.map((id) => phaseOwner.get(id)))) {
+    if (has('wolf_king') && (mod?.id === 'werewolf' || mod?.id === 'wolf_king')) {
+      L.push(gameText(rules.locale, v['wolf.knowTeammates']
+        ? '· 狼队成员互知队友座位，共同参与狼队夜间行动。'
+        : '· 狼队：开局不提供队友名单；当夜参与狼队行动的玩家会看到彼此座位和投刀选择。'));
+      L.push(gameText(rules.locale, Number(v['wolf.discussRounds']) > 0
+        ? '· 多名狼队成员存活时，按座位号依次密谈 {0} 轮；只剩一人时直接提交刀口。'
+        : '· 狼队不进行密谈，直接提交刀口。', Number(v['wolf.discussRounds'])));
+      L.push(gameText(rules.locale, '· 当夜参与的存活狼队成员同时秘密提交刀口；提交结束后，各自选择及最终刀口只向参与者公开。'));
+      if (v['wolf.allowEmpty']) L.push(gameText(rules.locale, '· 可以空刀，空刀不计票；所有参与者均空刀才没有刀口。'));
+      L.push(gameText(rules.locale, v['wolf.allowTeammateTarget'] ? '· 可选择自己或存活队友作为刀口。' : '· 不能选择自己或狼队友作为刀口。'));
+      L.push(gameText(rules.locale, Number(v['wolf.killRounds']) > 1
+        ? '· 得票最多的玩家成为刀口；并列时向参与狼队成员公布选择并重投一次，仍并列取座位号较小者。'
+        : '· 得票最多的玩家成为刀口；并列时取座位号较小者。'));
+      continue;
+    }
     for (const line of mod?.ruleCard?.(rules) ?? []) L.push(`· ${line}`);
+  }
+  if (has('miracle_merchant')) {
+    L.push(gameText(rules.locale, '· 常规身份行动结束后，拥有未使用获赐技能的幸运儿行动，然后统一结算夜间结果。'));
+    L.push(gameText(rules.locale, '· 奇迹商人：从首夜起，每晚可等待或向一名其他存活玩家赠予一次查验、毒药或守护。整局仅能赠予一次，等待保留机会；选中狼人同样消耗机会并使商人反噬出局。'));
+    L.push(gameText(rules.locale, '· 获赐的好人私下成为幸运儿，保留原身份与阵营；获赐平民仍计入平民。狼人不会收到赠予通知或技能。'));
+    L.push(gameText(rules.locale, '· 幸运儿从获赐当夜起，可在本职行动结束后使用一次获赐技能，或跳过留待以后存活的夜晚。查验和毒药只能选择其他存活玩家；守护可选择自己，只阻挡当夜狼刀。'));
+    L.push(gameText(rules.locale, '· 同一玩家同夜的本职和获赐查验不能选同一目标；两次毒药不能选同一目标；两次守护不能选同一目标。不同玩家的选择互不公开，也可以选择同一目标。'));
+    if (v['guard.noConsecutive']) L.push(gameText(rules.locale, '· 守卫获赐守护时，两次守护都不能选择本人前一夜实际守过的目标；前一夜空守或跳过不产生禁守目标。'));
+  }
+  if (has('wolf_king')) {
+    L.push(gameText(rules.locale, '· 狼王：被放逐、死于狼刀或同守同救时，若胜负未分，法官私下询问本人是否向一名存活玩家开枪；死因包含毒药或自爆时不能开枪。'));
+    if (hasHunter && hunterShotVersion === 2 && rules.deathResolutionVersion === 2) L.push(gameText(rules.locale, '· 狼王被猎人开枪带走时，也可能在胜负未分且不含禁枪死因时开枪。'));
+    L.push(gameText(rules.locale, v['hunter.declineReveals'] ? '· 狼王开枪或放弃时均公开狼王身份。' : '· 狼王开枪公开狼王身份及目标；放弃不公开身份。'));
+    if (canExplode) L.push(gameText(rules.locale, '· 狼王可以按本局自爆窗口自爆，公开狼王身份且不能开枪。'));
   }
   const dayRoles = mods.filter((m) => !m.nightPhase && !m.nightPhases?.length && m.ruleCard);
   if (dayRoles.length || has('villager')) {
     L.push(gameText(rules.locale, "· 其他身份技能"));
-    if (has('villager')) L.push(gameText(rules.locale, "· 平民：没有夜间技能。"));
+    if (has('villager')) L.push(gameText(rules.locale, has('miracle_merchant') ? "· 平民：本职没有夜间技能，但获赐后可以使用幸运儿技能。" : "· 平民：没有夜间技能。"));
     for (const m of dayRoles) for (const line of m.ruleCard?.(rules) ?? []) L.push(`· ${line}`);
   }
 
@@ -199,11 +238,12 @@ export function buildRuleCard(rules: RuleSet): string {
           : gameText(rules.locale, sheriff
             ? "普通狼人只能在轮到自己发言（竞选、白天、平票后的补充发言，不含遗言）时选择自爆。"
             : "普通狼人只能在轮到自己白天发言或平票后的补充发言时选择自爆。");
+    const wolfWindow = has('wolf_king') ? gameText(rules.locale, v['explode.window'] === 'interrupt' ? '存活狼队成员可以在竞选发言、白天发言、平票补充发言及非自爆结算的遗言期间随时自爆；自爆结算产生的遗言不开放再次自爆。' : v['explode.window'] === 'between_speeches' ? '每段发言（含竞选、平票补充发言及非自爆结算的遗言）开始前询问存活狼队成员是否自爆；多人同时选择时由座位号最小者自爆，自爆结算产生的遗言不再询问自爆。' : '存活狼队成员只能在轮到自己发言（竞选、白天、平票补充发言，不含遗言）时自爆。') : window;
     if ((rules.electionVersion ?? 1) >= 4 && sheriff) L.push(gameText(rules.locale, '警长报名期间不能自爆。') + (electionCanPostpone ? gameText(rules.locale, '报名开始前若在遗言阶段自爆，竞选延期至下一个白天重新报名。') : ''));
     L.push(
       gameText(rules.locale, rules.deathResolutionVersion === 2
         ? "· 自爆：{0}投票进行中不能自爆。自爆者立刻出局并公开狼人身份；胜负判定优先。当天剩余的发言、竞选和投票取消。仅胜负未分时才继续处理后续事项：{1}有遗言资格者再按本局规则发表遗言，之后进入黑夜。"
-        : "· 自爆：{0}投票进行中不能自爆。自爆者立刻出局并公开狼人身份；{1}由符合本局遗言资格且胜负未分的玩家发表遗言。", window, badgeOnExplosion) +
+        : "· 自爆：{0}投票进行中不能自爆。自爆者立刻出局并公开狼人身份；{1}由符合本局遗言资格且胜负未分的玩家发表遗言。", wolfWindow, badgeOnExplosion) +
         (rules.deathResolutionVersion === 2 ? '' : sentenceSeparator + gameText(rules.locale, "当天剩余的发言、竞选和投票取消；若对局仍继续，随后进入黑夜。")),
     );
   }

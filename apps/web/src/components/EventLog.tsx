@@ -29,7 +29,7 @@ const SPEECH_KIND: Record<string, string> = {
   lastwords: '遗言',
 };
 
-const DEATH_TYPES = new Set(['exile', 'explode', 'hunter.shot', 'idiot.flip']);
+const DEATH_TYPES = new Set(['exile', 'explode', 'hunter.shot', 'wolf_king.shot', 'idiot.flip']);
 
 export function EventLog({ events, seats, mode, mySeat, onRead, controls, locale, roles }: Props) {
   const { t } = useI18n();

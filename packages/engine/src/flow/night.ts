@@ -9,6 +9,7 @@ const CAUSE_LABEL: Record<string, string> = {
   wolf: '狼刀',
   poison: '毒药',
   guard_and_save: '同守同救',
+  merchant_backfire: '商人反噬',
 };
 
 export const nightSteps: Record<string, StepHandler> = {

@@ -1,6 +1,6 @@
 import type { Seat } from '@werewolf/protocol';
 import type { GameState, PlayerState } from './types';
-import type { AbilityInstance } from './abilities';
+import type { AbilityInstance, GiftSkill } from './abilities';
 import { getAbility } from './abilities';
 import { canHunterShoot } from './roles/hunter';
 
@@ -13,6 +13,8 @@ export interface RoleDataMap {
   villager: Record<string, unknown>;
   werewolf: Record<string, unknown>;
   hunter: Record<string, unknown>;
+  wolf_king: Record<string, unknown>;
+  miracle_merchant: { gift: { night: number; target: Seat; skill: GiftSkill } | null };
   witch: { antidote: boolean; poison: boolean };
   guard: { last: Seat | null; log: { night: number; target: Seat | null }[] };
   seer: { checks: { night: number; target: Seat; result: 'good' | 'wolf' }[] };
@@ -42,8 +44,9 @@ const defaults: Record<string, () => Record<string, unknown>> = {
   witch: () => ({ antidote: true, poison: true }), guard: () => ({ last: null, log: [] }),
   seer: () => ({ checks: [] }), idiot: () => ({ flipped: false }), mirror_maiden: () => ({ roleChecks: [] }),
   awakened_wolf: () => ({ awakened: { learned: null, knifeFromNight: null }, roleChecks: [] }),
+  miracle_merchant: () => ({ gift: null }),
 };
-for (const role of ['villager', 'werewolf', 'hunter', ...Object.keys(defaults)]) {
+for (const role of ['villager', 'werewolf', 'hunter', 'wolf_king', ...Object.keys(defaults)]) {
   registerRoleDataSchema(role, {
     version: 1,
     migrate(data, from, player, game) {

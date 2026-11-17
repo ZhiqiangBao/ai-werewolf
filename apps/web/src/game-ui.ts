@@ -15,6 +15,8 @@ export function seatIdentity(p: Pick<Projection, 'viewer' | 'me' | 'events'> & {
   }
   if (p.viewer.kind === 'seat' && p.me?.seat === p.viewer.seat && p.me.seat === seat.seat) return { role: p.me.role, name: p.me.roleName, source: 'self' };
   const announced = p.events.some((e) => e.audience === 'public' && (
+    (e.type === 'wolf_king.shot' && e.payload.shooter === seat.seat && seat.revealedRole === 'wolf_king') ||
+    (e.type === 'wolf_king.decline' && e.payload.seat === seat.seat && seat.revealedRole === 'wolf_king') ||
     (e.type === 'hunter.shot' && e.payload.shooter === seat.seat && seat.revealedRole === 'hunter') ||
     (e.type === 'hunter.decline' && e.payload.seat === seat.seat && seat.revealedRole === 'hunter') ||
     (e.type === 'explode' && e.payload.seat === seat.seat) ||

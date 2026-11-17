@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 
-export type IconName = 'moon' | 'sun' | 'spark' | 'arrow' | 'users' | 'eye' | 'scroll' | 'flag' | 'withdraw' | 'sheriff' | 'mic' | 'bot' | 'person' | 'close' | 'check' | 'pause' | 'play' | 'crown' | 'shield' | 'potion' | 'target' | 'cards';
+export type IconName = 'moon' | 'sun' | 'spark' | 'arrow' | 'users' | 'eye' | 'scroll' | 'flag' | 'withdraw' | 'sheriff' | 'mic' | 'bot' | 'person' | 'close' | 'check' | 'pause' | 'play' | 'crown' | 'shield' | 'potion' | 'target' | 'cards' | 'gift' | 'wolfKing';
 
 const paths: Record<IconName, string> = {
   moon: 'M20.4 14.2A8.6 8.6 0 0 1 9.8 3.6 8.6 8.6 0 1 0 20.4 14.2Z M17.5 3v4 M15.5 5h4',
@@ -24,6 +24,8 @@ const paths: Record<IconName, string> = {
   shield: 'M12 2 3 6v6c0 6 9 10 9 10s9-4 9-10V6l-9-4Z M8 12l3 3 5-6',
   potion: 'M9 2h6 M10 2v6l-6 10a3 3 0 0 0 2.6 4h10.8a3 3 0 0 0 2.6-4L14 8V2 M7 15h10',
   target: 'M21 12a9 9 0 1 1-9-9 M17 2v5h5 M21 3l-9 9 M16 12a4 4 0 1 1-4-4',
+  gift: 'M4 9h16v12H4V9Z M3 6h18v3H3V6Z M12 6v15 M12 6C4-1 4 8 12 6C20-1 20 8 12 6Z',
+  wolfKing: 'M4 8 7 4l5 3 5-3 3 4-1 9-7 5-7-5Z M7 11l3 2 M17 11l-3 2 M10 17l2 1 2-1 M8 3l4 2 4-2',
   cards: 'M7 3h13v17H7V3Z M4 6H2v16h14 M13.5 7l3 4-3 4-3-4 3-4Z',
 };
 
@@ -40,6 +42,6 @@ export function Logo({ size = 36 }: { size?: number }) {
 
 export function RoleIcon({ role, size = 24 }: { role?: string; size?: number }) {
   if (role === 'werewolf' || role === 'awakened_wolf') return <Logo size={size} />;
-  const name: IconName = role === 'seer' || role === 'mirror_maiden' ? 'eye' : role === 'witch' ? 'potion' : role === 'hunter' ? 'target' : role === 'guard' ? 'shield' : role === 'idiot' ? 'spark' : 'person';
+  const name: IconName = role === 'miracle_merchant' ? 'gift' : role === 'wolf_king' ? 'wolfKing' : role === 'seer' || role === 'mirror_maiden' ? 'eye' : role === 'witch' ? 'potion' : role === 'hunter' ? 'target' : role === 'guard' ? 'shield' : role === 'idiot' ? 'spark' : 'person';
   return <Icon name={name} size={size} />;
 }

@@ -10,8 +10,11 @@ import { werewolf } from './roles/werewolf';
 import { witch } from './roles/witch';
 import { mirrorMaiden } from './roles/mirror-maiden';
 import { awakenedWolf } from './roles/awakened-wolf';
+import { miracleMerchant } from './roles/miracle-merchant';
+import { wolfKing } from './roles/wolf-king';
+import { registerLuckyAbilities } from './lucky-abilities';
 
-export const BUILTIN_ROLES = [werewolf, villager, seer, witch, hunter, guard, idiot, mirrorMaiden, awakenedWolf];
+export const BUILTIN_ROLES = [werewolf, villager, seer, witch, hunter, guard, idiot, mirrorMaiden, awakenedWolf, miracleMerchant, wolfKing];
 
 let registered = false;
 
@@ -19,6 +22,7 @@ export function registerBuiltins(): void {
   if (registered) return;
   registered = true;
   registerCore();
+  registerLuckyAbilities();
   for (const role of BUILTIN_ROLES) registerRole(role);
   for (const preset of BUILTIN_PRESETS) registerPreset(preset);
 }

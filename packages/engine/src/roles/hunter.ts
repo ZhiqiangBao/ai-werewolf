@@ -3,7 +3,8 @@ import type { RuleSet, ToolSpec } from '@werewolf/protocol';
 import type { Seat } from '@werewolf/protocol';
 import { seatLabel } from '../text';
 import { seatParam } from '../tools';
-import type { DeathRecord, RoleModule } from '../types';
+import type { DeathRecord, RoleModule, Step } from '../types';
+import type { Ctx } from '../context';
 
 const bool = (key: string, label: string, def: boolean, locale: string | undefined = 'zh-CN') => ({
   key,
@@ -77,42 +78,52 @@ export const hunter: RoleModule = {
       decide(ctx, step, subs) {
         const seat = step.seat as Seat;
         const target = (subs[seat].args.target as Seat | null) ?? null;
-        if (target === null) {
-          ctx.priv([seat], 'hunter.decline', gameText(ctx.rules.locale, "你放弃了开枪。"), {});
-          if (ctx.opt<boolean>('hunter.declineReveals')) {
-            ctx.player(seat).revealed = true;
-            ctx.player(seat).revealedAs = 'hunter';
-            ctx.pub('hunter.decline', gameText(ctx.rules.locale, "{0}是猎人，放弃开枪。", seatLabel(seat, ctx.rules.locale)), { seat });
-          }
-          return;
-        }
-        const own = ctx.state.deaths.find((d) => d.seat === seat);
-        const inheritOrigin = hunterCanShootOnShot(ctx.rules);
-        ctx.player(seat).revealed = true;
-        ctx.player(seat).revealedAs = 'hunter';
-        ctx.kill(target, {
-          via: 'shot',
-          causes: ['shot'],
-          by: seat,
-          // New chains retain the first elimination's timing. Legacy saves keep
-          // their historical direct-shooter classification and date behavior.
-          shooterVia: inheritOrigin && own?.via === 'shot' ? own.shooterVia ?? own.via : own?.via,
-          ...(inheritOrigin && own ? { day: own.day } : {}),
-          batch: step.batch as number,
-        });
-        ctx.state.history.shots.push(gameText(ctx.rules.locale, "第{0}天 {1}开枪带走{2}", ctx.state.day, seatLabel(seat, ctx.rules.locale), seatLabel(target, ctx.rules.locale)));
-        ctx.pub('hunter.shot', gameText(ctx.rules.locale, "{0}开枪，{1}出局。", seatLabel(seat, ctx.rules.locale), seatLabel(target, ctx.rules.locale)), { shooter: seat, target, role: 'hunter' });
+        resolveShot(ctx, step, seat, target, 'hunter');
       },
       fallback: (ctx) => ({ tool: 'hunter_shoot', args: { target: null } }),
     },
   },
 };
 
+/** 共享枪击批次和遗言来源，按实际亮出的牌面发布对应角色事件。 */
+export function resolveShot(ctx: Ctx, step: Step, seat: Seat, target: Seat | null, role: 'hunter' | 'wolf_king'): void {
+  const locale = ctx.rules.locale;
+  const shooter = seatLabel(seat, locale);
+  const player = ctx.player(seat);
+  if (target === null) {
+    ctx.priv([seat], `${role}.decline`, gameText(locale, "你放弃了开枪。"), {});
+    if (!ctx.opt<boolean>('hunter.declineReveals')) return;
+    player.revealed = true;
+    player.revealedAs = role;
+    if (role === 'hunter') ctx.pub('hunter.decline', gameText(locale, "{0}是猎人，放弃开枪。", shooter), { seat });
+    else ctx.pub('wolf_king.decline', gameText(locale, '{0}是狼王，放弃开枪。', shooter), { seat, role });
+    return;
+  }
+  const own = ctx.state.deaths.find((death) => death.seat === seat);
+  const inheritOrigin = hunterCanShootOnShot(ctx.rules);
+  player.revealed = true;
+  player.revealedAs = role;
+  ctx.kill(target, {
+    via: 'shot',
+    causes: ['shot'],
+    by: seat,
+    // 新版枪击连锁沿用最初的出局时机，旧档保留原有的直接射手分类。
+    shooterVia: inheritOrigin && own?.via === 'shot' ? own.shooterVia ?? own.via : own?.via,
+    ...(inheritOrigin && own ? { day: own.day } : {}),
+    batch: step.batch as number,
+  });
+  const victim = seatLabel(target, locale);
+  ctx.state.history.shots.push(gameText(locale, "第{0}天 {1}开枪带走{2}", ctx.state.day, shooter, victim));
+  ctx.pub(`${role}.shot`, gameText(locale, role === 'hunter' ? "{0}开枪，{1}出局。" : '狼王（{0}）开枪，{1}出局。', shooter, victim),
+    { shooter: seat, target, role });
+}
+
 export function hunterAllowedCauseNames(rules: RuleSet): string[] {
   const v = rules.values;
-  const hasWolfAttack = rules.roles.includes('werewolf') || rules.roles.includes('awakened_wolf');
-  const hasPoison = rules.roles.includes('witch');
-  const hasGuardAndSave = rules.roles.includes('guard') && rules.roles.includes('witch') && v['resolve.guardAndSaveKills'] === true;
+  const hasMerchant = rules.roles.includes('miracle_merchant');
+  const hasWolfAttack = rules.roles.some((id) => id === 'werewolf' || id === 'awakened_wolf' || id === 'wolf_king');
+  const hasPoison = rules.roles.includes('witch') || hasMerchant;
+  const hasGuardAndSave = (rules.roles.includes('guard') || hasMerchant) && rules.roles.includes('witch') && v['resolve.guardAndSaveKills'] === true;
   return [
     hasWolfAttack && v['hunter.shootOnKnife'] && gameText(rules.locale, "狼人攻击造成的出局"),
     v['hunter.shootOnVote'] && gameText(rules.locale, "被放逐"),
@@ -120,13 +131,13 @@ export function hunterAllowedCauseNames(rules: RuleSet): string[] {
     hasGuardAndSave && v['hunter.shootOnGuardAndSave'] && gameText(rules.locale, rules.roles.includes('awakened_wolf')
       ? "守卫或模仿守卫的保护与女巫解药同时作用于狼人攻击目标造成的出局"
       : "守卫守护和女巫解药同时作用于狼人攻击目标造成的出局"),
-    hunterCanShootOnShot(rules) && rules.roles.includes('hunter') && rules.roles.includes('awakened_wolf') &&
+    hunterCanShootOnShot(rules) && rules.roles.includes('hunter') && (rules.roles.includes('awakened_wolf') || rules.roles.includes('wolf_king')) &&
       gameText(rules.locale, "猎枪造成的出局"),
   ].filter((cause): cause is string => typeof cause === 'string');
 }
 
 export function hunterPoisonIsExcluded(rules: RuleSet): boolean {
-  return rules.roles.includes('witch') && rules.values['hunter.shootOnPoison'] !== true;
+  return (rules.roles.includes('witch') || rules.roles.includes('miracle_merchant')) && rules.values['hunter.shootOnPoison'] !== true;
 }
 
 export function hunterCanShootOnShot(rules: RuleSet): boolean {

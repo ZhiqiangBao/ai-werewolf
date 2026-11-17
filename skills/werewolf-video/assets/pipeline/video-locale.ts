@@ -46,12 +46,12 @@ export function videoText(locale: string, key: string, ...values: unknown[]): st
 export function videoChapter(locale: string, day: number, phase: string, fallback: string): string {
   return day > 0 && (phase === 'day' || phase === 'night') ? videoText(locale, phase === 'day' ? '第{0}天' : '第{0}夜', day) : fallback;
 }
-const roles: Record<string, string> = { werewolf: '狼人', seer: '预言家', witch: '女巫', guard: '守卫', hunter: '猎人', villager: '平民', idiot: '白痴', awakened_wolf: '觉醒隐狼', mirror_maiden: '魔镜少女' };
+const roles: Record<string, string> = { werewolf: '狼人', wolf_king: '狼王', miracle_merchant: '奇迹商人', seer: '预言家', witch: '女巫', guard: '守卫', hunter: '猎人', villager: '平民', idiot: '白痴', awakened_wolf: '觉醒隐狼', mirror_maiden: '魔镜少女' };
 export function videoRole(locale: string, role: string, fallback: string): string { return Object.hasOwn(roles, role) ? videoText(locale, roles[role]) : fallback; }
 registerVideoLanguage({ id: 'zh-CN', messages: { '查验结果：狼人': '狼人', '查验结果：好人': '好人' } });
 registerVideoLanguage({ id: 'en', fallback: 'zh-CN', messages: {
   '身份未知':'Unknown', '准备':'Setup', '终局':'Final', '出局':'OUT', '投票者':'Voters', '玩家':'Player', '行动':'Action', '解说':'Narrator', '{0}号玩家视角':'Seat {0} view', '本人身份 · 自动循环滚动':'Your role · scrolling', '本人身份默认简介（zh-CN）':'Default role summary (zh-CN)', '存活 {0} 人':'Alive {0}', '开枪目标':'Shot target',
-  '第{0}天':'Day {0}', '第{0}夜':'Night {0}', '狼人':'Werewolf', '预言家':'Seer', '女巫':'Witch', '守卫':'Guard', '猎人':'Hunter', '平民':'Villager', '白痴':'Idiot', '觉醒隐狼':'Awakened Hidden Wolf', '魔镜少女':'Mirror Maiden',
+  '狼王':'Wolf King', '奇迹商人':'Miracle Merchant', '反噬':'Backfire', '第{0}天':'Day {0}', '第{0}夜':'Night {0}', '狼人':'Werewolf', '预言家':'Seer', '女巫':'Witch', '守卫':'Guard', '猎人':'Hunter', '平民':'Villager', '白痴':'Idiot', '觉醒隐狼':'Awakened Hidden Wolf', '魔镜少女':'Mirror Maiden',
   '放逐':'Exile', '毒药':'Poison', '狼刀':'Wolf', '猎枪':'Shot', '自爆':'Reveal', '同守同救':'Clash', '夜晚':'Night', '其他':'Other',
   '退水':'Withdrew', '上警':'Candidate', '发言中':'Speaking', '守护目标':'Guarded', '查验目标':'Inspected', '使用解药':'Saved', '使用毒药':'Poisoned', '狼刀目标':'Wolf target', '警长投票':'Sheriff vote', '放逐投票':'Exile vote', '{0}号':'Seat {0}', '{0} 票':'{0} votes',
   '终局 · {0}获胜':'Final · {0} wins', '胜利阵营':'Winning team', '{0}号 · {1}':'Seat {0} · {1}', '上帝解说':'Commentator', '法官播报':'Judge', '对局已结束':'Match ended', '系统托管 · 非模型自主发言':'Automatic action · not model speech', '行动转述 · 依据对局记录':'Action summary · match record', '狼队密谈 · 上帝观众可见':'Wolf chat · god view', '正在发言':'Speaking', '请投票 · 结果尚未公布':'Vote · result pending', '对局进行中':'Match in progress',
@@ -61,7 +61,7 @@ registerVideoLanguage({ id: 'en', fallback: 'zh-CN', messages: {
 } });
 registerVideoLanguage({ id: 'ja', fallback: 'zh-CN', messages: {
   '身份未知':'不明', '准备':'準備', '终局':'終局', '出局':'退場', '投票者':'投票者', '玩家':'プレイヤー', '行动':'行動', '解说':'解説', '{0}号玩家视角':'{0}番視点', '本人身份 · 自动循环滚动':'自分の役職 · 自動スクロール', '本人身份默认简介（zh-CN）':'既定の役職説明（zh-CN）', '存活 {0} 人':'生存 {0}人', '开枪目标':'射撃対象',
-  '第{0}天':'{0}日目', '第{0}夜':'{0}夜目', '狼人':'人狼', '预言家':'占い師', '女巫':'魔女', '守卫':'騎士', '猎人':'猟師', '平民':'村人', '白痴':'愚者', '觉醒隐狼':'覚醒隠狼', '魔镜少女':'鏡の少女',
+  '狼王':'人狼王', '奇迹商人':'奇跡の商人', '反噬':'反動', '第{0}天':'{0}日目', '第{0}夜':'{0}夜目', '狼人':'人狼', '预言家':'占い師', '女巫':'魔女', '守卫':'騎士', '猎人':'猟師', '平民':'村人', '白痴':'愚者', '觉醒隐狼':'覚醒隠狼', '魔镜少女':'鏡の少女',
   '放逐':'追放', '毒药':'毒', '狼刀':'襲撃', '猎枪':'射撃', '自爆':'自白', '同守同救':'護衛＋薬', '夜晚':'夜間', '其他':'その他',
   '退水':'辞退', '上警':'立候補', '发言中':'発言中', '守护目标':'守護対象', '查验目标':'占い対象', '使用解药':'救済', '使用毒药':'毒使用', '狼刀目标':'襲撃対象', '警长投票':'警長投票', '放逐投票':'追放投票', '{0}号':'{0}番', '{0} 票':'{0}票',
   '终局 · {0}获胜':'終局 · {0}の勝利', '胜利阵营':'勝利陣営', '{0}号 · {1}':'{0}番 · {1}', '上帝解说':'全知解説', '法官播报':'司会', '对局已结束':'対局終了', '系统托管 · 非模型自主发言':'自動行動 · モデルの発言ではありません', '行动转述 · 依据对局记录':'行動要約 · 対局記録より', '狼队密谈 · 上帝观众可见':'人狼の密談 · 全知視点', '正在发言':'発言中', '请投票 · 结果尚未公布':'投票中 · 結果未発表', '对局进行中':'対局中',

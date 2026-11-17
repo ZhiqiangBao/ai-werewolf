@@ -1,9 +1,13 @@
 import { gameText } from '@werewolf/protocol';
-import type { IdentityKnowledge, Seat, ToolCall, ToolSpec } from '@werewolf/protocol';
+import type { IdentityKnowledge, RuleSet, Seat, ToolCall, ToolSpec } from '@werewolf/protocol';
 import type { Ctx } from './context';
 import type { DeathRecord, RuleError, Step, StepHandler, ToolCatalogContext } from './types';
 import type { RoleCheck } from './role-data';
 import { getRole } from './registry';
+
+export const merchantAbilities = { seer: 'lucky_seer', poison: 'lucky_poison', guard: 'lucky_guard' } as const;
+export type GiftSkill = keyof typeof merchantAbilities;
+interface LuckyUse { night: number; target: Seat }
 
 export interface AbilityStateMap {
   none: Record<string, unknown>;
@@ -12,6 +16,9 @@ export interface AbilityStateMap {
   guard: { last: Seat | null };
   wolf: { claw: boolean };
   hunter: { spent: boolean };
+  lucky_seer: { used: (LuckyUse & { result: 'good' | 'wolf' }) | null };
+  lucky_poison: { used: LuckyUse | null };
+  lucky_guard: { used: LuckyUse | null };
 }
 export interface AbilityInstance {
   id: string;
@@ -33,6 +40,7 @@ export interface AbilityDefinition {
   validate?(ctx: Ctx, seat: Seat, instance: AbilityInstance, call: ToolCall): RuleError | null;
   apply?(ctx: Ctx, seat: Seat, instance: AbilityInstance, call: ToolCall): void;
   fallback?(ctx: Ctx, seat: Seat, instance: AbilityInstance): ToolCall;
+  decisionText?(ctx: Ctx): { title: string; prompt: string };
   onDeath?(ctx: Ctx, death: DeathRecord, instance: AbilityInstance): Step[];
   knowledge?(ctx: Ctx, seat: Seat, instance: AbilityInstance): IdentityKnowledge[];
   appendix?(ctx: Ctx, seat: Seat, instance: AbilityInstance): string[];
@@ -57,10 +65,17 @@ export function findAbility(ctx: Ctx, seat: Seat, id: string): AbilityInstance {
   if (instance.version !== getAbility(instance.definition).version) throw new Error(`不支持能力版本 ${instance.definition}:${instance.version}`);
   return instance;
 }
+export function abilityCatalog(rules: RuleSet, role: string): string[] {
+  const mod = getRole(role);
+  const declared = mod.abilityCatalog ?? [];
+  if (mod.faction !== 'good' || role === 'miracle_merchant' || !rules.roles.includes('miracle_merchant')) return declared;
+  return [...new Set([...declared, ...Object.values(merchantAbilities)])];
+}
+
 export function grantAbility(ctx: Ctx, seat: Seat, definition: string,
   options: Omit<AbilityInstance, 'definition' | 'version' | 'state'> & { state?: Record<string, unknown> }): AbilityInstance {
   const def = getAbility(definition);
-  if (!(getRole(ctx.player(seat).role).abilityCatalog ?? []).includes(definition)) throw new Error(`身份未声明能力目录：${definition}`);
+  if (!abilityCatalog(ctx.rules, ctx.player(seat).role).includes(definition)) throw new Error(`身份未声明能力目录：${definition}`);
   const list = ctx.player(seat).abilities ??= [];
   if (list.some((a) => a.id === options.id)) throw new Error(`能力实例重复：${options.id}`);
   const instance: AbilityInstance = { ...options, definition, version: def.version, state: structuredClone(options.state ?? def.initialState()) };
@@ -90,11 +105,15 @@ export const abilityAction: StepHandler = {
   run(ctx, step) {
     const { seat, instance } = binding(ctx, step);
     if (!ctx.isAlive(seat) || !instance.active || ctx.state.day < instance.activeFromNight) return;
-    const tools = getAbility(instance.definition).tools?.(ctx, seat, instance) ?? [];
+    const def = getAbility(instance.definition);
+    const tools = def.tools?.(ctx, seat, instance) ?? [];
     if (!tools.length) return;
+    const { prompt, title } = def.decisionText?.(ctx) ?? {
+      prompt: gameText(ctx.rules.locale, "你的模仿技能已经启用，请从本轮合法工具中选择。继承狼刀是另一独立决策。"),
+      title: gameText(ctx.rules.locale, "第{0}夜 · 模仿技能", ctx.state.day),
+    };
     ctx.ask({ step, actors: [seat], tools: () => tools,
-      prompt: () => gameText(ctx.rules.locale, "你的模仿技能已经启用，请从本轮合法工具中选择。继承狼刀是另一独立决策。"),
-      title: gameText(ctx.rules.locale, "第{0}夜 · 模仿技能", ctx.state.day), publicStage: gameText(ctx.rules.locale, "夜晚") });
+      prompt: () => prompt, title, publicStage: gameText(ctx.rules.locale, "夜晚") });
   },
   validate(ctx, step, _seat, call) {
     const { seat, instance } = binding(ctx, step);

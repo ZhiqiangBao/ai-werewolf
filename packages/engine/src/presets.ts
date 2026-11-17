@@ -14,6 +14,15 @@ export const BUILTIN_PRESETS: PresetDef[] = [
     tag: '进阶',
   },
   {
+    id: 'merchant12',
+    version: 1,
+    name: '十二人奇迹商人',
+    description: '狼人 ×3、狼王、平民 ×4，奇迹商人、预言家、女巫、守卫。一次赠礼与狼王开枪，屠边，有警长。',
+    roles: [...times('werewolf', 3), 'wolf_king', 'miracle_merchant', 'seer', 'witch', 'guard', ...times('villager', 4)],
+    overrides: { 'witch.selfSave': 'never' },
+    tag: '进阶',
+  },
+  {
     id: 'standard12',
     name: '十二人预女猎守',
     description: '狼人 ×4、平民 ×4，预言家、女巫、猎人、守卫。屠边，有警长。',

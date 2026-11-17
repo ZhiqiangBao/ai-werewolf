@@ -40,6 +40,19 @@ export function expandActionTools(tools: ToolSpec[], rules: RuleSet): ToolSpec[]
       operation(tool, 'wolf_decline_explode', gameText(rules.locale, "本次不自爆"), gameText(rules.locale, "本次不自爆。无参数，填写 {}。"), { explode: false }, undefined, rules.locale),
     ];
     if (tool.name === 'wolf_explode') return [{ ...tool, description: gameText(rules.locale, "自爆并公开狼人身份。无参数，填写 {}。") }];
+    if (tool.name === 'merchant_gift') {
+      const target = tool.params.find((p) => p.name === 'target');
+      const skill = tool.params.find((p) => p.name === 'skill');
+      const gifts = { seer: 'merchant_gift_inspect', poison: 'merchant_gift_poison', guard: 'merchant_gift_guard' } as const;
+      const choices = target?.kind === 'seat' && target.options.length && skill?.kind === 'choice' ? skill.options : [];
+      return [
+        ...choices.map(({ value, label }) => operation(tool, gifts[value as keyof typeof gifts], gameText(rules.locale, '赠予{0}', label),
+          gameText(rules.locale, '向 targetSeat 赠予{0}。填写目标座位号，例如 {"targetSeat":3}。', label),
+          { skill: value }, { targetSeat: 'target' }, rules.locale)),
+        operation(tool, 'merchant_wait', gameText(rules.locale, '本夜等待'), gameText(rules.locale, '本夜等待，保留交易机会。无参数，填写 {}。'),
+          { target: null, skill: null }, undefined, rules.locale),
+      ];
+    }
     if (tool.name === 'mirror_inspect') {
       const target = tool.params.find((p) => p.name === 'targetSeat');
       if (!target || target.kind !== 'seat' || !target.nullable) return [tool];
@@ -52,6 +65,7 @@ export function expandActionTools(tools: ToolSpec[], rules: RuleSet): ToolSpec[]
       badge_dispose: ['badge_transfer', gameText(rules.locale, "移交警徽"), 'recipientSeat', 'badge_tear', gameText(rules.locale, "撕毁警徽"), gameText(rules.locale, "将警徽移交给目标")],
       guard_protect: ['guard_protect', gameText(rules.locale, "守护玩家"), 'targetSeat', 'guard_skip', gameText(rules.locale, "本夜空守"), gameText(rules.locale, "守护指定目标")],
       hunter_shoot: ['hunter_shoot', gameText(rules.locale, "开枪带走玩家"), 'targetSeat', 'hunter_hold_fire', gameText(rules.locale, "放弃开枪"), gameText(rules.locale, "开枪带走目标")],
+      wolf_king_shoot: ['wolf_king_shoot', gameText(rules.locale, "开枪带走玩家"), 'targetSeat', 'wolf_king_hold_fire', gameText(rules.locale, "放弃开枪"), gameText(rules.locale, "开枪带走目标并公开狼王身份")],
       wolf_kill: ['wolf_kill', gameText(rules.locale, "提交狼刀目标"), 'targetSeat', 'wolf_empty_kill', gameText(rules.locale, "提交空刀"), gameText(rules.locale, "提交今晚的狼刀目标")],
       seer_inspect: ['seer_inspect', gameText(rules.locale, "查验阵营"), 'targetSeat', 'seer_skip', gameText(rules.locale, '本夜不查验'), gameText(rules.locale, "查验目标的阵营")],
     };
@@ -66,6 +80,7 @@ export function expandActionTools(tools: ToolSpec[], rules: RuleSet): ToolSpec[]
       badge_dispose: gameText(rules.locale, "撕毁警徽。"),
       guard_protect: gameText(rules.locale, "今晚不守护。"),
       hunter_shoot: gameText(rules.locale, "放弃本次开枪。"),
+      wolf_king_shoot: gameText(rules.locale, "放弃本次开枪。"),
       wolf_kill: gameText(rules.locale, "提交空刀。"),
       seer_inspect: gameText(rules.locale, '本夜不查验。'),
     };
@@ -92,6 +107,7 @@ export function canonicalAction(spec: ToolSpec, call: ToolCall): ToolCall {
 /** 模拟玩家复用既有策略；这层不用于任何真实模型请求。 */
 export function simulationTools(tools: ToolSpec[]): ToolSpec[] {
   const groups = new Map<string, ToolSpec>();
+  const nulls: { base: ToolSpec; name: string; label: string }[] = [];
   for (const tool of tools) {
     if (!tool.operation) { groups.set(tool.name, tool); continue; }
     const op = tool.operation;
@@ -104,13 +120,22 @@ export function simulationTools(tools: ToolSpec[]): ToolSpec[] {
     }
     for (const [name, value] of Object.entries(op.constants)) {
       if (value === true && !base.params.some((p) => p.name === name)) base.params.push({ kind: 'boolean', name, label: name });
-      if (value === null) {
-        let p = base.params.find((p) => p.name === name);
-        if (!p) { p = { kind: 'seat', name, label: name, options: [] }; base.params.push(p); }
-        if (p.kind === 'seat') { p.nullable = true; p.nullLabel = tool.title; }
+      if (typeof value === 'string') {
+        const choice = base.params.find((p) => p.name === name);
+        if (!choice) {
+          base.params.push({ kind: 'choice', name, label: name, options: [{ value, label: tool.title }] });
+        } else if (choice.kind === 'choice' && !choice.options.some((option) => option.value === value)) {
+          choice.options.push({ value, label: tool.title });
+        }
       }
+      if (value === null) nulls.push({ base, name, label: tool.title });
     }
     groups.set(op.tool, base);
+  }
+  for (const { base, name, label } of nulls) {
+    const param = base.params.find((p) => p.name === name);
+    if (!param) base.params.push({ kind: 'seat', name, label: name, options: [], nullable: true, nullLabel: label });
+    else if (param.kind === 'seat') { param.nullable = true; param.nullLabel = label; }
   }
   return [...groups.values()];
 }

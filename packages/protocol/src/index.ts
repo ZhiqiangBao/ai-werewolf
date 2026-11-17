@@ -23,8 +23,8 @@ export type GamePhase = 'setup' | 'night' | 'day' | 'end';
 /** 'public' 表示全体（含出局者与观战）；数组是写入时冻结的座位号列表，空数组表示只有上帝视角可见。 */
 export type Audience = 'public' | Seat[];
 
-export type NightRoundKind = 'awakened' | 'wolf';
-export type NightActionKind = 'mimic' | 'wait' | 'skill' | 'skip' | 'kill';
+export type NightRoundKind = 'awakened' | 'wolf' | 'merchant' | 'lucky';
+export type NightActionKind = 'mimic' | 'wait' | 'skill' | 'skip' | 'kill' | 'gift';
 
 /** 版本 3 写在新事件上。版本 1、2 不回填，展示时按事件类型推导。 */
 export interface NightActionRound {

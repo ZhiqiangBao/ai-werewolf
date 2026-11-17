@@ -6,6 +6,12 @@ import { seatLabel } from '../text';
 import { seatParam } from '../tools';
 import type { RoleModule } from '../types';
 import { INSPECTION_PRIVACY_RULE } from './inspection';
+import type { Ctx } from '../context';
+
+export function inspectAlignment(ctx: Ctx, target: Seat): 'good' | 'wolf' {
+  const mod = ctx.roleOf(target);
+  return mod.inspectAs ?? mod.faction;
+}
 
 export const seer: RoleModule = {
   id: 'seer',
@@ -72,8 +78,7 @@ export const seer: RoleModule = {
             night?.lines.push(gameText(ctx.rules.locale, "预言家（{0}）未查验", seatLabel(seat, ctx.rules.locale)));
             continue;
           }
-          const mod = ctx.roleOf(target);
-          const result: 'good' | 'wolf' = mod.inspectAs ?? (mod.faction === 'wolf' ? 'wolf' : 'good');
+          const result = inspectAlignment(ctx, target);
           roleData(ctx.player(seat), 'seer').checks.push({ night: ctx.state.day, target, result });
           const label = result === 'wolf' ? gameText(ctx.rules.locale, "狼人") : gameText(ctx.rules.locale, "好人");
           ctx.priv([seat], 'seer.result', gameText(ctx.rules.locale, "查验结果：{0}是{1}。", seatLabel(target, ctx.rules.locale), label), { target, result });

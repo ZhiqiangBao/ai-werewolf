@@ -116,6 +116,7 @@ const deathShortLabels = [
   ['exile', '放逐', 'Exile', '追放'], ['poison', '毒药', 'Poison', '毒'],
   ['wolf', '狼刀', 'Wolf', '襲撃'], ['shot', '猎枪', 'Shot', '射撃'],
   ['explode', '自爆', 'Reveal', '自白'], ['guard_and_save', '同守同救', 'Clash', '護衛＋薬'],
+  ['merchant_backfire', '反噬', 'Backfire', '反動'],
   ['night', '夜晚', 'Night', '夜間'], ['other', '其他', 'Other', 'その他'],
 ] as const;
 const shortMessages = (index: 1 | 2 | 3) => Object.fromEntries(deathShortLabels.map((row) => [`death.short.${row[0]}`, row[index]]));

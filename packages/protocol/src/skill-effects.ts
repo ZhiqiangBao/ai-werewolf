@@ -13,10 +13,10 @@ export function skillEffectForEvent(event: GameEvent, viewer: Viewer, throughSeq
   let kind: SkillEffectKind | undefined;
   let target: unknown = p.target;
   switch (event.type) {
-    case 'witch.poison': kind = 'poison'; break;
-    case 'hunter.shot': kind = 'shot'; break;
-    case 'seer.result': case 'mirror.result': kind = 'inspect'; break;
-    case 'guard.protect': kind = 'guard'; break;
+    case 'lucky.poison': case 'witch.poison': kind = 'poison'; break;
+    case 'wolf_king.shot': case 'hunter.shot': kind = 'shot'; break;
+    case 'lucky.inspect': case 'seer.result': case 'mirror.result': kind = 'inspect'; break;
+    case 'lucky.guard': case 'guard.protect': kind = 'guard'; break;
     case 'wolf.kill.result': kind = 'wolf'; target = p.knife; break;
     case 'awakened.knife': kind = 'wolf'; break;
     case 'awakened.mimic': kind = 'mimic'; break;

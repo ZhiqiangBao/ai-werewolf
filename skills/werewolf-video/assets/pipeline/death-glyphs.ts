@@ -1,11 +1,11 @@
-export type DeathCause = 'exile' | 'poison' | 'wolf' | 'shot' | 'explode' | 'guard_and_save' | 'night' | 'other';
+export type DeathCause = 'exile' | 'poison' | 'wolf' | 'shot' | 'explode' | 'guard_and_save' | 'merchant_backfire' | 'night' | 'other';
 /** 只供页面展示，与模型使用的 Projection 分开传输。 */
 export interface SeatDeathView { seat: number; day: number; causes: DeathCause[] }
 
 export function deathCauses(via: string, causes: readonly string[], god: boolean): DeathCause[] {
   if (via !== 'night') return [via === 'exile' || via === 'shot' || via === 'explode' ? via : 'other'];
   if (!god) return ['night'];
-  const known = causes.map((cause): DeathCause => ['wolf', 'poison', 'guard_and_save'].includes(cause) ? cause as DeathCause : 'other');
+  const known = causes.map((cause): DeathCause => ['wolf', 'poison', 'guard_and_save', 'merchant_backfire'].includes(cause) ? cause as DeathCause : 'other');
   return [...new Set(known.length ? known : ['night' as const])];
 }
 
@@ -47,6 +47,10 @@ export const DEATH_GLYPHS: Record<DeathCause, { label: string; shortLabel: strin
     { path: 'M9 2 2 5v7q0 6 7 10 7-4 7-10V5Z', fill: '#4d849a', stroke: '#bdeaf1', width: 1.2 },
     { path: 'M16 6h5v4l2 3v7h-9v-7l2-3Z', fill: '#72ad75', stroke: '#e1f3c3', width: 1 },
     { path: 'M7 10l10 9 M17 10l-10 9', stroke: '#ff8d80', width: 2.5 },
+  ] },
+  merchant_backfire: { label: '商人反噬出局', shortLabel: '反噬', layers: [
+    { path: 'M4 8h16v12H4Z M3 5h18v3H3Z M12 5v15', fill: '#855c88', stroke: '#f3d3ef', width: 1.2 },
+    { path: 'M12 5C4-2 4 7 12 5C20-2 20 7 12 5Z M8 12l8 6 M16 12l-8 6', stroke: '#ffd4ac', width: 1.6 },
   ] },
   night: { label: '夜晚出局', shortLabel: '夜晚', layers: [
     { path: 'M16 3A9 9 0 1 0 21 17 9 9 0 0 1 16 3Z', fill: '#f8d67e', stroke: '#fff0bd', width: 1 },
