@@ -32,6 +32,12 @@ export function guardedSeats(ctx: Ctx, seat: Seat, night: number): Seat[] {
     entry.night === night && entry.target !== null ? [entry.target] : []))];
 }
 
+/** 幸运儿守护在本夜不能重复本席的守护，也须遵守跨夜限制。 */
+export function luckyGuardBanned(ctx: Ctx, seat: Seat, night: number): Seat[] {
+  return [...new Set([...guardedSeats(ctx, seat, night),
+    ...(ctx.opt<boolean>('guard.noConsecutive') ? guardedSeats(ctx, seat, night - 1) : [])])];
+}
+
 function luckyTargets(ctx: Ctx, seat: Seat, skill: GiftSkill): Seat[] {
   const player = ctx.player(seat);
   const night = ctx.state.day;
@@ -45,8 +51,7 @@ function luckyTargets(ctx: Ctx, seat: Seat, skill: GiftSkill): Seat[] {
       return ctx.alive().filter((t) => t !== seat && !poisoned.some((attack) => attack.target === t));
     }
     case 'guard': {
-      const barred = new Set([...guardedSeats(ctx, seat, night),
-        ...(ctx.opt<boolean>('guard.noConsecutive') ? guardedSeats(ctx, seat, night - 1) : [])]);
+      const barred = new Set(luckyGuardBanned(ctx, seat, night));
       return ctx.alive().filter((t) => !barred.has(t));
     }
   }

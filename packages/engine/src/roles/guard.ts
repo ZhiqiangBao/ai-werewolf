@@ -6,7 +6,7 @@ import type { Ctx } from '../context';
 import { seatLabel, seatList } from '../text';
 import { err, seatParam } from '../tools';
 import type { ResolutionRow, RoleModule } from '../types';
-import { guardedSeats } from '../lucky-abilities';
+import { guardedSeats, luckyGuardBanned } from '../lucky-abilities';
 
 const lastOf = (ctx: Ctx, seat: Seat) => roleData(ctx.player(seat), 'guard').last ?? null;
 
@@ -61,8 +61,11 @@ export const guard: RoleModule = {
   appendix(ctx, seat) {
     const log = roleData(ctx.player(seat), 'guard').log ?? [];
     if (ctx.rules.roles.includes('miracle_merchant')) {
-      const next = ctx.state.phase === 'night' && !log.some((entry) => entry.night === ctx.state.day) ? ctx.state.day : ctx.state.day + 1;
-      const banned = bannedTargets(ctx, seat, next);
+      const step = ctx.state.pending?.step;
+      const luckyGuardTurn = step?.type === 'ability.act' && step.abilitySeat === seat &&
+        ctx.player(seat).abilities?.some((ability) => ability.id === step.abilityId && ability.definition === 'lucky_guard');
+      const next = ctx.state.phase === 'night' && (luckyGuardTurn || !log.some((entry) => entry.night === ctx.state.day)) ? ctx.state.day : ctx.state.day + 1;
+      const banned = luckyGuardTurn ? luckyGuardBanned(ctx, seat, next) : bannedTargets(ctx, seat, next);
       return [
         log.length
           ? gameText(ctx.rules.locale, "你的守护记录：{0}。", log.map((r) => gameText(ctx.rules.locale, "第{0}夜 {1}", r.night, r.target === null ? gameText(ctx.rules.locale, "空守") : seatLabel(r.target, ctx.rules.locale))).join('；'))
