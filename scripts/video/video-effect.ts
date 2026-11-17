@@ -4,10 +4,12 @@ import type { GameEvent, Viewer } from '../../packages/protocol/src/index';
 import { seatPosition } from './geometry';
 import { drawSkillEffect, skillEffectForEvent, SKILL_EFFECT_DURATION_MS } from './skill-effects';
 import { FPS, type Script, type TimedClip } from './project';
+import { hostingChoice } from './hosting';
+import { videoText } from './video-locale';
 
 const require = createRequire(import.meta.url);
 const { createCanvas, Path2D } = require(process.env.VIDEO_CANVAS_MODULE || '@napi-rs/canvas');
-export const videoEffectVersion = 'skill-overlay-v1';
+export const videoEffectVersion = 'skill-overlay-v3';
 
 /** Only documented action types receive a target label; unrelated targets are not wolf attacks. */
 export function actionTargetLabel(type: string): string | undefined {
@@ -15,14 +17,40 @@ export function actionTargetLabel(type: string): string | undefined {
     'witch.poison': '使用毒药', 'wolf.kill.result': '狼刀目标', 'awakened.knife': '狼刀目标', 'hunter.shot': '开枪目标', 'shot': '开枪目标' } as Record<string, string>)[type];
 }
 
-/** Only animate the actual recorded event, never a preceding cue or a later replay. */
-export function clipSkillEffect(script: Script, clip: TimedClip) {
-  if (clip.data.presentationOnly || clip.part !== 1) return null;
-  const fact = script.events.find((event) => event.sourceSeq === clip.sourceSeq && event.type === clip.type);
+type EffectClip = Pick<TimedClip, 'sourceSeq' | 'type' | 'data' | 'text' | 'part' | 'seat' | 'startFrame'>;
+const awakenedActions = new Set(['awakened.mimic', 'awakened.skill', 'mirror.result', 'awakened.knife']);
+
+/** A cue can disclose the recorded target, but never advances the replay state. */
+function disclosedCue(script: Script, clip: EffectClip, fact: Script['events'][number]): boolean {
+  if (script.perspective !== 'god' || clip.part !== 1 || !clip.data.presentationOnly ||
+      clip.sourceSeq !== fact.sourceSeq || clip.data.replayThrough !== fact.sourceSeq - 1 ||
+      !awakenedActions.has(fact.type) || typeof fact.data.target !== 'number') return false;
+  const actor = Array.isArray(fact.audience) && fact.audience.length === 1 ? fact.audience[0] : undefined;
+  if (actor === undefined) return false;
+  if (fact.type === 'mirror.result' && fact.data.round?.roundKind !== 'awakened' &&
+      !script.cast.some((player) => player.seat === actor && player.role === 'awakened_wolf')) return false;
+  const fallback = !!fact.data.systemFallback || (Array.isArray(fact.data.fallbackSeats) && fact.data.fallbackSeats.includes(actor));
+  if (clip.type === 'hosting.choice' && !fallback && clip.seat === actor && clip.data.target === fact.data.target &&
+      clip.data.presentationKey === (fact.type === 'awakened.knife' ? 'wolf-choice' : 'awakened-choice')) {
+    return clip.text === hostingChoice(script.locale ?? 'zh-CN', fact.type, fact.data);
+  }
+  return fact.type === 'awakened.knife' && fallback && clip.type === 'hosting.judge' &&
+    clip.data.presentationKey === 'wolf-summary' && clip.data.actionSummary === true &&
+    clip.text === videoText(script.locale ?? 'zh-CN', '系统托管，{0}号的攻击目标记为{1}号。', actor, fact.data.target);
+}
+
+/** Animate a recorded fact or its validated target disclosure, once per included timeline. */
+export function clipSkillEffect(script: Script, clip: TimedClip, clips: readonly EffectClip[] = []) {
+  if (clip.part !== 1) return null;
+  const fact = script.events.find((event) => event.sourceSeq === clip.sourceSeq && (clip.data.presentationOnly || event.type === clip.type));
   if (!fact) return null;
+  const cue = disclosedCue(script, clip, fact);
+  if (clip.data.presentationOnly && !cue) return null;
+  if (!cue && script.perspective === 'god' && awakenedActions.has(fact.type) &&
+      clips.some((other) => other.sourceSeq === fact.sourceSeq && other.startFrame < clip.startFrame && disclosedCue(script, other, fact))) return null;
   const viewer: Viewer = script.perspective === 'player' && script.playerSeat ? { kind: 'seat', seat: script.playerSeat } : { kind: 'god' };
   const event = { seq: fact.sourceSeq, day: fact.day, phase: fact.phase, type: fact.type, audience: fact.audience, text: fact.text, payload: fact.data } as GameEvent;
-  const effect = skillEffectForEvent(event, viewer, clip.data.replayThrough ?? clip.sourceSeq);
+  const effect = skillEffectForEvent(event, viewer, cue ? fact.sourceSeq : (clip.data.replayThrough ?? clip.sourceSeq));
   if (!effect) return null;
   const index = script.cast.findIndex((seat) => seat.seat === effect.target);
   if (index < 0) return null;

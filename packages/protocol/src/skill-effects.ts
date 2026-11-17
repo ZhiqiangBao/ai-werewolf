@@ -1,6 +1,6 @@
 import type { GameEvent, Viewer } from './index';
 
-export type SkillEffectKind = 'poison' | 'shot' | 'inspect' | 'guard' | 'wolf';
+export type SkillEffectKind = 'poison' | 'shot' | 'inspect' | 'guard' | 'wolf' | 'mimic';
 export interface SkillEffect { kind: SkillEffectKind; target: number; sourceSeq: number }
 export const SKILL_EFFECT_DURATION_MS = 1800;
 
@@ -19,6 +19,7 @@ export function skillEffectForEvent(event: GameEvent, viewer: Viewer, throughSeq
     case 'guard.protect': kind = 'guard'; break;
     case 'wolf.kill.result': kind = 'wolf'; target = p.knife; break;
     case 'awakened.knife': kind = 'wolf'; break;
+    case 'awakened.mimic': kind = 'mimic'; break;
     case 'awakened.skill':
       kind = p.tool === 'awakened_poison' ? 'poison' : p.tool === 'awakened_guard' ? 'guard' : p.tool === 'awakened_claw' ? 'wolf' : undefined;
       break;
@@ -45,6 +46,12 @@ export function skillEffectFrame(kind: SkillEffectKind, elapsedMs: number): Skil
   const grow = clamp(t * 2.5);
   const pulse = 1 + .08 * Math.sin(t * Math.PI * 6);
   const ring = (r: number, color: string, opacity: number): SkillEffectShape => path(`M ${50-r} 50 a ${r} ${r} 0 1 0 ${2*r} 0 a ${r} ${r} 0 1 0 ${-2*r} 0`, color, 2, opacity * fade);
+  if (kind === 'mimic') return [
+    ring(22 + t * 19, '#d3baff', (1-t) * .65),
+    { path: 'M25 25 58 20 66 72 33 77Z', fill: '#55476d', stroke: '#c9b5ed', width: 2, opacity: fade * .65, transform: `translate(${-5 * (1-grow)} 0)` },
+    { path: 'M42 22 75 26 69 78 36 74Z', fill: '#695482', stroke: '#f0ddff', width: 2, opacity: fade, transform: `translate(${5 * (1-grow)} 0)` },
+    path('M55 37l3 9 9 3-9 3-3 9-3-9-9-3 9-3Z', '#f4e5ff', 2, fade),
+  ];
   if (kind === 'poison') return [
     ring(24 + t * 20, '#b9f795', (1-t) * .7),
     { path: 'M42 22h16v9l10 15v25q0 6-6 6H38q-6 0-6-6V46l10-15Z', fill: '#2c8658', stroke: '#ccffbd', width: 2, opacity: fade, transform: `translate(0 ${-3 * Math.sin(t * Math.PI * 4)})` },

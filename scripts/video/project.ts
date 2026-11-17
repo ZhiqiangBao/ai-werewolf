@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { resolve, join } from 'node:path';
+import { videoChaptersFromEvents } from '../../packages/protocol/src/video-chapters';
 import type { VoiceProfile, AudioMeta } from './qwen';
 export const FPS = 30;
 export const SAMPLE_RATE = 24000;
@@ -19,8 +20,12 @@ export interface TimedClip extends Clip { frames: number; startFrame: number; au
 export async function loadScript(): Promise<Script> {
   const seat = process.env.VIDEO_PLAYER_SEAT;
   if (seat && !/^[1-9][0-9]*$/.test(seat)) throw Error('Invalid player seat');
-  const script = JSON.parse(await readFile(join(dataDir, 'exports', `${roomId}${seat ? `-player-${seat}` : ''}-video-script.json`), 'utf8')) as Script;
+  const script = JSON.parse(await readFile(join(dataDir, 'exports', `${roomId}${seat ? `-player-${seat}` : ''}-video-script.json`), 'utf8')) as Script & { hosting?: { version: number; fallbackSeqs: number[] } };
   if (script.roomId !== roomId || script.status !== 'ended' || (seat ? script.perspective !== 'player' || script.playerSeat !== Number(seat) : script.perspective !== 'god')) throw Error('Expected the completed, authorized view script');
+  if (script.perspective === 'god' && script.hosting?.version === 1) {
+    const { hosting, ...source } = script;
+    return { ...source, chapters: videoChaptersFromEvents(source.events, source.locale, new Set(hosting.fallbackSeqs)) };
+  }
   if (seat) {
     const { buildPlayerVideo } = await import('../../packages/session/src/player-video');
     const record = JSON.parse(await readFile(join(dataDir, 'rooms', `${roomId}.json`), 'utf8'));

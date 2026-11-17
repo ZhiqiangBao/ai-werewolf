@@ -48,7 +48,7 @@ async function worker() {
     if (preview) { console.log(`plate ${clip.id}`); continue; }
     const ass = await readFile(`${projectDir}/subtitles/${clip.id}.ass`, 'utf8');
     const rules = ruleStrips[clip.phase === 'night' ? 'night' : 'day'];
-    const effect = clipSkillEffect(script, clip);
+    const effect = clipSkillEffect(script, clip, timeline.clips);
     const index = timeline.clips.findIndex(c => c.id === clip.id), before = timeline.clips[index - 1], after = timeline.clips[index + 1];
     const transition = sceneTransition(clip, before, after);
     const cacheKey = createHash('sha256').update(image).update(rules.png).update(ass).update(clip.audioMeta.cacheKey).update(sceneVersion).update(videoEffectVersion).update(JSON.stringify(effect)).update(JSON.stringify(encodingIdentity)).update(JSON.stringify({ frames: clip.frames, startFrame: clip.startFrame, ruleSpeed: RULE_SCROLL_SPEED, ruleView: RULE_VIEW, transition })).digest('hex');

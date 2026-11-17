@@ -1,4 +1,6 @@
 import { gameText } from './locale';
+import { videoChaptersFromEvents } from './video-chapters';
+export type { VideoScriptEntry } from './video-chapters';
 import type { GameEvent, GodProjection, NightActionKind, NightActionRound, NightRoundKind, RoomBrief, Seat, Thought } from './index';
 
 const PRIVATE_STATUS = new Set(['awakened.identity', 'awakened.inherit', 'awakened.activated']);
@@ -109,68 +111,35 @@ export function gameRecordEvents(events: GameEvent[], locale: string | undefined
   });
 }
 
-export interface VideoScriptEntry {
-  sourceSeq: number;
-  type: string;
-  speaker: string;
-  voiceKey: string;
-  seat?: Seat;
-  text: string;
-  visibility: 'public' | 'private';
-  /** 用于票型、PK 等剪辑卡片；不含决策问话。 */
-  data: Record<string, unknown>;
-}
-
 /** 未配音的剪辑稿，不把模型网络等待时间冒充成片时间。 */
 export function buildVideoScript(p: GodProjection, room: RoomBrief) {
   if (p.viewer.kind !== 'god' || room.viewer !== 'host') throw new Error(gameText(p.locale, "只有上帝视角可以导出完整剪辑稿"));
-  const chapters: { day: number; phase: GameEvent['phase']; title: string; entries: VideoScriptEntry[] }[] = [];
   const narrated = gameRecordEvents(p.events, p.locale).filter((event) => !PRIVATE_STATUS.has(event.type));
   const narratedBySeq = new Map(narrated.map((e) => [e.seq, e]));
   const roleOf = new Map(p.god.roles.map((role) => [role.seat, role.role]));
-  for (const e of narrated) {
-    const key = `${e.day}:${e.phase}`;
-    let chapter = chapters.at(-1);
-    if (!chapter || `${chapter.day}:${chapter.phase}` !== key) {
-      chapter = { day: e.day, phase: e.phase, title: e.phase === 'setup' ? gameText(p.locale, "开局") : e.phase === 'end' ? gameText(p.locale, "终局") : gameText(p.locale, "第{0}{1}", e.day, e.phase === 'night' ? gameText(p.locale, "夜") : gameText(p.locale, "天")), entries: [] };
-      chapters.push(chapter);
-    }
-    const speech = e.type === 'speech' || e.type === 'wolf.chat';
-    const seat = speech && typeof e.payload.seat === 'number' ? e.payload.seat : undefined;
+  const fallbackSeqs = new Set<number>();
+  // 已被合并播报的出局等事实仍供画面重建，spoken=false 避免重复配音。
+  const events = p.events.flatMap((e, index) => {
+    if (eventPurpose(e) !== 'gameplay' || e.type === 'wolf.team' || e.type === 'awakened.identity') return [];
     const { decisionId: _decision, step: _step, prompt: _prompt, announced: _announced, ...data } = e.payload;
     const actor = singleSeat(e);
     const round = projectNightRound(e, actor === undefined ? undefined : roleOf.get(actor));
     if (round) data.round = round;
     const fallbackSeats = fallbackSeatsBefore(p.events, e.seq);
     if (fallbackSeats.length) data.fallbackSeats = fallbackSeats;
-    const previous = p.events.findLast((event) => event.seq < e.seq);
+    const previous = p.events[index - 1];
+    const speech = e.type === 'speech' || e.type === 'wolf.chat';
+    const seat = speech && typeof e.payload.seat === 'number' ? e.payload.seat : undefined;
     const actingSeat = seat ?? (Array.isArray(e.audience) && e.audience.length === 1 ? e.audience[0] : undefined);
     if (previous?.type === 'action.fallback' && (e.type === 'speech.order' ||
-        (actingSeat !== undefined && Array.isArray(previous.audience) && previous.audience.includes(actingSeat)))) data.systemFallback = true;
-    chapter.entries.push({
-      sourceSeq: e.seq, type: e.type,
-      speaker: seat === undefined ? gameText(p.locale, "法官") : gameText(p.locale, "{0}号{1}", seat, e.type === 'wolf.chat' ? gameText(p.locale, "（狼队密谈）") : ''),
-      voiceKey: seat === undefined ? 'judge' : `seat-${seat}`,
-      ...(seat === undefined ? {} : { seat }),
-      text: speech && typeof e.payload.content === 'string' ? e.payload.content : e.text,
-      visibility: e.audience === 'public' ? 'public' : 'private', data,
-    });
-  }
+        (actingSeat !== undefined && Array.isArray(previous.audience) && previous.audience.includes(actingSeat)))) fallbackSeqs.add(e.seq);
+    return [{ sourceSeq: e.seq, day: e.day, phase: e.phase, type: e.type, audience: e.audience, spoken: narratedBySeq.has(e.seq), text: narratedBySeq.get(e.seq)?.text ?? e.text, data }];
+  });
   return {
     format: 'werewolf-video-script', version: 1, perspective: 'god', timing: 'untimed',
     locale: p.locale ?? 'zh-CN', roomId: room.roomId, presetName: p.presetName, status: p.status,
     ruleCard: p.ruleCard,
     cast: p.god.roles.map((r) => ({ seat: r.seat, name: p.seats.find((s) => s.seat === r.seat)?.name ?? gameText(p.locale, "{0}号", r.seat), role: r.role, roleName: r.roleName, factionName: r.factionName, voiceKey: `seat-${r.seat}` })),
-    // 已被合并播报的出局等事实仍供画面重建，spoken=false 避免重复配音。
-    events: p.events.filter((e) => eventPurpose(e) === 'gameplay' && e.type !== 'wolf.team' && e.type !== 'awakened.identity').map((e) => {
-      const { decisionId: _decision, step: _step, prompt: _prompt, announced: _announced, ...data } = e.payload;
-      const actor = singleSeat(e);
-      const round = projectNightRound(e, actor === undefined ? undefined : roleOf.get(actor));
-      if (round) data.round = round;
-      const fallbackSeats = fallbackSeatsBefore(p.events, e.seq);
-      if (fallbackSeats.length) data.fallbackSeats = fallbackSeats;
-      return { sourceSeq: e.seq, day: e.day, phase: e.phase, type: e.type, audience: e.audience, spoken: narratedBySeq.has(e.seq) && !PRIVATE_STATUS.has(e.type), text: narratedBySeq.get(e.seq)?.text ?? e.text, data };
-    }),
-    chapters, result: p.result ?? null,
+    events, chapters: videoChaptersFromEvents(events, p.locale, fallbackSeqs), result: p.result ?? null,
   };
 }

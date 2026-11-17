@@ -12,6 +12,7 @@ export { defaultServerWebTools, serverWebToolSupport } from './web-tools';
 export type { CapabilityState, ServerWebTool, ServerWebToolSupport, ServerWebToolsConfig } from './web-tools';
 import type { ApiProtocol, TokenUsage } from './api';
 export { eventPurpose, gameRecordEvents, buildVideoScript, recordedBadgeOutcome, projectNightRound, nightRoundSummary } from './recording';
+export { videoChaptersFromEvents } from './video-chapters';
 export type { VideoScriptEntry } from './recording';
 export { THINKING_MODES, thinkingOptions, thinkingParameters, defaultThinkingMode } from './thinking';
 export type { ThinkingMode, ThinkingOption } from './thinking';

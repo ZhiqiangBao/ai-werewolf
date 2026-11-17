@@ -88,18 +88,21 @@ export function EventLog({ events, seats, mode, mySeat, onRead, controls, locale
           {!shown.length && <div className="muted small">{t('还没有记录。')}</div>}
           {shown.map((e) => {
             const key = `${e.day}:${e.phase}`;
+            const nightOpening = e.type === 'phase' && e.phase === 'night' && e.audience === 'public';
             const divider =
               key !== lastKey && e.phase !== 'setup' ? (
                 <div className={`log-divider ${e.phase}`}>
                   {e.phase !== 'end' && <PhaseIcon phase={e.phase} size={14} />}
-                  {phaseLabel(e.day, e.phase, locale)}
+                  {nightOpening ? e.text : phaseLabel(e.day, e.phase, locale)}
                 </div>
               ) : null;
             lastKey = key;
             return (
               <Fragment key={e.seq}>
                 {divider}
-                {e.type !== 'phase' && <EventItem e={e} nameOf={nameOf} scope={scopeLabel(e)} onRead={onRead} locale={locale} roles={roles} />}
+                {(e.type !== 'phase' || (nightOpening && !divider)) && (
+                  <EventItem e={e} nameOf={nameOf} scope={scopeLabel(e)} onRead={onRead} locale={locale} roles={roles} />
+                )}
               </Fragment>
             );
           })}

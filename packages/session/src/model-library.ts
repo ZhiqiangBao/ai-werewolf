@@ -36,7 +36,7 @@ function credentialInput(key: string, name: string): string {
 }
 
 /** models.json v2 之前没有 apiProtocol；缺失值必须保持历史 Chat Completions 语义。 */
-function storedProtocol(model: SavedModel): ApiProtocol {
+function storedProtocol(model: Pick<SavedModel, 'apiProtocol'>): ApiProtocol {
   return model.apiProtocol ?? 'chat_completions';
 }
 

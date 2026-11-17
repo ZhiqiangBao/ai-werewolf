@@ -7,9 +7,15 @@ await mkdir(new URL('assets/art/moon-village/', skill), { recursive: true });
 // code with live playback. Older target checkouts may not have session/src/speech.
 files.push('character-voices.ts', 'character-delivery.ts', 'avatar-theme.ts', 'english-captions.ts', 'edited-video.ts', 'compile-edit.ts', 'synthesize-narration.ts', 'transitions.ts', 'tts-config.ts', 'voice-enroll.ts', 'generate-voice-references.ts');
 const speechSources = new Map([['audio.ts', 'audio.ts'], ['audio-cache.ts', 'audio-cache.ts'], ['qwen.ts', 'qwen.ts'], ['tts-types.ts', 'types.ts'], ['project-models.ts', '../project-models.ts']]);
+files.push('video-chapters.ts');
 for (const name of files) {
   const speech = speechSources.get(name), destination = new URL(`assets/pipeline/${name}`, skill);
   if (name === 'death-glyphs.ts') { await copyFile(new URL('packages/protocol/src/death-glyphs.ts', root), destination); continue; }
+  if (name === 'video-chapters.ts') {
+    const source = await readFile(new URL('packages/protocol/src/video-chapters.ts', root), 'utf8');
+    await writeFile(destination, source.replaceAll("from './locale'", "from '@werewolf/protocol'").replaceAll("from './index'", "from '@werewolf/protocol'"));
+    continue;
+  }
   if (name === 'skill-effects-core.ts') {
     const source = await readFile(new URL('packages/protocol/src/skill-effects.ts', root), 'utf8');
     const typeImport = "import type { GameEvent, Viewer } from './index';";
@@ -22,6 +28,7 @@ for (const name of files) {
     const source = await readFile(new URL(`scripts/video/${name}`, root), 'utf8');
     await writeFile(destination, source.replaceAll("from '../../packages/protocol/src/death-glyphs'", "from './death-glyphs'")
       .replaceAll("from '../../packages/protocol/src/skill-effects'", "from './skill-effects-core'")
+      .replaceAll("from '../../packages/protocol/src/video-chapters'", "from './video-chapters'")
       .replaceAll("from '../../packages/session/src/speech/qwen'", "from './qwen'")
       .replaceAll("from '../../packages/session/src/project-models'", "from './project-models'"));
     continue;
