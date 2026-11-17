@@ -294,6 +294,30 @@ describe('狼王', () => {
     expect(game.hasTool('wolf_king_shoot')).toBe(false);
   });
 
+  it.each([false, true])('放逐同一席位，私下询问和放弃开枪均不改变旁观或其他好人的视角（警徽 %s）', (sheriff) => {
+    const swapped = [...deal];
+    [swapped[5], swapped[6]] = [swapped[6], swapped[5]];
+    const king = merchantGame(sheriff ? {} : noSheriff);
+    const villager = merchantGame(sheriff ? {} : noSheriff, swapped);
+    for (const game of [king, villager]) {
+      if (sheriff) {
+        game.untilTool('sheriff_signup');
+        for (const seat of game.waiting()) game.ok(seat, seat === 6 ? 'sheriff_signup' : 'sheriff_stay_off');
+      }
+      game.toVote();
+      for (const voter of game.waiting()) game.ok(voter, 'vote', { targetSeat: 6 });
+    }
+    const ordinaryDuty = sheriff ? 'badge_transfer' : 'speak';
+    expect(villager.view(6).task?.tools.map((tool) => tool.name)).toContain(ordinaryDuty);
+    expect(king.view(6).task?.tools.map((tool) => tool.name)).toContain('wolf_king_shoot');
+    expect(king.spectator()).toEqual(villager.spectator());
+    expect(king.view(8)).toEqual(villager.view(8));
+    king.ok(6, 'wolf_king_hold_fire');
+    expect(king.view(6).task?.tools.map((tool) => tool.name)).toContain(ordinaryDuty);
+    expect(king.spectator()).toEqual(villager.spectator());
+    expect(king.view(8)).toEqual(villager.view(8));
+  });
+
   it('自定义阵容的猎枪连锁继承首夜死亡批次和遗言', () => {
     const game = merchantGame(noSheriff, ['miracle_merchant', 'wolf_king', 'hunter', 'werewolf', 'villager', 'villager']);
     finishNight(game, { knife: 3 });
@@ -329,11 +353,14 @@ describe('狼王', () => {
     expect(game.events.some((event) => event.type === 'judge' && event.payload.step === 'wolf_king.shoot')).toBe(false);
   });
 
-  it('从开局走到终局，已接受的行动可逐事件重放', () => {
+  it('双守被拒后改选并走到终局，完整输入重建全部记录，成功输入重建对局事实', () => {
     const game = merchantGame(noSheriff);
-    game.ok(1, 'merchant_gift_guard', { targetSeat: 3 });
+    game.ok(1, 'merchant_gift_guard', { targetSeat: 5 });
+    game.ok(5, 'guard_protect', { targetSeat: 3 });
     game.untilTool('lucky_guard');
-    game.ok(3, 'lucky_guard', { targetSeat: 3 });
+    const rejected = game.actions.length;
+    expect(game.act(5, 'lucky_guard', { targetSeat: 3 })?.code).toBe('INVALID_ARGUMENT');
+    game.ok(5, 'lucky_guard', { targetSeat: 7 });
     game.untilTool('vote');
     expect(game.view(6).interrupts).toEqual([]);
     for (const voter of game.waiting()) game.ok(voter, 'vote', { targetSeat: 6 });
@@ -349,5 +376,10 @@ describe('狼王', () => {
     });
     expect(game.state.result?.winner).toBe('good');
     expect(replay(game.options, game.actions)).toEqual({ state: game.state, events: game.events });
+    const accepted = replay(game.options, game.actions.filter((_, i) => i !== rejected));
+    expect(accepted.state).toEqual({ ...game.state, seq: game.state.seq - 1 });
+    expect(game.events.filter((event) => event.type === 'action.rejected')).toMatchObject([{ audience: [5] }]);
+    expect(accepted.events).toEqual(game.events.filter((event) => event.type !== 'action.rejected')
+      .map((event, i) => ({ ...event, seq: i + 1 })));
   });
 });

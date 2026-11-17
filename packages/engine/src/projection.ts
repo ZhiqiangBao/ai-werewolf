@@ -15,7 +15,7 @@ const visibleTo = (seat: Seat) => (e: GameEvent) =>
 /** 按视角重新编号：保留全局序号会让人从序号空档数出隐藏事件的条数。 */
 const renumber = (events: GameEvent[]) => events.map((e, i) => ({ ...e, seq: i + 1 }));
 
-function seatsInfo(state: GameState): SeatInfo[] {
+function seatsInfo(state: GameState, publicActor: Seat | undefined): SeatInfo[] {
   const showRoles = !!state.result && state.result.reveal !== false;
   return state.players.map((p) => {
     const info: SeatInfo = { seat: p.seat, name: p.name, alive: p.alive, sheriff: state.sheriff === p.seat };
@@ -23,12 +23,27 @@ function seatsInfo(state: GameState): SeatInfo[] {
       info.revealedRole = showRoles ? p.role : (p.revealedAs ?? p.role);
       info.revealedRoleName = gameText(state.rules.locale, getRole(info.revealedRole).name);
     }
-    if (state.pending?.publicActor === p.seat) info.active = true;
+    if (publicActor === p.seat) info.active = true;
     return info;
   });
 }
 
+/** 出局公告和下一条公开事实之间，旁观者不能从遗言、警徽或私下询问的先后辨认狼王。 */
+function publicTurn(state: GameState, events: GameEvent[], viewer: Viewer) {
+  const pending = state.pending;
+  if (pending && viewer.kind !== 'god' && state.rules.roles.includes('wolf_king') &&
+      !(viewer.kind === 'seat' && pending.actors.includes(viewer.seat))) {
+    const last = events.findLast((event) => event.audience === 'public');
+    if (last && (last.type === 'exile' || last.type === 'explode' || last.type === 'wolf_king.shot' || last.type === 'hunter.shot' ||
+        (last.type === 'dawn' && Array.isArray(last.payload.deaths) && last.payload.deaths.length > 0))) {
+      return { stage: gameText(state.rules.locale, '法官结算中'), actor: undefined };
+    }
+  }
+  return { stage: pending?.publicStage ?? state.stage, actor: pending?.publicActor };
+}
+
 function base(state: GameState, events: GameEvent[], viewer: Viewer): Projection {
+  const turn = publicTurn(state, events, viewer);
   return {
     viewer,
     locale: state.rules.locale ?? 'zh-CN',
@@ -37,10 +52,10 @@ function base(state: GameState, events: GameEvent[], viewer: Viewer): Projection
     status: state.result ? 'ended' : 'running',
     day: state.day,
     phase: state.phase,
-    stage: state.pending?.publicStage ?? state.stage,
+    stage: turn.stage,
     presetName: state.rules.presetName,
     ruleCard: buildRuleCard(state.rules),
-    seats: seatsInfo(state),
+    seats: seatsInfo(state, turn.actor),
     events,
     task: null,
     interrupts: [],
