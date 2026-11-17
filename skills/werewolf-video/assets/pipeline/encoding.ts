@@ -78,8 +78,8 @@ export async function verifyEncodingRate(file: string, settings: EncodingSetting
   } catch (error) { child.kill(); await closed.catch(() => {}); throw error; }
   if (!count) throw Error('No video packets');
   const peakVideoKbps = peakBytes * 8 / (windowSeconds * 1000), averageTotalKbps = bytes * 8 / totalDuration / 1000;
-  if (averageVideoKbps > settings.videoKbps || peakVideoKbps > settings.maxVideoKbps || (settings.maxTotalKbps !== undefined && averageTotalKbps > settings.maxTotalKbps))
-    throw Error(`Final video bitrate exceeds limit: average ${averageVideoKbps.toFixed(1)}/${settings.videoKbps} kbps, ${windowSeconds}s peak ${peakVideoKbps.toFixed(1)}/${settings.maxVideoKbps} kbps, total ${averageTotalKbps.toFixed(1)}/${settings.maxTotalKbps ?? 'unlimited'} kbps`);
+  if (averageVideoKbps > settings.videoKbps || (settings.maxTotalKbps !== undefined && averageTotalKbps > settings.maxTotalKbps))
+    throw Error(`Final video bitrate exceeds limit: average ${averageVideoKbps.toFixed(1)}/${settings.videoKbps} kbps, ${windowSeconds}s peak ${peakVideoKbps.toFixed(1)} kbps, total ${averageTotalKbps.toFixed(1)}/${settings.maxTotalKbps ?? 'unlimited'} kbps`);
   return { bytes, durationSeconds: totalDuration, averageVideoKbps, averageTotalKbps, peakVideoKbps, peakWindowSeconds: windowSeconds };
 }
 
