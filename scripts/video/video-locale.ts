@@ -50,6 +50,14 @@ const roles: Record<string, string> = { werewolf: '狼人', wolf_king: '狼王',
 export function videoRole(locale: string, role: string, fallback: string): string { return Object.hasOwn(roles, role) ? videoText(locale, roles[role]) : fallback; }
 registerVideoLanguage({ id: 'zh-CN', messages: { '查验结果：狼人': '狼人', '查验结果：好人': '好人' } });
 registerVideoLanguage({ id: 'en', fallback: 'zh-CN', messages: {
+  '幸运儿':'Lucky One', '查验':'inspection', '守护':'protection', '技能':'ability',
+  '{0}号成为幸运儿，获得一次{1}。':'Seat {0} became the Lucky One and received one use of {1}.',
+  '奇迹商人请睁眼。':'Miracle Merchant, open your eyes.', '幸运儿请睁眼。':'Lucky One, open your eyes.',
+  '奇迹商人请闭眼。':'Miracle Merchant, close your eyes.', '幸运儿请闭眼。':'Lucky One, close your eyes.', '系统托管。':'Automatic action. ',
+  '奇迹商人{0}号选择等待。':'Miracle Merchant at seat {0} waits.', '奇迹商人{0}号向{1}号赠予{2}。':'Miracle Merchant at seat {0} gifts {2} to seat {1}.',
+  '幸运儿{0}号保留{1}。':'Lucky One at seat {0} saves {1}.', '幸运儿{0}号查验{1}号，结果是{2}。':'Lucky One at seat {0} inspects seat {1}: {2}.',
+  '幸运儿{0}号对{1}号使用{2}。':'Lucky One at seat {0} uses {2} on seat {1}.',
+
   '身份未知':'Unknown', '准备':'Setup', '终局':'Final', '出局':'OUT', '投票者':'Voters', '玩家':'Player', '行动':'Action', '解说':'Narrator', '{0}号玩家视角':'Seat {0} view', '本人身份 · 自动循环滚动':'Your role · scrolling', '本人身份默认简介（zh-CN）':'Default role summary (zh-CN)', '存活 {0} 人':'Alive {0}', '开枪目标':'Shot target',
   '狼王':'Wolf King', '奇迹商人':'Miracle Merchant', '反噬':'Backfire', '第{0}天':'Day {0}', '第{0}夜':'Night {0}', '狼人':'Werewolf', '预言家':'Seer', '女巫':'Witch', '守卫':'Guard', '猎人':'Hunter', '平民':'Villager', '白痴':'Idiot', '觉醒隐狼':'Awakened Hidden Wolf', '魔镜少女':'Mirror Maiden',
   '放逐':'Exile', '毒药':'Poison', '狼刀':'Wolf', '猎枪':'Shot', '自爆':'Reveal', '同守同救':'Clash', '夜晚':'Night', '其他':'Other',
@@ -60,6 +68,14 @@ registerVideoLanguage({ id: 'en', fallback: 'zh-CN', messages: {
   '日式校园':'Campus', '童话绘本':'Storybook', '中式古风':'Classical Chinese', '剑与魔法':'Fantasy', '现代都市':'Urban', '未来科技':'Futuristic'
 } });
 registerVideoLanguage({ id: 'ja', fallback: 'zh-CN', messages: {
+  '幸运儿':'幸運者', '查验':'占い', '守护':'護衛', '技能':'能力',
+  '{0}号成为幸运儿，获得一次{1}。':'{0}番は幸運者となり、{1}を1回獲得しました。',
+  '奇迹商人请睁眼。':'奇跡の商人は目を開けてください。', '幸运儿请睁眼。':'幸運者は目を開けてください。',
+  '奇迹商人请闭眼。':'奇跡の商人は目を閉じてください。', '幸运儿请闭眼。':'幸運者は目を閉じてください。', '系统托管。':'自動行動です。',
+  '奇迹商人{0}号选择等待。':'奇跡の商人{0}番は待機を選びました。', '奇迹商人{0}号向{1}号赠予{2}。':'奇跡の商人{0}番は{1}番に{2}を贈りました。',
+  '幸运儿{0}号保留{1}。':'幸運者{0}番は{1}を温存しました。', '幸运儿{0}号查验{1}号，结果是{2}。':'幸運者{0}番が{1}番を占い、結果は{2}でした。',
+  '幸运儿{0}号对{1}号使用{2}。':'幸運者{0}番は{1}番に{2}を使いました。',
+
   '身份未知':'不明', '准备':'準備', '终局':'終局', '出局':'退場', '投票者':'投票者', '玩家':'プレイヤー', '行动':'行動', '解说':'解説', '{0}号玩家视角':'{0}番視点', '本人身份 · 自动循环滚动':'自分の役職 · 自動スクロール', '本人身份默认简介（zh-CN）':'既定の役職説明（zh-CN）', '存活 {0} 人':'生存 {0}人', '开枪目标':'射撃対象',
   '狼王':'人狼王', '奇迹商人':'奇跡の商人', '反噬':'反動', '第{0}天':'{0}日目', '第{0}夜':'{0}夜目', '狼人':'人狼', '预言家':'占い師', '女巫':'魔女', '守卫':'騎士', '猎人':'猟師', '平民':'村人', '白痴':'愚者', '觉醒隐狼':'覚醒隠狼', '魔镜少女':'鏡の少女',
   '放逐':'追放', '毒药':'毒', '狼刀':'襲撃', '猎枪':'射撃', '自爆':'自白', '同守同救':'護衛＋薬', '夜晚':'夜間', '其他':'その他',

@@ -327,6 +327,17 @@ export function ownLine(tool: string, args: Record<string, unknown>, locale: str
   // These are receipts for the submitted action, not claims about its outcome.
   // Keep tool names and arguments unchanged in the assistant's native call.
   const seat = (target: number) => gameText(locale, '{0}号', target);
+  const gifts: Record<string, string> = {
+    merchant_gift_inspect: '已提交向 {0} 赠予查验。',
+    merchant_gift_poison: '已提交向 {0} 赠予毒药。',
+    merchant_gift_guard: '已提交向 {0} 赠予守护。',
+  };
+  const giftTool = tool === 'merchant_gift' && typeof args.skill === 'string'
+    ? ({ seer: 'merchant_gift_inspect', poison: 'merchant_gift_poison', guard: 'merchant_gift_guard' } as Record<string, string>)[args.skill]
+    : tool;
+  const giftTarget = args.targetSeat ?? args.target;
+  if (giftTool && Object.hasOwn(gifts, giftTool) && typeof giftTarget === 'number') return gameText(locale, gifts[giftTool], seat(giftTarget));
+  if (tool === 'merchant_gift' && args.target === null) return gameText(locale, '已提交等待，保留交易机会。');
   if (tool === 'witch_save' && typeof args.targetSeat === 'number') {
     return gameText(locale, '已提交对 {0} 使用解药。', seat(args.targetSeat));
   }
@@ -338,6 +349,8 @@ export function ownLine(tool: string, args: Record<string, unknown>, locale: str
     guard_skip: '已提交本夜空守。', wolf_empty_kill: '已提交空刀。',
     vote_abstain: '已提交放逐弃票。', sheriff_abstain: '已提交警长投票弃票。',
     hunter_hold_fire: '已提交放弃开枪。', badge_tear: '已提交撕毁警徽。',
+    merchant_wait: '已提交等待，保留交易机会。', lucky_skip: '已提交保留幸运儿技能。',
+    wolf_king_hold_fire: '已提交放弃开枪。',
   };
   if (Object.hasOwn(noTarget, tool)) return gameText(locale, noTarget[tool]);
   if (tool === 'witch_act') {
@@ -353,7 +366,7 @@ export function ownLine(tool: string, args: Record<string, unknown>, locale: str
   if (args.target === null) {
     const legacySkip: Record<string, string> = {
       guard_protect: '已提交本夜空守。', wolf_kill: '已提交空刀。', vote: '已提交放逐弃票。',
-      sheriff_vote: '已提交警长投票弃票。', hunter_shoot: '已提交放弃开枪。', badge_dispose: '已提交撕毁警徽。',
+      sheriff_vote: '已提交警长投票弃票。', hunter_shoot: '已提交放弃开枪。', wolf_king_shoot: '已提交放弃开枪。', badge_dispose: '已提交撕毁警徽。',
     };
     if (Object.hasOwn(legacySkip, tool)) return gameText(locale, legacySkip[tool]);
   }
@@ -363,6 +376,8 @@ export function ownLine(tool: string, args: Record<string, unknown>, locale: str
     wolf_kill: '已提交刀 {0}。', vote: '已提交投票给 {0}。',
     sheriff_vote: '已提交警长投票给 {0}。', hunter_shoot: '已提交对 {0} 开枪。',
     badge_transfer: '已提交将警徽移交给 {0}。', badge_dispose: '已提交将警徽移交给 {0}。',
+    lucky_inspect: '已提交对 {0} 使用幸运儿查验。', lucky_poison: '已提交对 {0} 使用幸运儿毒药。',
+    lucky_guard: '已提交对 {0} 使用幸运儿守护。', wolf_king_shoot: '已提交对 {0} 开枪。',
   };
   const target = args.targetSeat ?? args.candidateSeat ?? args.recipientSeat ?? args.target;
   if (Object.hasOwn(targetReceipts, tool) && typeof target === 'number') {

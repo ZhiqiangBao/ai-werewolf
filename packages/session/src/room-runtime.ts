@@ -315,7 +315,14 @@ export class RoomRuntimeService {
     if (rec.status !== 'running' || rec.state?.result) {
       return { state: rec.state!, events: [], error: { code: 'GAME_ENDED', reason: gameText(rec.state?.rules.locale ?? rec.locale, '对局已经结束') } };
     }
-    if (rec.timing && rec.actionAvailableAt && this.now() < rec.actionAvailableAt) throw new ApiFailure(409, 'ACTION_NOT_OPEN', '推进间隔尚未结束，请稍后行动', { key: '推进间隔尚未结束，请稍后行动' });
+    if (rec.timing && rec.actionAvailableAt && this.now() < rec.actionAvailableAt) {
+      const pending = rec.state?.pending;
+      const currentWindow = pending && (!input.decisionId || input.decisionId === pending.id);
+      const taskWindow = pending && currentWindow && pending.actors.includes(input.seat) && !pending.submissions[input.seat];
+      const interruptWindow = !taskWindow && currentWindow && !input.auto &&
+        projectSeat(rec.state!, rec.events, input.seat).interrupts.some((tool) => tool.name === input.call.tool);
+      if (taskWindow || interruptWindow) throw new ApiFailure(409, 'ACTION_NOT_OPEN', '推进间隔尚未结束，请稍后行动', { key: '推进间隔尚未结束，请稍后行动' });
+    }
     const previous = rec.state?.pending;
     let action: ObservationSpan | undefined;
     if (this.observability) {

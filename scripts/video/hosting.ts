@@ -3,6 +3,7 @@ import { replay } from './replay';
 import { videoText } from './video-locale';
 
 const required = new Set(['phase', 'witch.knife', 'witch.idle', 'sheriff.start', 'sheriff.order', 'speech.order', 'vote.result', 'dawn', 'badge.transfer', 'badge.tear']);
+const giftSkillName: Record<string, string> = { seer: '查验', poison: '毒药', guard: '守护' };
 const copiedSkillName: Record<string, string> = { awakened_poison: '模仿毒药', awakened_guard: '增强守护', awakened_claw: '额外爪击' };
 
 /** 行动转述只使用已记录的动作；完整性校验也以此规则核对。 */
@@ -120,6 +121,25 @@ export function completeHosting(source: Script, edited: Script): Script {
           if (text) cue(original, 'awakened-summary', text, undefined, { actionSummary: true });
         } else if (roleSeat && line) cue(original, 'awakened-choice', line, roleSeat, { target: d.target }, t('觉醒隐狼'));
         judge(t('觉醒隐狼请闭眼。'));
+      }
+      if (e.type === 'merchant.gift.received' && roleSeat !== undefined) {
+        const skill = giftSkillName[d.skill];
+        if (skill) judge(t('{0}号成为幸运儿，获得一次{1}。', roleSeat, t(skill)));
+      }
+      if (roleSeat !== undefined && ((d.round?.roundKind === 'merchant' && ['merchant.gift', 'merchant.wait'].includes(e.type)) ||
+          (d.round?.roundKind === 'lucky' && ['lucky.inspect', 'lucky.poison', 'lucky.guard', 'lucky.skip'].includes(e.type)))) {
+        const merchant = d.round.roundKind === 'merchant';
+        const automatic = !!d.systemFallback || fallen(d).has(roleSeat);
+        const skill = giftSkillName[d.skill];
+        cue(original, merchant ? 'merchant-open' : 'lucky-open', t(merchant ? '奇迹商人请睁眼。' : '幸运儿请睁眼。'));
+        let action: string;
+        if (e.type === 'merchant.wait') action = t('奇迹商人{0}号选择等待。', roleSeat);
+        else if (e.type === 'merchant.gift') action = t('奇迹商人{0}号向{1}号赠予{2}。', roleSeat, d.target, t(skill ?? '技能'));
+        else if (e.type === 'lucky.skip') action = t('幸运儿{0}号保留{1}。', roleSeat, t(skill ?? '技能'));
+        else if (e.type === 'lucky.inspect') action = t('幸运儿{0}号查验{1}号，结果是{2}。', roleSeat, d.target, t(d.result === 'wolf' ? '查验结果：狼人' : '查验结果：好人'));
+        else action = t('幸运儿{0}号对{1}号使用{2}。', roleSeat, d.target, t(e.type === 'lucky.poison' ? '毒药' : '守护'));
+        const separator = locale === 'en' ? ' ' : '';
+        judge([...(automatic ? [t('系统托管。').trim()] : []), action, t(merchant ? '奇迹商人请闭眼。' : '幸运儿请闭眼。')].join(separator));
       }
       if (e.type === 'seer.result' || e.type === 'seer.skip') {
         cue(original, 'seer-open', t('预言家请睁眼，请选择今晚要查验的一名玩家。'));
