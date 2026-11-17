@@ -41,7 +41,7 @@ describe('玩家视角视频权限', () => {
     await writeFile(join(dir, 'narration.json'), JSON.stringify(narration));
     run('scripts/video/workflow.ts', ['--room=synthetic', `--player-seat=${own}`, `--data-dir=${data}`, '--encoder=cpu', '--resume', '--tts-provider=synthetic-test', `--tts-adapter=${resolve(root, 'packages/session/test/fixtures/synthetic-video-tts.ts')}`], {});
     const workflowStatus = JSON.parse(await readFile(join(dir, 'workflow-status.json'), 'utf8'));
-    expect(workflowStatus).toMatchObject({ status: 'complete', asr: { requestedProvider: 'off', audioSemanticReview: 'not-checked-explicitly-disabled' } });
+    expect(workflowStatus).toMatchObject({ status: 'media-verified', asr: { requestedProvider: 'off', audioSemanticReview: 'not-checked-explicitly-disabled' } });
     expect(workflowStatus.completed).toContain('review-audio');
     const clips = JSON.parse(await readFile(join(dir, 'clips.json'), 'utf8'));
     const timeline = JSON.parse(await readFile(join(dir, 'timeline.json'), 'utf8'));
@@ -64,8 +64,8 @@ describe('玩家视角视频权限', () => {
     await writeFile(selection, JSON.stringify({ description: '单项合成样片', sections: [{ title: '查验', sourceSeqs: [target.sourceSeq] }] }));
     const sampleEnv = { ...env, VIDEO_PROJECT_DIR: sampleDir, VIDEO_TTS_PROVIDER: 'synthetic-test', VIDEO_TTS_ADAPTER: resolve(root, 'packages/session/test/fixtures/synthetic-video-tts.ts') };
     run('scripts/video/sample.ts', [`--selection=${selection}`], sampleEnv);
-    expect(() => run('scripts/video/sample.ts', [`--selection=${selection}`], sampleEnv)).toThrow();
-    expect(JSON.parse(await readFile(join(sampleDir, 'sample-selection.json'), 'utf8')).reusedAudio).toBe(0);
+    run('scripts/video/sample.ts', [`--selection=${selection}`], sampleEnv);
+    expect(JSON.parse(await readFile(join(sampleDir, 'sample-selection.json'), 'utf8')).clips.map((clip: any) => clip.id)).toContain(target.id);
     run('scripts/video/synthesize.ts', ['--prepared-clips'], sampleEnv);
     run('scripts/video/timeline.ts', [], sampleEnv);
     run('scripts/video/render.ts', [], sampleEnv);

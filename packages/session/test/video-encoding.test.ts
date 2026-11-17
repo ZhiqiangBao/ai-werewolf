@@ -3,13 +3,13 @@ import { encodingSettings, videoEncodingArgs } from '../../../scripts/video/enco
 import { sceneTransition } from '../../../scripts/video/transitions';
 
 describe('video encoding profiles', () => {
-  it('defaults to upload quality and allows selecting compact explicitly', () => {
-    expect(encodingSettings({})).toMatchObject({ profile: 'upload', encoder: 'h264_nvenc', videoKbps: 8000, maxVideoKbps: 12000, bufferKbits: 24000, quality: 21, audioKbps: 96, gop: 60 });
-    expect(encodingSettings({ VIDEO_ENCODING_PROFILE: 'compact' })).toMatchObject({ profile: 'compact', videoKbps: 750, maxVideoKbps: 1200, bufferKbits: 2400, quality: 30, audioKbps: 96, gop: 240 });
+  it('defaults to compact and allows selecting upload explicitly', () => {
+    expect(encodingSettings({})).toMatchObject({ profile: 'compact', encoder: 'h264_nvenc', videoKbps: 750, maxVideoKbps: 1200, bufferKbits: 600, quality: 30, audioKbps: 96, gop: 240 });
+    expect(encodingSettings({ VIDEO_ENCODING_PROFILE: 'upload' })).toMatchObject({ profile: 'upload', videoKbps: 8000, maxVideoKbps: 12000, bufferKbits: 6000, quality: 21, audioKbps: 96, gop: 60 });
   });
 
   it('preserves explicit overrides and keeps the default max rate at least the target', () => {
-    expect(encodingSettings({ VIDEO_ENCODING_PROFILE: 'compact', VIDEO_BITRATE_KBPS: '9000', VIDEO_QUALITY: '18' })).toMatchObject({ videoKbps: 9000, maxVideoKbps: 9000, bufferKbits: 18000, quality: 18 });
+    expect(encodingSettings({ VIDEO_ENCODING_PROFILE: 'compact', VIDEO_BITRATE_KBPS: '9000', VIDEO_QUALITY: '18' })).toMatchObject({ videoKbps: 9000, maxVideoKbps: 9000, bufferKbits: 4500, quality: 18 });
     expect(encodingSettings({ VIDEO_BITRATE_KBPS: '6000', VIDEO_MAXRATE_KBPS: '9000', VIDEO_BUFFER_KBITS: '20000', VIDEO_AUDIO_KBPS: '128', VIDEO_REQUIRE_GPU: '1' })).toMatchObject({ videoKbps: 6000, maxVideoKbps: 9000, bufferKbits: 20000, audioKbps: 128, strictGpu: true });
   });
 
@@ -18,7 +18,7 @@ describe('video encoding profiles', () => {
       { VIDEO_ENCODING_PROFILE: 'unknown' }, { VIDEO_ENCODER: 'unknown' },
       { VIDEO_BITRATE_KBPS: 'NaN' }, { VIDEO_BITRATE_KBPS: '199' },
       { VIDEO_BITRATE_KBPS: '8000', VIDEO_MAXRATE_KBPS: '7999' },
-      { VIDEO_MAXRATE_KBPS: '12000', VIDEO_BUFFER_KBITS: '11999' },
+      { VIDEO_MAXRATE_KBPS: '12000', VIDEO_BUFFER_KBITS: '0' },
       { VIDEO_QUALITY: '41' }, { VIDEO_AUDIO_KBPS: '63' },
     ]) expect(() => encodingSettings(env)).toThrow();
   });
@@ -26,11 +26,11 @@ describe('video encoding profiles', () => {
   it('uses the selected GPU quality or CPU fallback CRF with matching rate controls', () => {
     const settings = encodingSettings({ VIDEO_QUALITY: '23' });
     const gpu = videoEncodingArgs(settings);
-    expect(gpu).toEqual(expect.arrayContaining(['h264_nvenc', '-cq', '23', '-b:v', '8000k', '-maxrate', '12000k', '-bufsize', '24000k', '-g', '60']));
+    expect(gpu).toEqual(expect.arrayContaining(['h264_nvenc', '-cq', '23', '-b:v', '712k', '-maxrate', '712k', '-bufsize', '178k', '-g', '240']));
     expect(gpu.slice(gpu.indexOf('-cq'), gpu.indexOf('-cq') + 2)).toEqual(['-cq', '23']);
     expect(gpu).not.toContain('-crf');
     const cpu = videoEncodingArgs(settings, 'libx264');
-    expect(cpu).toEqual(expect.arrayContaining(['libx264', '-crf', '21', '-b:v', '8000k', '-maxrate', '12000k', '-bufsize', '24000k', '-g', '60']));
+    expect(cpu).toEqual(expect.arrayContaining(['libx264', '-crf', '21', '-maxrate', '712k', '-bufsize', '178k', '-g', '240']));
     expect(cpu.slice(cpu.indexOf('-crf'), cpu.indexOf('-crf') + 2)).toEqual(['-crf', '21']);
     expect(cpu).not.toContain('-cq');
   });

@@ -54,10 +54,11 @@ export async function reviewVideoAudio(options: BatchReviewOptions = {}, transcr
   const script = JSON.parse(scriptBytes.toString('utf8')) as Script;
   const clips = JSON.parse(clipsBytes.toString('utf8')) as Clip[];
   assert(Array.isArray(clips) && clips.length > 0, 'No video clips to review');
+  const selected = clips.filter(item => !options.clipIds || options.clipIds.includes(item.id));
   if (source.perspective === 'player' || script.perspective === 'player') {
     if (directory !== resolve(projectDir)) throw Error('Player review must use the selected VIDEO_PROJECT_DIR');
     await assertAuthorizedProject(clips);
-    await assertPlayerRawAudio(source, JSON.parse(await readFile(join(directory, 'voices.json'), 'utf8')) as VoiceCatalog, clips);
+    await assertPlayerRawAudio(source, JSON.parse(await readFile(join(directory, 'voices.json'), 'utf8')) as VoiceCatalog, selected);
   }
   assertPlayerSources(source, script, clips);
   const locale = source.locale, aliases = options.aliases ?? {};
@@ -83,7 +84,7 @@ export async function reviewVideoAudio(options: BatchReviewOptions = {}, transcr
     if (!localBinding) localBinding = { state, control };
     else if (!localBinding.state.equals(state) || !localBinding.control.equals(control)) throw Error('Local ASR service changed during review');
   };
-  for (const clip of clips.filter((item) => !options.clipIds || options.clipIds.includes(item.id))) {
+  for (const clip of selected) {
     options.signal?.throwIfAborted();
     const item: BatchReviewItem = { clipId: clip.id, status: 'failure' };
     try {

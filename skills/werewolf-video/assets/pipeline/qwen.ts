@@ -11,7 +11,7 @@ const ENDPOINT = 'https://token-plan.maas.qianwenaiapi.com/api/v1/services/audio
 export function qwenCacheKey(endpoint: string, model: string, input: unknown): string {
   return createHash('sha256').update(JSON.stringify({ endpoint, model, input })).digest('hex');
 }
-export async function synthesizeQwen(text: string, profile: VoiceProfile, model: string, output: string, options?: { signal?: AbortSignal; endpoint?: string; apiKey?: string; force?: boolean }): Promise<AudioMeta> {
+export async function synthesizeQwen(text: string, profile: VoiceProfile, model: string, output: string, options?: { signal?: AbortSignal; endpoint?: string; apiKey?: string; force?: boolean; cacheOnly?: boolean }): Promise<AudioMeta> {
   options?.signal?.throwIfAborted();
   const configuredEndpoint = process.env.VIDEO_TTS_ENDPOINT?.trim() || undefined;
   const configuredKeyEnv = process.env.VIDEO_TTS_API_KEY_ENV?.trim() || undefined;
@@ -20,7 +20,7 @@ export async function synthesizeQwen(text: string, profile: VoiceProfile, model:
   const endpoint = options?.endpoint ?? configuredEndpoint ?? ENDPOINT;
   if (explicit) {
     const url = new URL(endpoint);
-    if (!(options?.apiKey ?? configuredKey) || !['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw Error('Explicit Qwen TTS endpoint and key are required');
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw Error('Invalid explicit Qwen TTS endpoint');
   }
   const seed = profile.seed ?? 31415;
   if (!Number.isInteger(seed) || seed < 0 || seed > 2147483647) throw Error('Invalid Qwen synthesis seed');
@@ -39,6 +39,8 @@ export async function synthesizeQwen(text: string, profile: VoiceProfile, model:
     options?.signal?.throwIfAborted();
     if (reused) return reused;
   }
+  if (options?.cacheOnly) throw Error('Qwen TTS cache miss');
+  if (explicit && !(options?.apiKey ?? configuredKey)) throw Error('Explicit Qwen TTS endpoint and key are required');
   const apiKey = explicit ? options?.apiKey ?? configuredKey : process.env.WEREWOLF_TTS_API_KEY || projectQwenTokenPlanKey();
   if (explicit ? !apiKey : !apiKey?.startsWith('sk-sp-')) throw Error('Qwen TTS key is unavailable');
   const response = await fetch(endpoint, { method: 'POST', ...(explicit ? { redirect: 'error' as const } : {}),

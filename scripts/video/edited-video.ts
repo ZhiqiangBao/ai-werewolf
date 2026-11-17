@@ -1,31 +1,36 @@
+import { renderWave } from './render-wave';
+import { readProjectEncodingEnvironment } from './production-settings';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { clipVoiceProfile, type Clip, type Script, type TimedClip, type VoiceCatalog } from './project';
+import { clipVoiceProfile, buildClips, loadScript, dataDir, type Clip, type Script, type TimedClip, type VoiceCatalog } from './project';
+import { assertPlayerRawAudio } from './player-audio-provenance';
 import { assertPlayerSources } from './integrity';
 import { readPcm, wavHeader } from './audio';
 import { inspectAudio } from './audio-inspection';
 import { effectiveAudioAlignment } from './audio-alignment';
 import { captionsFromWords, captionContent, sourceCaptionWords, srtDocument } from './timeline';
 import { wrapEnglishCaption } from './english-captions';
-import { avatarWaveFrame, isPlayerSpeech, verticalScene, type StoryCard } from './vertical-scene';
+import { isPlayerSpeech, verticalScene, type StoryCard } from './vertical-scene';
 import { createSceneRenderer, sceneVersion } from './scene';
 import { readJob } from './compile-edit';
-import { encodingSettings, videoEncodingArgs } from './encoding';
+import { encodingSettings, videoEncodingArgs, verifyEncodingRate, applyEncodingOptions, applyEncodingCli } from './encoding';
+import { videoPerspectiveLabel, verticalVideoTitle } from './video-perspective';
+import { videoAudioLanguage, videoUiLocale, videoRole } from './video-locale';
 import { sceneTransition, sceneFadeFilters } from './transitions';
 
 const require = createRequire(import.meta.url);
 const { createCanvas, loadImage } = require(process.env.VIDEO_CANVAS_MODULE || '@napi-rs/canvas');
 const hash = (data: Buffer | string) => createHash('sha256').update(data).digest('hex');
-const version = 'edited-video-v3-scene-cuts-upload';
+const version = 'edited-video-v4-view-label';
 type Cue = { text: string; start: number; end: number };
 type SourceItem = { kind: 'source'; id: string; sourceClipId: string; wordStart: number; wordEnd: number; quote: string; audioSha256: string; timingSha256?: string; storyCard?: StoryCard };
 type NarrationItem = { kind: 'narration'; id: string; text: string; afterSourceSeq: number; storyCard?: StoryCard };
 type Item = SourceItem | NarrationItem;
-interface Selection { roomId: string; sourceSha256: string; reviewed: boolean; theme: string; items: Item[]; review?: unknown }
+interface Selection { roomId: string; sourceSha256: string; reviewed: boolean; theme: string; items: Item[]; review?: any; reviewBinding?: string }
 interface NarrationClip { id: string; text: string; audioFile: string; audioSha256: string; model: string; voice: string; afterSourceSeq: number }
 interface NarrationManifest { roomId: string; sourceSha256: string; clips: NarrationClip[] }
 interface Prepared { item: Item; clip: Clip; pcm: Int16Array; frames: number; captions: Cue[]; audioSha256: string; audioFile: string; model: string; voice: string; alignment: unknown; cut?: unknown }
@@ -65,8 +70,9 @@ function ass(cues: Cue[], format: 'vertical' | 'horizontal', phase: string) {
   const width = format === 'vertical' ? 900 : 1380, font = format === 'vertical' ? 54 : 36;
   const at = (t: number) => { const n = Math.round(t * 100); return `${Math.floor(n / 360000)}:${String(Math.floor(n / 6000) % 60).padStart(2, '0')}:${String(Math.floor(n / 100) % 60).padStart(2, '0')}.${String(n % 100).padStart(2, '0')}`; };
   const body = cues.map(c => {
-    let lines = wrapEnglishCaption(c.text.trim(), format === 'vertical' ? 34 : 54).split('\n');
-    g.font = `bold ${font}px Arial`;
+    const text = c.text.trim();
+    let lines = /[\u3040-\u30ff\u3400-\u9fff]/u.test(text) ? Array.from(text).reduce((result: string[], ch) => { const last = result.length - 1; if (result[last].length >= (format === 'vertical' ? 15 : 32)) result.push(ch); else result[last] += ch; return result; }, ['']) : wrapEnglishCaption(text, format === 'vertical' ? 34 : 54).split('\n');
+    g.font = `bold ${font}px "Noto Sans SC"`;
     if (format === 'vertical' && lines.some((l: string) => g.measureText(l).width > width)) {
       lines = lines.flatMap((l: string) => g.measureText(l).width > width ? wrapEnglishCaption(l, 30).split('\n') : [l]);
     }
@@ -83,9 +89,9 @@ function ass(cues: Cue[], format: 'vertical' | 'horizontal', phase: string) {
     const size = Math.min(font, Math.floor(font * width / longest));
     assert(size >= 24 && lines.length <= 3, 'Caption cannot fit on screen');
     const content = lines.join('\\N').replace(/[{}]/g, '').replace(/\r/g, '');
-    return `Dialogue: 0,${at(c.start)},${at(c.end)},Default,,0,0,0,,{\\fs${size}\\pos(${format === 'vertical' ? '540,1500' : '1159,998'})}${content}`;
+    return `Dialogue: 0,${at(c.start)},${at(c.end)},Default,,0,0,0,,{\\fs${size}\\pos(${format === 'vertical' ? '540,1450' : '1159,960'})}${content}`;
   }).join('\n');
-  return `[Script Info]\nScriptType: v4.00+\nPlayResX: ${format === 'vertical' ? 1080 : 1920}\nPlayResY: ${format === 'vertical' ? 1920 : 1080}\nWrapStyle: 2\n\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\nStyle: Default,Arial,${font},${format === 'horizontal' && phase !== 'night' ? '&H00363E26' : '&H00FFFFFF'},&H00FFFFFF,${format === 'horizontal' && phase !== 'night' ? '&H00E7F5FB' : format === 'horizontal' ? '&H00351E10' : '&H00101010'},&H00000000,-1,0,0,0,100,100,0,0,1,${format === 'horizontal' ? (phase === 'night' ? 2 : 1) : 4},${format === 'horizontal' && phase !== 'night' ? 0 : 1},5,0,0,0,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n${body}\n`;
+  return `[Script Info]\nScriptType: v4.00+\nPlayResX: ${format === 'vertical' ? 1080 : 1920}\nPlayResY: ${format === 'vertical' ? 1920 : 1080}\nWrapStyle: 2\n\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\nStyle: Default,Noto Sans SC,${font},${format === 'horizontal' && phase !== 'night' ? '&H00363E26' : '&H00FFFFFF'},&H00FFFFFF,${format === 'horizontal' && phase !== 'night' ? '&H00E7F5FB' : format === 'horizontal' ? '&H00351E10' : '&H00101010'},&H00000000,-1,0,0,0,100,100,0,0,1,${format === 'horizontal' ? (phase === 'night' ? 2 : 1) : 4},${format === 'horizontal' && phase !== 'night' ? 0 : 1},8,0,0,0,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n${body}\n`;
 }
 async function run(args: string[], cwd: string) {
   return await new Promise<string>((done, fail) => {
@@ -93,20 +99,6 @@ async function run(args: string[], cwd: string) {
     child.stdout.on('data', b => { log = (log + b).slice(-10000); }); child.stderr.on('data', b => { log = (log + b).slice(-10000); });
     child.on('error', fail); child.on('close', code => code === 0 ? done(log) : fail(Error(`ffmpeg exited ${code}: ${log}`)));
   });
-}
-async function renderWave(args: string[], cwd: string, pcm: Int16Array, frames: number) {
-  const child = spawn(process.env.FFMPEG_PATH || 'ffmpeg', args, { cwd, windowsHide: true, stdio: ['pipe', 'ignore', 'pipe'] });
-  let log = ''; child.stderr.on('data', b => { log = (log + b).slice(-10000); });
-  let error: Error | undefined; child.on('error', e => { error = e; }); child.stdin.on('error', e => { error = e; });
-  const ended = new Promise<void>((ok, fail) => { child.once('error', fail); child.once('close', code => code === 0 ? ok() : fail(Error(`ffmpeg exited ${code}: ${log}`))); });
-  void ended.catch(() => {});
-  try {
-    for (let i = 0; i < frames; i++) {
-      if (error) throw error;
-      await new Promise<void>((ok, fail) => child.stdin.write(avatarWaveFrame(pcm, i), e => e ? fail(e) : ok()));
-    }
-    child.stdin.end(); await ended;
-  } catch (e) { child.kill(); await ended.catch(() => {}); throw e; }
 }
 async function landscape(image: Buffer, story: StoryCard | undefined, script: Script) {
   const canvas = createCanvas(1920, 1080), g = canvas.getContext('2d'); g.drawImage(await loadImage(image), 0, 0);
@@ -116,9 +108,9 @@ async function landscape(image: Buffer, story: StoryCard | undefined, script: Sc
     for (const word of value.split(/\s+/)) { const next = line ? `${line} ${word}` : word; if (line && g.measureText(next).width > max) { g.fillText(line, x, y); y += size * 1.35; line = word; } else line = next; }
     if (line) { g.fillText(line, x, y); y += size * 1.35; } return y;
   };
-  let y = 200; y = paragraph(story?.headline ?? 'Match highlights', 1460, y, 400, 33, '#f4d795') + 25;
+  let y = 200; y = paragraph(story?.headline ?? ({ 'zh-CN': '对局精华', en: 'Match highlights', ja: '対局ハイライト' }[videoUiLocale(script.uiLocale)] ?? 'Match highlights'), 1460, y, 400, 33, '#f4d795') + 25;
   if (story?.detail) y = paragraph(story.detail, 1460, y, 400, 25, '#e3ece7') + 36;
-  for (const n of story?.focusSeats ?? []) { const c = script.cast.find(p => p.seat === n)!; y = paragraph(`${n} · ${c.name} · ${c.roleName}`, 1460, y, 400, 24, '#f4d795') + 12; }
+  for (const n of story?.focusSeats ?? []) { const c = script.cast.find(p => p.seat === n)!; y = paragraph(`${n} · ${c.name} · ${c.role === 'unknown' ? ({ 'zh-CN': '身份未知', en: 'Unknown', ja: '不明' }[videoUiLocale(script.uiLocale)] ?? 'Unknown') : videoRole(videoUiLocale(script.uiLocale), c.role, c.roleName)}`, 1460, y, 400, 24, '#f4d795') + 12; }
   return canvas.toBuffer('image/png') as Buffer;
 }
 export async function makeEditedVideo(sourcePath: string, selectionPath: string, narrationManifestPath: string | undefined, outputPath: string, format: 'vertical' | 'horizontal', encoder: 'cpu' | 'gpu', options?: { validateOnly?: boolean }) {
@@ -131,10 +123,23 @@ export async function makeEditedVideo(sourcePath: string, selectionPath: string,
   const source = JSON.parse(sourceBytes.toString()) as Script, script = JSON.parse(await readFile(join(sourceDir, 'script.json'), 'utf8')) as Script;
   const clips = JSON.parse(await readFile(join(sourceDir, 'clips.json'), 'utf8')) as Clip[], voices = JSON.parse(await readFile(join(sourceDir, 'voices.json'), 'utf8')) as VoiceCatalog;
   const bound = JSON.parse(await readFile(join(sourceDir, 'avatar-theme.json'), 'utf8'));
-  assert(source.perspective === 'god' && script.perspective === 'god' && source.status === 'ended' && script.status === 'ended', 'Only completed god projects are supported');
+  assert((source.perspective === 'god' || source.perspective === 'player') && script.perspective === source.perspective && source.status === 'ended' && script.status === 'ended', 'Only completed god or player projects are supported');
   assert(source.roomId === script.roomId && selection.roomId === source.roomId && narration.roomId === source.roomId && selection.sourceSha256 === hash(sourceBytes) && narration.sourceSha256 === hash(sourceBytes), 'Wrong room or source hash');
   assert(selection.reviewed === true && Array.isArray(selection.items) && selection.items.length > 0 && selection.theme === bound.theme, 'Selection or theme not reviewed');
-  assert.deepEqual(script.events, source.events, 'Script changes source facts'); assertPlayerSources(source, script, clips);
+  assert.deepEqual(script.events, source.events, 'Script changes source facts');
+  const expected = buildClips(script);
+  assertPlayerSources(source, script, clips.map((clip, index) => ({ ...clip, audioFile: expected[index]?.audioFile ?? clip.audioFile })));
+  let masterClips = new Set<string>();
+  if (source.perspective === 'player') {
+    assert(source.playerSeat && Number.isInteger(source.playerSeat), 'Missing player seat');
+    assert.deepEqual(source, await loadScript({ roomId: source.roomId, playerSeat: source.playerSeat, dataDir }), 'Player source differs from current authorized export');
+    const used = new Set(selection.items.filter((item): item is SourceItem => item.kind === 'source').map(item => item.sourceClipId));
+    assert([...used].every(id => clips.some(clip => clip.id === id)), 'Selection refers to an unknown source clip');
+    masterClips = await assertPlayerRawAudio(source, voices, clips.filter(clip => used.has(clip.id)).map(clip => ({ ...clip, audioFile: join(sourceDir, 'audio', `${clip.id}.wav`) })), sourceDir);
+    const review = selection.review;
+    assert(review && (review.approved === true || review.status === 'approved') && review.playerSeat === source.playerSeat && review.sourceSha256 === hash(sourceBytes) && review.visibleFactsOnly === true && typeof review.manuscriptSha256 === 'string' && /^[a-f0-9]{64}$/.test(review.manuscriptSha256), 'Player edit requires a source-bound approval of visible facts only');
+    assert.equal(selection.reviewBinding, hash(JSON.stringify(selection.items)), 'Player edit changed after review');
+  }
   assert(Array.isArray(narration.clips)); assert(new Set(narration.clips.map(c => c.id)).size === narration.clips.length, 'Duplicate narration');
   const speakerBindings = new Set(narration.clips.map(c => `${c.model}\0${c.voice}`)); assert(speakerBindings.size <= 1, 'Narration must use one model and voice');
   assert(narration.clips.every(c => c.voice !== voices.profiles.judge?.voice), 'Narration and judge must use distinct voices');
@@ -157,7 +162,9 @@ export async function makeEditedVideo(sourcePath: string, selectionPath: string,
       clip = { id: item.id, sourceSeq: event.sourceSeq, type: 'editorial.narration', speaker: 'Narrator', voiceKey: 'commentator', text: item.text, spokenText: item.text, visibility: 'public', data: { replayThrough: event.sourceSeq }, day: event.day, phase: event.phase, chapter: script.chapters.find(chapter => chapter.day === event.day && chapter.phase === event.phase)?.title ?? `${event.phase} ${event.day}`, part: 1, parts: 1, audioFile: file };
     }
     const bytes = await readFile(file), actualHash = hash(bytes); assert(/^[a-f0-9]{64}$/.test(expectedHash) && actualHash === expectedHash, 'Audio hash mismatch');
-    const meta = JSON.parse(await readFile(file + '.json', 'utf8')); assert.equal(meta.model, model, 'Audio model mismatch'); assert.equal(meta.voice, voice, 'Audio voice mismatch'); assert.equal(meta.text, expectedText, 'Audio text mismatch'); assert.equal(meta.bytes, bytes.length, 'Audio byte count mismatch');
+    const meta = JSON.parse(await readFile(file + '.json', 'utf8'));
+    if (item.kind === 'source' && masterClips.has(clip.id)) { model = meta.model; voice = meta.voice; }
+    assert.equal(meta.model, model, 'Audio model mismatch'); assert.equal(meta.voice, voice, 'Audio voice mismatch'); assert.equal(meta.text, expectedText, 'Audio text mismatch'); assert.equal(meta.bytes, bytes.length, 'Audio byte count mismatch');
     const { samples, sampleRate } = await readPcm(file); assert.equal(sampleRate, 24000, 'Expected 24 kHz PCM'); assert.equal(inspectAudio(samples, sampleRate).issues.length, 0, 'Audio waveform failed inspection');
     const choice = await effectiveAudioAlignment(file, meta, source.locale ?? 'zh-CN'); const mapped = sourceCaptionWords(choice.meta, source.locale ?? 'zh-CN');
     assert(mapped.length && mapped.every((w, i) => Number.isFinite(w.begin_time) && Number.isFinite(w.end_time) && w.begin_time >= 0 && w.end_time > w.begin_time && w.end_time <= samples.length / 24 + 1 && (!i || w.begin_time >= mapped[i - 1].begin_time && w.end_time >= mapped[i - 1].end_time)), 'Invalid word timing');
@@ -176,16 +183,16 @@ export async function makeEditedVideo(sourcePath: string, selectionPath: string,
     const frames = Math.ceil(pcm.length / 800 + 5); totalFrames += frames; selected.push({ item, clip, pcm, frames, captions, audioSha256: actualHash, audioFile: file, model, voice, alignment: choice.summary ?? { method: 'provider' }, cut });
   }
   assert(totalFrames / 30 <= 720, 'Selection exceeds 720 seconds');
+  const encoding = encodingSettings({ ...await readProjectEncodingEnvironment(sourceDir), VIDEO_ENCODER: encoder === 'gpu' ? 'h264_nvenc' : 'libx264', VIDEO_REQUIRE_GPU: encoder === 'gpu' ? '1' : '0' });
   if (options?.validateOnly) { console.log(JSON.stringify({ validated: selected.length, frames: totalFrames, durationSeconds: totalFrames / 30 })); return; }
-  const encoding = encodingSettings({ ...process.env, VIDEO_ENCODER: encoder === 'gpu' ? 'h264_nvenc' : 'libx264', VIDEO_REQUIRE_GPU: encoder === 'gpu' ? '1' : '0' });
   const scenes = selected.map(c => ({ ...c.clip, frames: c.frames }));
-  const identity = hash(JSON.stringify({ version, sceneVersion, format, encoder, encoding, source: hash(sourceBytes), selection: hash(selectionBytes), narration: hash(narrationBytes), clips: selected.map(c => ({ audio: c.audioSha256, alignment: c.alignment, cut: c.cut })) }));
+  const identity = hash(JSON.stringify({ version, encodingVersion: 'rate-v4', sceneVersion, format, encoder, encoding, source: hash(sourceBytes), selection: hash(selectionBytes), narration: hash(narrationBytes), clips: selected.map(c => ({ audio: c.audioSha256, alignment: c.alignment, cut: c.cut })) }));
   await mkdir(output, { recursive: true }); const identityFile = join(output, 'identity.json');
   try { const old = JSON.parse(await readFile(identityFile, 'utf8')); assert.equal(old.identity, identity, 'Output directory belongs to different inputs or settings'); }
   catch (e: any) { if (e.code !== 'ENOENT') throw e; const existing = await import('node:fs/promises').then(fs => fs.readdir(output)); assert(existing.length === 0, 'Output directory is not empty'); await writeFile(identityFile, JSON.stringify({ identity }, null, 2), { flag: 'wx' }); }
   await mkdir(join(output, 'segments'), { recursive: true }); await mkdir(join(output, 'output'), { recursive: true });
   await writeFile(join(output, 'encoding-settings.json'), JSON.stringify(encoding, null, 2));
-  const draw = format === 'horizontal' ? await createSceneRenderer(script, { theme: selection.theme, viewLabel: 'GOD VIEW · HIGHLIGHTS', hideAudioPill: true }) : undefined;
+  const draw = format === 'horizontal' ? await createSceneRenderer(script, { theme: selection.theme, viewLabel: videoPerspectiveLabel(script), hideAudioPill: true }) : undefined;
   const parts: Buffer[] = [], allCues: Cue[] = [], mapping: unknown[] = []; let startFrame = 0;
   for (const [i, c] of selected.entries()) {
     const stem = String(i).padStart(3, '0'), image = format === 'vertical' ? await verticalScene(c.clip, selection.theme, script, c.item.storyCard) : await landscape(await draw!({ ...c.clip, frames: c.frames, startFrame, audioDuration: c.pcm.length / 24000, audioMeta: {} as TimedClip['audioMeta'], captions: c.captions, envelope: [] }), c.item.storyCard, script);
@@ -211,26 +218,30 @@ export async function makeEditedVideo(sourcePath: string, selectionPath: string,
   const pcm = Buffer.concat(parts); await writeFile(join(output, 'master.wav'), Buffer.concat([wavHeader(pcm.length / 2, 24000), pcm]));
   await writeFile(join(output, 'segments.ffconcat'), 'ffconcat version 1.0\n' + selected.map((_, i) => `file 'segments/${String(i).padStart(3, '0')}.mp4'`).join('\n') + '\n');
   await writeFile(join(output, 'output', 'subtitles.srt'), srtDocument(allCues));
+  const audioLanguage = videoAudioLanguage(script.locale);
   const final = `output/highlights-${format}.mp4`, partialFinal = `output/highlights-${format}.partial.mp4`;
-  await run(['-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', 'segments.ffconcat', '-i', 'master.wav', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', `${encoding.audioKbps}k`, '-metadata:s:a:0', 'language=eng', '-movflags', '+faststart', partialFinal], output);
+  await run(['-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', 'segments.ffconcat', '-i', 'master.wav', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', `${encoding.audioKbps}k`, '-metadata:s:a:0', `language=${audioLanguage}`, ...(format === 'vertical' ? ['-metadata', `title=${verticalVideoTitle(script)}`] : []), '-movflags', '+faststart', partialFinal], output);
+  const bitrate = await verifyEncodingRate(join(output, partialFinal), encoding);
   await rename(join(output, partialFinal), join(output, final));
   const probe = await new Promise<any>((ok, fail) => { const p = spawn(process.env.FFPROBE_PATH || 'ffprobe', ['-v', 'error', '-show_streams', '-of', 'json', final], { cwd: output, windowsHide: true }); let text = '', err = ''; p.stdout.on('data', b => { text += b; }); p.stderr.on('data', b => { err += b; }); p.on('error', fail); p.on('close', code => code === 0 ? ok(JSON.parse(text)) : fail(Error(err))); });
   const video = probe.streams.find((s: any) => s.codec_type === 'video'), audio = probe.streams.find((s: any) => s.codec_type === 'audio');
   assert(video.width === (format === 'vertical' ? 1080 : 1920) && video.height === (format === 'vertical' ? 1920 : 1080) && Number(video.nb_frames) === totalFrames && video.r_frame_rate === '30/1', 'Video frame verification failed');
-  assert(audio?.tags?.language === 'eng' && Math.abs(Number(video.duration) - Number(audio.duration)) <= 1 / 30 + .05, 'Audio/video verification failed');
+  assert(audio?.tags?.language === audioLanguage && Math.abs(Number(video.duration) - Number(audio.duration)) <= 1 / 30 + .05, 'Audio/video verification failed');
   await writeFile(join(output, 'output', 'source-map.json'), JSON.stringify({ roomId: source.roomId, sourceSha256: hash(sourceBytes), identity, clips: mapping }, null, 2));
-  await writeFile(join(output, 'output', 'verification.json'), JSON.stringify({ identity, format, encoding, frames: totalFrames, sampleCount: pcm.length / 2, width: video.width, height: video.height, fps: 30, encoder, audioLanguage: 'eng', videoSha256: hash(await readFile(join(output, final))), bytes: (await stat(join(output, final))).size, audioGain: 1, transition: 'hard cuts within scenes; four-frame fades only at phase or chapter boundaries; 5 frames silence padding', subjectiveListening: 'not-checked' }, null, 2));
+  await writeFile(join(output, 'output', 'verification.json'), JSON.stringify({ identity, format, encoding, bitrate, frames: totalFrames, sampleCount: pcm.length / 2, width: video.width, height: video.height, fps: 30, encoder, audioLanguage, videoSha256: hash(await readFile(join(output, final))), bytes: (await stat(join(output, final))).size, audioGain: 1, transition: 'hard cuts within scenes; four-frame fades only at phase or chapter boundaries; 5 frames silence padding', subjectiveListening: 'not-checked' }, null, 2));
 }
 if (process.argv[1]?.replace(/\\/g, '/').endsWith('/edited-video.ts')) {
   const opt = (name: string) => process.argv.find(x => x.startsWith(`--${name}=`))?.slice(name.length + 3);
   const jobPath = opt('job');
   if (jobPath) {
     assert(process.argv.slice(2).every(x => x === `--job=${jobPath}` || x === '--validate-only') && process.argv.slice(2).filter(x => x.startsWith('--job=')).length === 1, 'Job cannot be mixed with other flags');
-    const { job, pathAt } = await readJob(jobPath, ['sourceProject', 'selection', 'narrationManifest', 'outputDir', 'format', 'encoder']);
+    const { job, pathAt } = await readJob(jobPath, ['sourceProject', 'selection', 'narrationManifest', 'outputDir', 'format', 'encoder', 'encoding']);
+    applyEncodingOptions(job.encoding);
     const source = pathAt('sourceProject')!, selection = pathAt('selection')!, narration = pathAt('narrationManifest', false), output = pathAt('outputDir')!;
     assert((job.format === 'vertical' || job.format === 'horizontal') && (job.encoder === 'cpu' || job.encoder === 'gpu'), 'Invalid format or encoder');
     await makeEditedVideo(source, selection, narration, output, job.format, job.encoder, { validateOnly: process.argv.includes('--validate-only') });
   } else {
+    applyEncodingCli(process.argv.slice(2));
     const source = opt('source-project'), selection = opt('selection'), narration = opt('narration-manifest'), output = opt('output-dir'), format = opt('format'), encoder = opt('encoder');
     assert(source && selection && narration && output && (format === 'vertical' || format === 'horizontal') && (encoder === 'cpu' || encoder === 'gpu'), 'Required: --source-project --selection --narration-manifest --output-dir --format=vertical|horizontal --encoder=cpu|gpu');
     await makeEditedVideo(source, selection, narration, output, format, encoder, { validateOnly: process.argv.includes('--validate-only') });

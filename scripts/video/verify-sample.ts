@@ -1,3 +1,4 @@
+import { readProjectEncodingEnvironment } from './production-settings';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFile, writeFile, stat } from 'node:fs/promises';
@@ -6,12 +7,17 @@ import { readPcm } from './audio';
 import { replay } from './replay';
 import { assertPlayerSources, assertAuthorizedProject, assertPlayerAudio, assertPlayerVideo } from './integrity';
 import { captionContent } from './timeline';
+import { encodingSettings, verifyEncodingRate } from './encoding';
 import { inspectAudio } from './audio-inspection';
 import { assertTimelineAlignments } from './audio-alignment';
 const source: Script = JSON.parse(await readFile(`${projectDir}/source.json`, 'utf8'));
 const script: Script = JSON.parse(await readFile(`${projectDir}/script.json`, 'utf8'));
 const timeline: { frames: number; duration: number; clips: TimedClip[] } = JSON.parse(await readFile(`${projectDir}/timeline.json`, 'utf8'));
 const selection = JSON.parse(await readFile(`${projectDir}/sample-selection.json`, 'utf8'));
+const synthesis = await readFile(`${projectDir}/synthesis-status.json`, 'utf8').then(JSON.parse).catch((error) => {
+  if (error.code !== 'ENOENT') throw error;
+  return undefined;
+});
 await assertAuthorizedProject(timeline.clips);
 await assertTimelineAlignments(timeline.clips, source.locale ?? 'zh-CN');
 const masterSha256 = await assertPlayerAudio(timeline.clips);
@@ -49,13 +55,14 @@ const picture = info.streams.find((s: any) => s.codec_type === 'video'), audio =
 assert.equal(Number(picture.nb_frames), frames);
 assert.equal(picture.width, 1920); assert.equal(picture.height, 1080);
 assert(Math.abs(Number(audio.duration) - Number(picture.duration)) < .06);
-const report = { video, bytes: (await stat(video)).size, durationSeconds: timeline.duration, clips: timeline.clips.length,
+const bitrate = await verifyEncodingRate(video, encodingSettings(await readProjectEncodingEnvironment(projectDir)), ffprobe);
+const report = { bitrate, video, bytes: (await stat(video)).size, durationSeconds: timeline.duration, clips: timeline.clips.length,
   selectedOriginalPlayerParts: timeline.clips.filter((c) => c.seat !== undefined && !c.data.presentationOnly).length,
   originalSelectedPlayerTextPreserved: true, factsUnchanged: true, nonContinuousExcerpt: true,
   validationScope: 'script-and-timing-only', audioSemanticReview: 'not-checked', voiceIdentityReview: 'not-checked',
   timestampSources: [...new Set(timeline.clips.map((clip) => clip.captionAlignment ? `external-transcript:${clip.captionAlignment.engine}` : 'provider'))],
   audioWaveformAuditPassed: true,
-  reconstructedActionChoicesLabeled: true, reusedAudio: selection.reusedAudio,
+  reconstructedActionChoicesLabeled: true, reusedAudio: synthesis?.reusedAudio ?? selection.reusedAudio,
   audioVideoDifferenceSeconds: Math.abs(Number(audio.duration) - Number(picture.duration)),
   chapters: info.chapters.length, resolution: `${picture.width}×${picture.height}`, codec: picture.codec_name };
 await writeFile(`${projectDir}/output/sample-verification.json`, JSON.stringify(report, null, 2));

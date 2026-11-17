@@ -1,5 +1,5 @@
-import { gameText } from '@werewolf/protocol';
-import type { GameEvent, Seat } from '@werewolf/protocol';
+import { gameText } from '../../packages/protocol/src/locale';
+import type { GameEvent, Seat } from '../../packages/protocol/src/index';
 
 export interface VideoScriptEntry {
   sourceSeq: number;

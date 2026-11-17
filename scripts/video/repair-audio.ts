@@ -141,6 +141,7 @@ export async function rebuildAudioVideo(directory: string) {
     VIDEO_REQUIRE_GPU: encoding.strictGpu ? '1' : '0',
     ...(encoding.videoKbps ? { VIDEO_BITRATE_KBPS: String(encoding.videoKbps) } : {}),
     ...(encoding.maxVideoKbps ? { VIDEO_MAXRATE_KBPS: String(encoding.maxVideoKbps) } : {}),
+    ...(encoding.maxTotalKbps ? { VIDEO_MAX_TOTAL_KBPS: String(encoding.maxTotalKbps) } : {}),
     ...(encoding.bufferKbits ? { VIDEO_BUFFER_KBITS: String(encoding.bufferKbits) } : {}),
     ...(encoding.quality ? { VIDEO_QUALITY: String(encoding.quality) } : {}),
     ...(encoding.audioKbps ? { VIDEO_AUDIO_KBPS: String(encoding.audioKbps) } : {}) };

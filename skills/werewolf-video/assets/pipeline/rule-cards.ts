@@ -1,9 +1,9 @@
 import { getRole } from '../../packages/engine/src/index';
 import type { Script } from './project';
-import { videoLocale, videoRole, videoText } from './video-locale';
+import { videoUiLocale, videoRole, videoText } from './video-locale';
 
 /** All roles in this match, using complete public rules or the actual role module summary. */
-export function allRoleRules(script: Script, locale = videoLocale(script.locale)) {
+export function allRoleRules(script: Script, locale = videoUiLocale(script.uiLocale)) {
   const lines = (script.ruleCard ?? '').split('\n');
   const find = (label: string) => lines.flatMap((line) => {
     for (const separator of ['：', ': ']) if (line.startsWith(`· ${label}${separator}`)) return [line.slice(`· ${label}${separator}`.length)];

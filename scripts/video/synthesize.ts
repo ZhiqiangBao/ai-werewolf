@@ -7,6 +7,8 @@ import { inspectMaterials } from './materials';
 import assert from 'node:assert/strict';
 import { preparePlayerAudio } from './player-audio-provenance';
 import { environmentForVoiceCatalog } from './tts-config';
+import { synthesizeQwen } from './qwen';
+import { reuseMasterAudio, useMasterVoices } from './master-audio';
 
 const prepared = process.argv.includes('--prepared-clips');
 const voiceKeysArg = process.argv.find((arg) => arg.startsWith('--voice-keys='));
@@ -24,18 +26,16 @@ if (prepared && (process.env.VIDEO_PLAYER_SEAT || source.perspective === 'player
   assert.equal(source.perspective, 'player', 'Mixed player and god view artifacts');
   assert.deepEqual(source, await loadScript(), 'Prepared player source does not match the authorized export');
 }
-const script: Script = prepared ? JSON.parse(await readFile(`${projectDir}/script.json`, 'utf8')) : await editScript(source);
-const voices: VoiceCatalog = prepared ? JSON.parse(await readFile(`${projectDir}/voices.json`, 'utf8')) : await loadVoices();
+const sourceOnly = process.env.VIDEO_SOURCE_ONLY === '1';
+const script: Script = prepared ? JSON.parse(await readFile(`${projectDir}/script.json`, 'utf8')) : await editScript(source, sourceOnly ? { sourceOnly: true } : undefined);
+if (prepared && source.perspective === 'god') assert.equal(Boolean((script as Script & { sourceOnly?: boolean }).sourceOnly), sourceOnly, 'Prepared script does not match VIDEO_SOURCE_ONLY mode');
+let voices: VoiceCatalog = prepared ? JSON.parse(await readFile(`${projectDir}/voices.json`, 'utf8')) : await loadVoices();
+if (source.perspective === 'player') voices = await useMasterVoices(source, voices);
 const requestedModel = process.env.VIDEO_TTS_MODEL?.trim();
 if (requestedModel && requestedModel !== voices.model) throw Error(`TTS model ${requestedModel} does not match voices.json model ${voices.model}`);
 if (!process.env.VIDEO_TTS_PROVIDER || process.env.VIDEO_TTS_PROVIDER === 'qwen-token-plan') {
   // A saved Plus cast must never inherit a previous Flash run's paid endpoint.
   Object.assign(process.env, environmentForVoiceCatalog(voices));
-}
-if ((!process.env.VIDEO_TTS_PROVIDER || process.env.VIDEO_TTS_PROVIDER === 'qwen-token-plan') && !process.argv.includes('--plan-only') && voices.characterVoiceDesign === 'portrait-v1') {
-  const bindings = voices.modelVoiceBindings?.[voices.model] ?? (voices.model === 'qwen-audio-3.1-tts-flash' ? voices.flashVoiceBindings : undefined);
-  const missing = Object.keys(voices.profiles).filter(key => /^seat-\d+$/.test(key) && bindings?.[key] !== voices.profiles[key].voice);
-  if (missing.length) throw Error(`Portrait voices are not enrolled: ${missing.join(', ')}; run video:voice-enroll --design for this project first`);
 }
 const clips = prepared ? JSON.parse(await readFile(`${projectDir}/clips.json`, 'utf8')) as ReturnType<typeof buildClips> : buildClips(script);
 const synthesisClips = clips.filter((clip) =>
@@ -72,6 +72,27 @@ if (process.argv.includes('--plan-only')) {
   process.exit(0);
 }
 const recordPlayerAudio = await preparePlayerAudio(source, voices, clips);
+await mkdir(`${projectDir}/audio`, { recursive: true });
+const reused = await reuseMasterAudio(source, synthesisClips, recordPlayerAudio, buildClips(script), script);
+const damaged = synthesisClips.filter(clip => recordPlayerAudio?.invalid.has(clip.id));
+if (damaged.length) throw Error(damaged.map(clip => recordPlayerAudio!.invalid.get(clip.id)).join('\n'));
+for (const id of recordPlayerAudio?.reused ?? []) reused.add(id);
+if (process.env.VIDEO_REUSE_ONLY === '1' && source.perspective === 'god' && (!process.env.VIDEO_TTS_PROVIDER || process.env.VIDEO_TTS_PROVIDER === 'qwen-token-plan')) {
+  for (const clip of synthesisClips.filter(item => !reused.has(item.id))) {
+    try {
+      await synthesizeQwen(clip.spokenText, clipVoiceProfile(voices, clip, source.locale), voices.model, clip.audioFile, {cacheOnly:true});
+      reused.add(clip.id);
+    } catch (error) { if (!(error instanceof Error && error.message === 'Qwen TTS cache miss')) throw error; }
+  }
+}
+const missingClips = synthesisClips.filter(clip => !reused.has(clip.id));
+const reusedAudio = synthesisClips.length - missingClips.length;
+if (process.env.VIDEO_REUSE_ONLY === '1' && missingClips.length) throw Error('Original audio unavailable for ' + missingClips.map(c => c.id).join(', '));
+if ((!process.env.VIDEO_TTS_PROVIDER || process.env.VIDEO_TTS_PROVIDER === 'qwen-token-plan') && voices.characterVoiceDesign === 'portrait-v1') {
+  const bindings = voices.modelVoiceBindings?.[voices.model] ?? (voices.model === 'qwen-audio-3.1-tts-flash' ? voices.flashVoiceBindings : undefined);
+  const missing = [...new Set(missingClips.map(c => c.voiceKey))].filter(key => /^seat-\d+$/.test(key) && bindings?.[key] !== voices.profiles[key].voice);
+  if (missing.length) throw Error(`Portrait voices are not enrolled: ${missing.join(', ')}; run video:voice-enroll --design for these seats first`);
+}
 let cursor = 0, complete = 0;
 const fatal = (reason: string) => /401|403|429|key is unavailable|quota|insufficient|billing/i.test(reason);
 const errors: { id: string; reason: string }[] = [];
@@ -80,6 +101,7 @@ async function worker() {
   while (cursor < synthesisClips.length) {
     if (errors.some((e) => fatal(e.reason))) break;
     const clip = synthesisClips[cursor++];
+    if (reused.has(clip.id)) { complete++; continue; }
     const profile = clipVoiceProfile(voices, clip, source.locale ?? 'zh-CN');
     let done = false;
     for (let attempt = 0; attempt < 3 && !done; attempt++) {
@@ -100,5 +122,5 @@ async function worker() {
   }
 }
 await Promise.all([worker(), worker(), worker()]);
-await writeFile(`${projectDir}/synthesis-status.json`, JSON.stringify({ complete, total: synthesisClips.length, ...(selectedVoiceKeys ? { voiceKeys: selectedVoiceKeys } : {}), ...(selectedClipIds ? { clipIds: selectedClipIds } : {}), errors }, null, 2));
+await writeFile(`${projectDir}/synthesis-status.json`, JSON.stringify({ complete, total: synthesisClips.length, reusedAudio, ...(selectedVoiceKeys ? { voiceKeys: selectedVoiceKeys } : {}), ...(selectedClipIds ? { clipIds: selectedClipIds } : {}), errors }, null, 2));
 if (errors.length) process.exitCode = 1;

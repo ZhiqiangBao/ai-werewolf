@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { lstat, mkdir, mkdtemp, readFile, realpath, rmdir, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { synthesizeQwen, type AudioMeta, type VoiceProfile } from '../../packages/session/src/speech/qwen';
 import { projectQwenTokenPlanKey } from '../../packages/session/src/project-models';
@@ -14,6 +14,8 @@ import { reviewAudioContent } from './audio-content-review';
 import { readPcm, wavHeader } from './audio';
 import { inspectAudio } from './audio-inspection';
 import { captionsFromWords } from './timeline';
+import { masterProject } from './master-audio';
+import type { Script } from './project';
 
 const stemPath = (output: string, stem: string) => join(output, stem);
 const sha = (s: Buffer | string) => createHash('sha256').update(s).digest('hex');
@@ -62,10 +64,41 @@ function validate(job: Job) {
   assert(t.apiKeyEnv === undefined || /^[A-Za-z_][A-Za-z0-9_]*$/.test(t.apiKeyEnv), 'Invalid apiKeyEnv');
   if (job.asr !== undefined) { onlyFields(job.asr, ['provider', 'enabled', 'aliasesFile'], 'Unknown ASR configuration field'); assert(job.asr.enabled === true && job.asr.provider === 'qwen-token-plan' && (job.asr.aliasesFile === undefined || typeof job.asr.aliasesFile === 'string'), 'Invalid ASR configuration'); }
 }
+async function existingCommentary(directory: string, source: { perspective?: string; locale?: string }, item: Narration, locale: string) {
+  if (source.perspective !== 'god' || item.delivery || (source.locale ?? 'zh-CN') !== locale) return undefined;
+  const clipFile = join(directory, 'clips.json'), scriptFile = join(directory, 'script.json');
+  if (!existsSync(clipFile) || !existsSync(scriptFile)) return undefined;
+  const script = JSON.parse(await readFile(scriptFile, 'utf8')) as { chapters?: { entries?: any[] }[] };
+  const entries = script.chapters?.flatMap(chapter => chapter.entries ?? []).filter(entry => entry.sourceSeq === item.afterSourceSeq && entry.voiceKey === 'commentator' && entry.text === item.text) ?? [];
+  if (entries.length !== 1) return undefined;
+  const clips = JSON.parse(await readFile(clipFile, 'utf8')) as any[];
+  const matches = clips.filter(clip => clip.sourceSeq === item.afterSourceSeq && clip.voiceKey === 'commentator' && clip.data?.presentationKey === entries[0].data.presentationKey && clip.text === item.text && clip.spokenText === item.text && clip.parts === 1);
+  if (matches.length !== 1 || typeof matches[0].audioFile !== 'string') return undefined;
+  const path = join(directory, 'audio', basename(matches[0].audioFile));
+  if (!existsSync(path)) return undefined;
+  if (!existsSync(`${path}.json`)) throw Error(`alignment-required: ${path} (missing metadata)`);
+  try {
+    const audio = await readFile(path), raw = JSON.parse(await readFile(`${path}.json`, 'utf8')) as AudioMeta;
+    assert.equal(raw.text, item.text); assert.equal(raw.bytes, audio.length);
+    const pcm = await readPcm(path); assert.equal(pcm.sampleRate, 24000);
+    assert(!inspectAudio(pcm.samples, pcm.sampleRate).issues.length, 'Source waveform needs repair');
+    const aligned = await effectiveAudioAlignment(path, raw, locale);
+    captionsFromWords(aligned.meta, pcm.samples.length / pcm.sampleRate, locale);
+    let lastBegin = 0, lastEnd = 0;
+    for (const word of aligned.meta.sentences.flatMap(sentence => sentence.words)) {
+      assert(Number.isFinite(word.begin_time) && Number.isFinite(word.end_time) && word.begin_time >= lastBegin && word.end_time >= lastEnd && word.end_time > word.begin_time && word.end_time <= pcm.samples.length * 1000 / pcm.sampleRate + 1, 'Invalid source word timing');
+      lastBegin = word.begin_time; lastEnd = word.end_time;
+    }
+    return { audio, meta: aligned.meta, sourceAudioSha256: sha(audio), sourceMetadataSha256: sha(await readFile(`${path}.json`)), ...(aligned.summary ? { sourceAlignmentSha256: aligned.summary.sidecarSha256 } : {}) };
+  } catch (error) { throw Error(`alignment-required: ${path}: ${error instanceof Error ? error.message : String(error)}`); }
+}
+
 export async function synthesizeNarration(jobFile: string, checkOnly = false, deps: Deps = {}) {
   const base = dirname(resolve(jobFile)), job = JSON.parse(await readFile(jobFile, 'utf8')) as Job; validate(job);
-  const sourceBytes = await readFile(join(resolve(base, job.sourceProject), 'source.json')), source = JSON.parse(sourceBytes.toString('utf8')) as { roomId: string }, sourceSha256 = sha(sourceBytes);
+  const sourceDirectory = resolve(base, job.sourceProject);
+  const sourceBytes = await readFile(join(sourceDirectory, 'source.json')), source = JSON.parse(sourceBytes.toString('utf8')) as Script, sourceSha256 = sha(sourceBytes);
   assert(typeof source.roomId === 'string' && source.roomId, 'Source roomId missing');
+  const original = source.perspective === 'god' ? await masterProject(source) : undefined;
   const aliases = job.asr?.aliasesFile ? JSON.parse(await readFile(resolve(base, job.asr.aliasesFile), 'utf8')) : {};
   const reports: unknown[] = [];
   for (const script of job.scripts) {
@@ -82,9 +115,19 @@ export async function synthesizeNarration(jobFile: string, checkOnly = false, de
       let meta: AudioMeta | undefined, audio: Buffer | undefined;
       try { audio = await readFile(file); meta = JSON.parse(await readFile(metaFile, 'utf8')); assert(meta && meta.text === item.text && meta.bytes === audio.length && (meta as any).narrationKey === key && (meta as any).audioSha256 === sha(audio)); const pcm = await readPcm(file); assert(pcm.sampleRate === 24000 && !inspectAudio(pcm.samples, pcm.sampleRate).issues.length); } catch { meta = undefined; audio = undefined; }
       const invalidCache = !meta && (existsSync(file) || existsSync(metaFile));
-      reports.push({ script: script.id, id: item.id, status: meta ? 'cached' : invalidCache ? 'invalid-cache' : 'pending', characters: Array.from(item.text).length, credential: t.apiKeyEnv ? (process.env[t.apiKeyEnv] ? 'available' : 'missing') : t.route === 'dashscope' ? (process.env.DASHSCOPE_API_KEY ? 'available' : 'missing') : 'project-token-plan-key-or-environment-required', ...(job.asr ? { asr: existsSync(`${file}.alignment.json`) ? 'alignment-present' : 'pending' } : {}) });
+      const commentaryProject = original?.unchangedEvents.has(item.afterSourceSeq) ? original.directory : sourceDirectory;
+      const existing = await existingCommentary(commentaryProject, source, item, t.locale);
+      const useOriginal = existing && (!meta || (meta as AudioMeta & {sourceMetadataSha256?:string}).sourceMetadataSha256 !== existing.sourceMetadataSha256 || !audio || sha(audio) !== existing.sourceAudioSha256);
+      reports.push({ script: script.id, id: item.id, status: meta ? 'cached' : invalidCache ? 'invalid-cache' : existing ? 'reusable' : 'pending', characters: Array.from(item.text).length, credential: t.apiKeyEnv ? (process.env[t.apiKeyEnv] ? 'available' : 'missing') : t.route === 'dashscope' ? (process.env.DASHSCOPE_API_KEY ? 'available' : 'missing') : 'project-token-plan-key-or-environment-required', ...(job.asr ? { asr: existsSync(`${file}.alignment.json`) ? 'alignment-present' : 'pending' } : {}) });
       if (checkOnly) continue;
+      if (useOriginal && existing) {
+        await mkdir(output, { recursive: true });
+        audio = existing.audio;
+        meta = { ...existing.meta, narrationKey: key, audioSha256: sha(audio), requestText: requested, sourceAudioSha256: existing.sourceAudioSha256, sourceMetadataSha256: existing.sourceMetadataSha256, ...(existing.sourceAlignmentSha256 ? { sourceAlignmentSha256: existing.sourceAlignmentSha256 } : {}) } as AudioMeta;
+        await writeFile(file, audio); await writeFile(metaFile, JSON.stringify(meta, null, 2));
+      }
       if (!meta || !audio) {
+        if (process.env.VIDEO_REUSE_ONLY === '1') throw Error('Original commentary unavailable for ' + item.id);
         await mkdir(output, { recursive: true });
         assert(!existsSync(file) && !existsSync(metaFile), `Invalid existing cache retained for manual review: ${item.id}`);
         const apiKey = t.apiKeyEnv ? process.env[t.apiKeyEnv] : t.route === 'dashscope' ? process.env.DASHSCOPE_API_KEY : projectQwenTokenPlanKey();
@@ -117,7 +160,7 @@ export async function synthesizeNarration(jobFile: string, checkOnly = false, de
       }
       const aligned = await effectiveAudioAlignment(file, meta, t.locale), pcm = await readPcm(file);
       captionsFromWords(aligned.meta, pcm.samples.length / pcm.sampleRate, t.locale);
-      clips.push({ id: item.id, text: item.text, audioFile: `${stem}.wav`, audioSha256: sha(audio), model: t.model, voice: t.voice, afterSourceSeq: item.afterSourceSeq });
+      clips.push({ id: item.id, text: item.text, audioFile: `${stem}.wav`, audioSha256: sha(audio), model: meta.model, voice: meta.voice, afterSourceSeq: item.afterSourceSeq });
     }
     if (!checkOnly) { await mkdir(output, { recursive: true }); await writeFile(join(output, 'narration-manifest.json'), JSON.stringify({ roomId: source.roomId, sourceSha256, clips }, null, 2)); }
   }

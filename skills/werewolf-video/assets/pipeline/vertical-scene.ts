@@ -3,10 +3,13 @@ import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Clip, Script } from './project';
 import { replay } from './replay';
+import { videoPerspectiveLabel } from './video-perspective';
 import { videoChapter, videoRole, videoText, videoUiLocale } from './video-locale';
 const require = createRequire(import.meta.url);
 const { createCanvas, loadImage, Path2D, GlobalFonts } = require(process.env.VIDEO_CANVAS_MODULE || '@napi-rs/canvas');
-for (const file of ['arial.ttf', 'arialbd.ttf']) { const p = `C:/Windows/Fonts/${file}`; if (existsSync(p)) GlobalFonts.registerFromPath(p, 'VideoSans'); }
+const fontSet = (files: string[]) => files.map((file) => `C:/Windows/Fonts/${file}`).filter((file) => existsSync(file));
+const cjk = fontSet(['msyh.ttc', 'msyhbd.ttc']);
+for (const file of (cjk.length ? cjk : fontSet(['arial.ttf', 'arialbd.ttf']))) GlobalFonts.registerFromPath(file, 'VideoSans');
 export interface StoryCard { headline: string; detail?: string; focusSeats?: number[] }
 
 export function isPlayerSpeech(clip: Clip) {
@@ -84,6 +87,8 @@ export async function verticalScene(clip: Clip, theme: string, script: Script, s
   g.save(); g.translate(540 - g.measureText(stageText).width / 2 - 40, 286); g.scale(1.2, 1.2); g.strokeStyle = '#e8cf96'; g.lineWidth = 1.5;
   g.stroke(new Path2D(clip.phase === 'night' ? 'M20.4 14.2A8.6 8.6 0 0 1 9.8 3.6 8.6 8.6 0 1 0 20.4 14.2Z M17.5 3v4 M15.5 5h4' : 'M12 3v2 M12 19v2 M3 12h2 M19 12h2 M5.6 5.6 7 7 M17 17l1.4 1.4 M5.6 18.4 7 17 M17 7l1.4-1.4 M16.5 12a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z')); g.restore();
   g.fillText(stageText, 540, 310);
+  g.font = '24px VideoSans'; g.fillStyle = '#f4d795'; g.textAlign = 'center';
+  g.fillText(videoPerspectiveLabel(script, locale), 540, 377, 900);
   g.beginPath(); g.moveTo(365, 337); g.lineTo(715, 337); g.strokeStyle = 'rgba(240,211,152,.35)'; g.lineWidth = 1; g.stroke();
   if (isPlayerSpeech(clip)) {
     const w = atlas.width / 4, h = atlas.height / 3, index = clip.seat! - 1;
@@ -95,7 +100,7 @@ export async function verticalScene(clip: Clip, theme: string, script: Script, s
     const state = replay(script, clip.data.replayThrough ?? clip.sourceSeq);
     badge(String(clip.seat), 270, 1008, 72, 46, true);
     g.font = 'bold 36px VideoSans';
-    const roleName = videoRole(locale, player.role, player.roleName);
+    const roleName = player.role === 'unknown' ? t('身份未知') : videoRole(locale, player.role, player.roleName);
     const roleWidth = Math.max(112, Math.min(230, Math.ceil(g.measureText(roleName).width) + 32));
     badge(roleName, 810 - roleWidth, 1008, roleWidth, 36);
     g.font = '30px VideoSans'; g.lineWidth = 5; g.strokeStyle = '#111927'; g.fillStyle = '#e7ebe5';
@@ -127,7 +132,7 @@ export async function verticalScene(clip: Clip, theme: string, script: Script, s
       g.beginPath(); g.arc(x, y, 66, 0, Math.PI * 2); g.lineWidth = 5; g.strokeStyle = state.alive.has(player.seat) ? '#e3d2a3' : '#9c9c9c'; g.stroke();
       at(`${player.seat} · ${player.name}`, x, y + 92, 27, 180);
       if (story?.focusSeats?.includes(player.seat)) {
-        g.save(); const roleName = videoRole(locale, player.role, player.roleName); g.font = 'bold 42px VideoSans'; const width = Math.max(110, g.measureText(roleName).width + 26);
+        g.save(); const roleName = player.role === 'unknown' ? t('身份未知') : videoRole(locale, player.role, player.roleName); g.font = 'bold 42px VideoSans'; const width = Math.max(110, g.measureText(roleName).width + 26);
         g.translate(x + 4, y + 35); g.scale(.5, .5); badge(roleName, 0, 0, width, 42); g.restore();
       }
       if (!state.alive.has(player.seat)) at(t('出局'), x, y + 12, 32, 110);

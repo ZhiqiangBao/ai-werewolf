@@ -59,12 +59,12 @@ test('renders both formats from checked source and a different-model narrator, a
     await save(selection); await makeEditedVideo(src, selectionFile, manifestFile, output, 'vertical', 'cpu');
     const map = JSON.parse(await readFile(join(output, 'output', 'source-map.json'), 'utf8'));
     assert.deepEqual({ ...map.clips[0].cut, charStart: undefined, charEnd: undefined, edgePunctuationFromSource: undefined }, { wordStart: 0, wordEnd: 1, firstBeginMs: 100, lastEndMs: 340, sampleStart: 1440, sampleEnd: 9120, charStart: undefined, charEnd: undefined, edgePunctuationFromSource: undefined });
-    const verify = JSON.parse(await readFile(join(output, 'output', 'verification.json'), 'utf8')); assert.equal(verify.encoding.profile, 'upload'); for (const stem of ['000', '001']) assertNoFadeAtStart(join(output, 'segments', `${stem}.png`), join(output, 'segments', `${stem}.mp4`)); assert.equal(verify.frames, 50); assert.equal(verify.sampleCount, 40000); assert.equal(verify.width, 1080); assert.equal(verify.audioLanguage, 'eng');
+    const verify = JSON.parse(await readFile(join(output, 'output', 'verification.json'), 'utf8')); assert.equal(verify.encoding.profile, 'compact'); for (const stem of ['000', '001']) assertNoFadeAtStart(join(output, 'segments', `${stem}.png`), join(output, 'segments', `${stem}.mp4`)); assert.equal(verify.frames, 50); assert.equal(verify.sampleCount, 40000); assert.equal(verify.width, 1080); assert.equal(verify.audioLanguage, 'eng');
     const master = await readFile(join(output, 'master.wav')); assert.deepEqual(master.subarray(44, 44 + 7680 * 2), pcm.subarray(1440 * 2, 9120 * 2));
     await makeEditedVideo(src, selectionFile, manifestFile, output, 'vertical', 'cpu');
     const originalProfile = process.env.VIDEO_ENCODING_PROFILE;
     try {
-      process.env.VIDEO_ENCODING_PROFILE = 'compact';
+      process.env.VIDEO_ENCODING_PROFILE = 'upload';
       await assert.rejects(makeEditedVideo(src, selectionFile, manifestFile, output, 'vertical', 'cpu'), /different inputs or settings/);
     } finally {
       if (originalProfile === undefined) delete process.env.VIDEO_ENCODING_PROFILE; else process.env.VIDEO_ENCODING_PROFILE = originalProfile;

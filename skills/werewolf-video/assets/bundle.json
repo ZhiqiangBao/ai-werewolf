@@ -1,7 +1,7 @@
 {
   "format": "werewolf-video-skill-bundle",
-  "version": 19,
-  "pipelineFiles": 61,
+  "version": 20,
+  "pipelineFiles": 69,
   "artFiles": 10,
   "artPromptFile": "assets/art/moon-village/prompts.json",
   "source": "scripts/video/",
@@ -11,7 +11,11 @@
     "flash-default-token-plan-plus-routing",
     "decoded-still-frame-reuse",
     "scene-boundary-transitions",
-    "upload-quality-default",
+    "measured-compact-default",
+    "shared-master-audio",
+    "edition-production",
+    "native-cover-title",
+    "actual-view-labels",
     "lossless-scene-plates",
     "speaker-switch-frame-review",
     "no-public-room-id",
@@ -54,5 +58,5 @@
     "native-compact-export",
     "strict-gpu-encoding"
   ],
-  "generatedAt": "2026-11-11T06:35:58.615Z"
+  "generatedAt": "2026-11-17T01:21:52.209Z"
 }

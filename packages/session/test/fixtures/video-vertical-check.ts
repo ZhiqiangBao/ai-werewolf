@@ -127,7 +127,7 @@ test('reviewed portrait is bound to original samples and nonuniform word times',
     await save({ ...selection, sourceSha256: hash(twoSource), clips: [selection.clips[0], { ...selection.clips[0], id: twoClips[1].id }] });
     const twoOut = join(root, 'two-output'); await makeVertical(src, plan, twoOut, 'cpu');
     const twoVerification = JSON.parse(await readFile(join(twoOut, 'output', 'verification.json'), 'utf8'));
-    assert.equal(twoVerification.encoding.profile, 'upload');
+    assert.equal(twoVerification.encoding.profile, 'compact');
     for (const stem of ['000', '001']) assertNoFadeAtStart(join(twoOut, `${stem}.png`), join(twoOut, `${stem}.mp4`));
     assert.equal(twoVerification.frames, 72); assert.equal(twoVerification.sampleCount, 72 * 800);
     assert(Math.abs(Number(twoVerification.videoDuration) - Number(twoVerification.audioDuration)) <= 1 / 30 + .05);

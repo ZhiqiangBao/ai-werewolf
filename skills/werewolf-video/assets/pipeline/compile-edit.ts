@@ -67,6 +67,7 @@ export async function compileEdit(jobPath: string, checkOnly = false) {
     const approved = (r?.approved === true || r?.status === 'approved') && r?.approved !== false && (r?.status === undefined || r.status === 'approved');
     const hashes = [r?.manuscriptSha256, ...Object.values(r?.checks ?? {}).map((entry: any) => entry?.sha256)];
     assert(obj(review) && approved && hashes.includes(sha(manuscriptBytes)), 'Review is not approved or manuscript SHA mismatch');
+    if (source.perspective === 'player') assert(r.playerSeat === source.playerSeat && r.sourceSha256 === sha(sourceBytes) && r.visibleFactsOnly === true && r.manuscriptSha256 === sha(manuscriptBytes), 'Player review must bind the selected seat, source, manuscript, and visible-facts-only approval');
     reviewed = true;
   }
   const ids = new Set<string>(); let lastIndex = -1, lastSeq = -1;
@@ -92,7 +93,7 @@ export async function compileEdit(jobPath: string, checkOnly = false) {
     const range = locateQuote(clip.spokenText, words, item.quote, item.occurrence);
     items.push({ kind: 'source', id: item.id, sourceClipId: clip.id, ...range, quote: item.quote, reason: item.reason, ...(item.changedFromDraft === undefined ? {} : { changedFromDraft: item.changedFromDraft }), ...(item.storyCard === undefined ? {} : { storyCard: item.storyCard }), audioSha256: sha(audio), timingSha256: sha(Buffer.from(JSON.stringify(words))) });
   }
-  const result = { roomId: source.roomId, sourceSha256: sha(sourceBytes), reviewed, theme, ...(manuscript.title === undefined ? {} : { title: manuscript.title }), items, ...(review === undefined ? {} : { review }) };
+  const result = { roomId: source.roomId, sourceSha256: sha(sourceBytes), reviewed, theme, ...(source.perspective === 'player' && reviewed ? { reviewBinding: sha(Buffer.from(JSON.stringify(items))) } : {}), ...(manuscript.title === undefined ? {} : { title: manuscript.title }), items, ...(review === undefined ? {} : { review }) };
   if (!checkOnly) { await mkdir(dirname(output), { recursive: true }); await writeFile(output, JSON.stringify(result, null, 2) + '\n'); }
   return { ...result, planned: checkOnly };
 }

@@ -9,6 +9,7 @@ import { projectTtsModel, selectVoiceCatalogModel } from './tts-config';
 import { applyCharacterDelivery } from './character-delivery';
 import { join } from 'node:path';
 import type { VoiceCatalog } from './project';
+import { masterProject, useMasterVoices } from './master-audio';
 
 const FLASH_MODEL = 'qwen-audio-3.1-tts-flash';
 const PLUS_MODEL = 'qwen-audio-3.0-tts-plus';
@@ -45,7 +46,10 @@ if (!existsSync(narrationFile)) {
 }
 if (!existsSync(voiceFile)) {
   const base = applyCharacterDelivery(applyCharacterVoices(await loadVoices(), script.cast, theme), script.cast, theme);
-  const model = projectTtsModel(requestedTtsModel);
+  const master = script.perspective === 'player' && !requestedTtsModel ? await masterProject(script) : undefined;
+  const masterVoiceFile = master ? join(master.directory, 'voices.json') : undefined;
+  const masterModel = masterVoiceFile && existsSync(masterVoiceFile) ? (JSON.parse(await readFile(masterVoiceFile, 'utf8')) as VoiceCatalog).model : undefined;
+  const model = projectTtsModel(requestedTtsModel ?? masterModel);
   const voices = usesQwen ? applyVoiceDesignPolicy(selectVoiceCatalogModel(base, model), model, script.cast) : base;
   await writeFile(voiceFile, JSON.stringify(voices, null, 2));
 } else {
@@ -79,7 +83,12 @@ if (!existsSync(voiceFile)) {
   if (JSON.stringify(voices) !== originalCurrent) await writeFile(voiceFile, JSON.stringify(voices, null, 2));
 }
 const narration = JSON.parse(await readFile(narrationFile, 'utf8'));
-const voices = JSON.parse(await readFile(voiceFile, 'utf8'));
+let voices = JSON.parse(await readFile(voiceFile, 'utf8')) as VoiceCatalog;
+if (script.perspective === 'player') {
+  const reused = await useMasterVoices(script, voices);
+  if (JSON.stringify(reused) !== JSON.stringify(voices)) await writeFile(voiceFile, JSON.stringify(reused, null, 2));
+  voices = reused;
+}
 const artManifestFile = join(projectDir, 'art-manifest.json');
 await writeFile(artManifestFile, JSON.stringify(artManifest(theme, script.cast, voices), null, 2));
 const raw = script.perspective === 'god' ? JSON.parse(await readFile(`${dataDir}/rooms/${script.roomId}.json`, 'utf8')) : null;

@@ -14,22 +14,24 @@ export const ffprobe = process.env.FFPROBE_PATH || 'ffprobe';
 export interface Cast { seat: number; name: string; role: string; roleName: string; factionName: string; voiceKey: string }
 export interface Fact { sourceSeq: number; day: number; phase: string; type: string; audience: 'public' | number[]; spoken: boolean; text: string; data: Record<string, any> }
 export interface Entry { sourceSeq: number; type: string; speaker: string; voiceKey: string; seat?: number; text: string; visibility: string; data: Record<string, any> }
-export interface Script { englishPossessiveClips?: string[]; speechParts?: Record<string, string[]>; locale?: string; uiLocale?: string; roomId: string; perspective: string; playerSeat?: number; presetName: string; status: string; ruleCard?: string; /** Public role composition; player exports include this without revealing seat assignments. */ publicRoles?: string[]; sample?: boolean; cast: Cast[]; events: Fact[]; chapters: { day: number; phase: string; title: string; entries: Entry[] }[]; result: any }
+export interface Script { englishPossessiveClips?: string[]; speechParts?: Record<string, string[]>; locale?: string; uiLocale?: string; roomId: string; perspective: string; playerSeat?: number; presetName: string; status: string; ruleCard?: string; /** Public role composition; player exports include this without revealing seat assignments. */ publicRoles?: string[]; sample?: boolean; sourceOnly?: boolean; cast: Cast[]; events: Fact[]; chapters: { day: number; phase: string; title: string; entries: Entry[] }[]; result: any }
 export interface Clip extends Entry { id: string; day: number; phase: string; chapter: string; part: number; parts: number; spokenText: string; audioFile: string }
 export interface TimedClip extends Clip { frames: number; startFrame: number; audioDuration: number; audioMeta: AudioMeta; captions: { text: string; start: number; end: number }[]; envelope: number[]; normalizedAudioSha256?: string; captionAlignment?: import('./audio-alignment').AlignmentSummary }
-export async function loadScript(): Promise<Script> {
-  const seat = process.env.VIDEO_PLAYER_SEAT;
+export async function loadScript(context?: { roomId: string; dataDir: string; playerSeat?: number }): Promise<Script> {
+  const seat = context ? (context.playerSeat === undefined ? undefined : String(context.playerSeat)) : process.env.VIDEO_PLAYER_SEAT;
+  const room = context?.roomId ?? roomId, root = context?.dataDir ?? dataDir;
+  if (!/^[a-zA-Z0-9_-]+$/.test(room)) throw Error('Invalid room ID');
   if (seat && !/^[1-9][0-9]*$/.test(seat)) throw Error('Invalid player seat');
-  const script = JSON.parse(await readFile(join(dataDir, 'exports', `${roomId}${seat ? `-player-${seat}` : ''}-video-script.json`), 'utf8')) as Script & { hosting?: { version: number; fallbackSeqs: number[] } };
-  if (script.roomId !== roomId || script.status !== 'ended' || (seat ? script.perspective !== 'player' || script.playerSeat !== Number(seat) : script.perspective !== 'god')) throw Error('Expected the completed, authorized view script');
+  const script = JSON.parse(await readFile(join(root, 'exports', `${room}${seat ? `-player-${seat}` : ''}-video-script.json`), 'utf8')) as Script & { hosting?: { version: number; fallbackSeqs: number[] } };
+  if (script.roomId !== room || script.status !== 'ended' || (seat ? script.perspective !== 'player' || script.playerSeat !== Number(seat) : script.perspective !== 'god')) throw Error('Expected the completed, authorized view script');
   if (script.perspective === 'god' && script.hosting?.version === 1) {
     const { hosting, ...source } = script;
     return { ...source, chapters: videoChaptersFromEvents(source.events, source.locale, new Set(hosting.fallbackSeqs)) };
   }
   if (seat) {
     const { buildPlayerVideo } = await import('../../packages/session/src/player-video');
-    const record = JSON.parse(await readFile(join(dataDir, 'rooms', `${roomId}.json`), 'utf8'));
-    if (JSON.stringify(script) !== JSON.stringify(buildPlayerVideo(record, roomId, Number(seat)))) throw Error('Player export does not match the current authorized projection');
+    const record = JSON.parse(await readFile(join(root, 'rooms', `${room}.json`), 'utf8'));
+    if (JSON.stringify(script) !== JSON.stringify(buildPlayerVideo(record, room, Number(seat)))) throw Error('Player export does not match the current authorized projection');
   }
   return script;
 }

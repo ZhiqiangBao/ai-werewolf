@@ -1,3 +1,5 @@
+import { assertFullNarration } from './editorial';
+import { readProjectEncodingEnvironment } from './production-settings';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFile, writeFile, mkdir, stat, rename } from 'node:fs/promises';
@@ -8,7 +10,7 @@ import { palettes } from './palette';
 import { createRuleStrip, RULE_SCROLL_SPEED, RULE_VIEW } from './rule-strip';
 import { voteCardLayout } from './geometry';
 import { projectDir, ffmpeg, FPS, type Script, type TimedClip } from './project';
-import { encodingSettings, videoEncodingArgs } from './encoding';
+import { encodingSettings, videoEncodingArgs, verifyEncodingRate } from './encoding';
 import { sceneTransition, sceneFadeFilters } from './transitions';
 import { assertAuthorizedProject, assertPlayerAudio } from './integrity';
 import { clipSkillEffect, videoEffectVersion, writeSkillFrames } from './video-effect';
@@ -19,6 +21,8 @@ import { assertTimelineAlignments } from './audio-alignment';
 const timeline = JSON.parse(await readFile(`${projectDir}/timeline.json`, 'utf8')) as { frames: number; duration: number; clips: TimedClip[] };
 const script = JSON.parse(await readFile(`${projectDir}/script.json`, 'utf8')) as Script;
 const { source } = await assertAuthorizedProject(timeline.clips);
+if (script.sourceOnly && !script.sample) throw Error('Source-only preparation cannot be rendered as a complete video');
+if (source.perspective === 'god' && !script.sample) await assertFullNarration(source, script, projectDir);
 await assertTimelineAlignments(timeline.clips, source.locale ?? 'zh-CN');
 const masterSha256 = await assertPlayerAudio(timeline.clips);
 const viewHash = createHash('sha256').update(JSON.stringify(source)).digest('hex');
@@ -29,9 +33,9 @@ const only = process.argv.find((s) => s.startsWith('--only='))?.slice(7);
 const preview = process.argv.includes('--plates-only');
 const clips = only ? timeline.clips.filter((c) => c.id === only) : timeline.clips;
 if (!clips.length) throw Error('No requested clip');
-const settings = encodingSettings(), encoder = settings.encoder;
+const settings = encodingSettings(await readProjectEncodingEnvironment(projectDir)), encoder = settings.encoder;
 const renderStarted = Date.now();
-const encodingIdentity = { ...settings, format: 'native-export-v2' };
+const encodingIdentity = { ...settings, format: 'native-export-v4' };
 async function run(args: string[], logFile: string) {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(ffmpeg, ['-hide_banner', '-loglevel', 'warning', '-y', ...args], { cwd: projectDir, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -109,10 +113,11 @@ if (source.perspective === 'player') assert.equal(await assertPlayerAudio(timeli
 await run(['-f', 'concat', '-safe', '0', '-i', 'segments.ffconcat', '-i', 'master.wav', '-i', 'chapters.txt',
   '-map', '0:v:0', '-map', '1:a:0', '-map_metadata', '2', '-map_chapters', '2', '-c:v', 'copy', '-c:a', 'aac', '-b:a', `${settings.audioKbps}k`,
   '-metadata:s:a:0', `language=${videoAudioLanguage(script.locale)}`, '-movflags', '+faststart', 'output/latest-match.partial.mp4'], `${projectDir}/output/mux.log`);
+const bitrate = await verifyEncodingRate(`${projectDir}/output/latest-match.partial.mp4`, settings);
 await rename(`${projectDir}/output/latest-match.partial.mp4`, `${projectDir}/output/latest-match.mp4`);
 await writeFile(`${projectDir}/encoding-settings.json`, JSON.stringify(encodingIdentity, null, 2));
 await writeFile(`${projectDir}/output/render-report.json`, JSON.stringify({ ...encodingIdentity, elapsedSeconds: (Date.now() - renderStarted) / 1000,
-  durationSeconds: timeline.duration, bytes: (await stat(`${projectDir}/output/latest-match.mp4`)).size, compactFromFirstEncode: settings.profile === 'compact', videoReencodedAtMux: false,
+  bitrate, durationSeconds: timeline.duration, bytes: (await stat(`${projectDir}/output/latest-match.mp4`)).size, compactFromFirstEncode: settings.profile === 'compact', videoReencodedAtMux: false,
   transition: 'hard cuts within scenes; four-frame fades only at phase or chapter boundaries',
   ...(source.perspective === 'player' ? { viewHash, masterSha256, videoSha256: createHash('sha256').update(await readFile(`${projectDir}/output/latest-match.mp4`)).digest('hex') } : {}) }, null, 2));
 console.log(JSON.stringify({ video: `${projectDir}/output/latest-match.mp4`, duration: timeline.duration, frames: timeline.frames }));

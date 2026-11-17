@@ -1,3 +1,5 @@
+import { readProjectEncodingEnvironment } from './production-settings';
+import { assertFullNarration } from './editorial';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFile, writeFile, stat } from 'node:fs/promises';
@@ -6,12 +8,14 @@ import { replay } from './replay';
 import { readPcm } from './audio';
 import { assertPlayerSources, assertAuthorizedProject, assertPlayerAudio, assertPlayerVideo } from './integrity';
 import { captionContent } from './timeline';
-import { encodingSettings } from './encoding';
+import { encodingSettings, verifyEncodingRate } from './encoding';
 import { inspectAudio } from './audio-inspection';
 import { assertTimelineAlignments } from './audio-alignment';
 
 const source = JSON.parse(await readFile(`${projectDir}/source.json`, 'utf8')) as Script;
 const script = JSON.parse(await readFile(`${projectDir}/script.json`, 'utf8')) as Script;
+if (script.sourceOnly && !script.sample) throw Error('Source-only preparation cannot be verified as a complete video');
+if (source.perspective === 'god' && !script.sample) await assertFullNarration(source, script, projectDir);
 const timeline = JSON.parse(await readFile(`${projectDir}/timeline.json`, 'utf8')) as { frames: number; duration: number; clips: TimedClip[] };
 await assertAuthorizedProject(timeline.clips);
 await assertTimelineAlignments(timeline.clips, source.locale ?? 'zh-CN');
@@ -35,7 +39,7 @@ if (source.perspective === 'god') {
 }
 assert.equal(final.result.winner, source.result.winner);
 let cursor = 0, captions = 0;
-const actualEncoders = new Set<string>(), settings = encodingSettings();
+const actualEncoders = new Set<string>(), settings = encodingSettings(await readProjectEncodingEnvironment(projectDir));
 let compactFromFirstEncode = true;
 for (const c of timeline.clips) {
   const originalAudio = await readPcm(c.audioFile);
@@ -48,7 +52,7 @@ for (const c of timeline.clips) {
   assert.equal(pcm.sampleRate, SAMPLE_RATE); assert.equal(pcm.samples.length, c.frames * SAMPLE_RATE / FPS);
   const segment = JSON.parse(await readFile(`${projectDir}/segments/${c.id}.mp4.json`, 'utf8'));
   assert.equal(segment.frames, c.frames); actualEncoders.add(segment.encoder);
-  compactFromFirstEncode &&= segment.encoding?.format === 'native-compact-v1' || (segment.encoding?.format === 'native-export-v2' && segment.encoding.profile === 'compact');
+  compactFromFirstEncode &&= segment.encoding?.format === 'native-compact-v1' || (['native-export-v2', 'native-export-v3', 'native-export-v4'].includes(segment.encoding?.format) && segment.encoding.profile === 'compact');
   if (settings.strictGpu) assert.equal(segment.encoder, 'h264_nvenc', `GPU encoding was not used for ${c.id}`);
   const log = await readFile(`${projectDir}/segments/${c.id}.mp4.log`, 'utf8');
   assert(!/corrupt|invalid data|error while/i.test(log), `Encoding problem in ${c.id}`);
@@ -66,7 +70,8 @@ assert.equal(Number(picture.nb_frames), timeline.frames); assert.equal(audio.cod
 assert(Math.abs(Number(picture.duration) - Number(picture.nb_frames) / FPS) < 2 / FPS);
 assert(Math.abs(Number(audio.duration) - timeline.duration) < .05);
 assert.equal(media.chapters.length, source.chapters.length);
-const report = { roomId: source.roomId, video, bytes: (await stat(video)).size, durationSeconds: timeline.duration, frames: timeline.frames,
+const bitrate = await verifyEncodingRate(video, settings, ffprobe);
+const report = { bitrate, roomId: source.roomId, video, bytes: (await stat(video)).size, durationSeconds: timeline.duration, frames: timeline.frames,
   resolution: '1920×1080', fps: FPS, chapters: media.chapters.length, clips: timeline.clips.length, captions,
   originalPlayerEntriesPreserved: sourcePlayers.length, privateWolfChatIncluded: source.events.some((e) => e.type === 'wolf.chat'), perspective: source.perspective, playerSeat: source.playerSeat, factsUnchanged: true,
   validationScope: 'script-and-timing-only', audioSemanticReview: 'not-checked', voiceIdentityReview: 'not-checked',

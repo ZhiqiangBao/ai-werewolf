@@ -1,12 +1,14 @@
+import { readProjectEncodingEnvironment } from './production-settings';
 import { execFileSync } from 'node:child_process';
-import { readFile, writeFile, mkdir, open } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, open, rename } from 'node:fs/promises';
 import { projectDir, ffmpeg, SAMPLE_RATE, FPS, type Script, type TimedClip } from './project';
 import { readPcm, wavHeader } from './audio';
-import { encodingSettings } from './encoding';
+import { encodingSettings, verifyEncodingRate } from './encoding';
 import { assertAuthorizedProject, assertPlayerAudio, assertPlayerVideo } from './integrity';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { assertTimelineAlignments } from './audio-alignment';
+const settings = encodingSettings(await readProjectEncodingEnvironment(projectDir));
 const timeline = JSON.parse(await readFile(`${projectDir}/timeline.json`, 'utf8')) as { clips: TimedClip[] };
 const script = JSON.parse(await readFile(`${projectDir}/script.json`, 'utf8')) as Script;
 const { source } = await assertAuthorizedProject(timeline.clips);
@@ -33,7 +35,9 @@ const frames = clips.reduce((n, c) => n + c.frames, 0), wav = await open(`${proj
 await wav.write(wavHeader(frames * SAMPLE_RATE / FPS, SAMPLE_RATE));
 for (const clip of clips) { const { samples } = await readPcm(`${projectDir}/audio-normalized/${clip.id}.wav`); await wav.write(Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength)); }
 await wav.close();
-execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', 'preview.ffconcat', '-i', 'preview.wav', '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'copy', '-c:a', 'aac', '-b:a', `${encodingSettings().audioKbps}k`, '-metadata', 'title=流程样片·含终局节选', '-movflags', '+faststart', 'output/workflow-preview.mp4'], { cwd: projectDir, windowsHide: true, stdio: 'inherit' });
+execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', 'preview.ffconcat', '-i', 'preview.wav', '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'copy', '-c:a', 'aac', '-b:a', `${settings.audioKbps}k`, '-metadata', 'title=流程样片·含终局节选', '-movflags', '+faststart', 'output/workflow-preview.partial.mp4'], { cwd: projectDir, windowsHide: true, stdio: 'inherit' });
+await verifyEncodingRate(`${projectDir}/output/workflow-preview.partial.mp4`, settings);
+await rename(`${projectDir}/output/workflow-preview.partial.mp4`, `${projectDir}/output/workflow-preview.mp4`);
 const longestName = [...timeline.clips].filter((c) => c.type === 'speech').sort((a, b) =>
   (script.cast.find((p) => p.seat === b.seat)?.name.length ?? 0) - (script.cast.find((p) => p.seat === a.seat)?.name.length ?? 0))[0];
 const frameChoices = [

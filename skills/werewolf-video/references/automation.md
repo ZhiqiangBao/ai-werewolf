@@ -18,9 +18,9 @@ Windows 读取微软雅黑字体。其他系统应在 `scene.ts` 的字体注册
 | --- | --- |
 | workflow.ts | 最新已结束房间/指定 ID → 材料准备、检查及后续视频流水线；`--tts-model` 自动选择 TTS 端点、凭据环境和兼容音色；解说写作、封面和文案由制作者完成 |
 | export-video.ts / player-video.ts | 指定席位 → `projectSeat` 权限投影、去除终局 `review`、仅保留本人身份的独立视频记录 |
-| prepare.ts / narration.ts | 原始剪辑稿 → 旁白取舍、声音表、plan.json |
+| prepare.ts / narration.ts | 原始剪辑稿 → 法官材料、解说模板、声音表、plan.json；制作 AI 仍须实际创作解说 |
 | materials.ts / preflight.ts | 实际解说稿、声音表与源记录 → 配音前检查、output/materials-check.json；不调用外部服务 |
-| publish-copy.ts | 已定稿文案＋公开座位字段＋本局规则卡 → 幂等更新 output/publish-copy.md 的简介附录 |
+| publish-copy.ts / publication-materials.ts | 定稿文案与公开字段同步；逐版绑定可见看点、标题、生图提示词、封面及审核，不判断艺术质量 |
 | hosting.ts | 原事实锚点 → 完整法官流程与显式标注的行动转述 |
 | integrity.ts | TTS 之前拒绝改写玩家原话、伪造朗读文字或没有对应实际动作的角色配音 |
 | editorial.ts | 按 sourceSeq 应用法官编辑，保护玩家原话和完整事实 |
@@ -28,8 +28,8 @@ Windows 读取微软雅黑字体。其他系统应在 `scene.ts` 的字体注册
 | qwen.ts / synthesize.ts | Qwen 协议适配与通用的多段合成调度 |
 | audio-cache.ts | 显式指定缓存目录 → 仅复用完整请求键相同的音频与元数据 |
 | audio-inspection.ts / audit-audio.ts | 原始 PCM → 非零平段、削波、静音及时间戳检查，定位报告和试听片段 |
-| review-audio.ts / asr-comparison.ts | 规范化同一原音 → 独立识别、原稿比较与缓存；中文/英语默认本地，日语仅在线 Qwen |
-| audio-alignment.ts / import-audio-alignment.ts | 核实英语/日语独立转写与真实词边界，创建绑定原音/原稿/响应的 sidecar；不覆盖原 TTS 元数据 |
+| review-audio.ts / asr-comparison.ts | 规范化同一原音 → 按所选路线独立识别、原稿比较与缓存 |
+| audio-alignment.ts / import-audio-alignment.ts | 核实独立转写与真实词边界，创建绑定原音/原稿/响应的 sidecar；不覆盖原 TTS 元数据 |
 | repair-audio.ts | 异常报告／显式选择 → 有限次新种子重配、备份、质量通过后替换及可选重建成片 |
 | project.ts | 路径、类型、原文分段、号码读法、按法官 cue 选择已审核的连读／语速配置 |
 | audio.ts / timeline.ts | 实际 PCM → 规范音轨、字幕、绝对帧时间轴 |
@@ -37,6 +37,9 @@ Windows 读取微软雅黑字体。其他系统应在 `scene.ts` 的字体注册
 | scene.ts | 纯回放状态+已有素材 → 一段无损 PNG 场景底图 |
 | geometry.ts / speaker.ts | 底栏共享坐标、真实玩家编号／身份／昵称、法官／上帝固定标签与来源标记 |
 | palette.ts / rule-cards.ts / rule-strip.ts | 昼夜主题、全身份技能卡和跨片段连续滚动 |
+| production.ts / deliver-edition.ts | 读取本局版本清单，按授权视角选源、复用原音、渲染、核验成片与字幕并转存四件素材 |
+| master-audio.ts / player-audio-provenance.ts | 匹配同事件、同席位的真实原音与词时，记录并复核来源 |
+| publication-materials.ts | 绑定本版看点、定稿标题、实际生图提示词、封面与审阅 |
 | encoding.ts / render.ts | upload/compact 编码配置+PNG 底图+真实配音+字幕 → 分段视频、章节、复制视频流的最终整片 |
 | preview.ts | 已完成片段 → 非连续预览和四类抽帧 |
 | verify.ts | 源记录+成片 → 原话、事实、媒体时长核对 |
@@ -50,7 +53,7 @@ Windows 读取微软雅黑字体。其他系统应在 `scene.ts` 的字体注册
 
 `workflow.ts` 用参数数组启动子进程，设置 cwd 和本次房间环境变量，不拼接 shell 字符串。每个阶段成功后写检查点；出错停止，保留前面产物。新程序也应保持这个接口，方便低成本模型直接运行而不重新手写整套流程。
 
-配音继续使用在线 Qwen；配音后的机械步骤是波形检查 → 独立 ASR 原话核对 → 完整字幕时间检查 → timeline。`--asr-provider=auto` 只在中文、英语核对时按配置复用或启动本地服务，日语始终选择在线 Qwen；准备/材料检查不启动 ASR，也不下载模型。日语显式本地/MiMo 在读取识别缓存或请求前就拒绝。原稿或明确别名的审核变化可复用原识别；音频、模型及识别参数变化必须重新识别。本地/MiMo 缺少可靠字时则停在 `alignment-required`，只有明确 `--alignment-provider=qwen-token-plan` 才额外请求英语词边界；中文外部对齐尚不支持。参数、恢复及批量入口见 [音频核对操作指南](local-asr.md)。
+按[主流程](../SKILL.md)和[音频核对操作指南](local-asr.md)选择音频审计、可选独立识别与真实词时路线。缺可靠字词边界时停止并按当前支持的对齐方式处理，不能估时或将未执行的识别声称通过。准备与材料检查不启动识别或下载模型。
 
 ## 核心数据契约
 
@@ -104,15 +107,6 @@ type TimedClip = Clip & { startFrame: number; frames: number;
 
 流程衔接和上帝点评保留原事件 `sourceSeq`，用独立 `presentationKey` 生成片段 ID。流程询问使用 `replayThrough=sourceSeq-1`，避免提前公布结果；`after` 点评使用该结果的 `sourceSeq`，不得添加假事实。玩家原话验证跳过这些非原话片段，实际选中的玩家段仍必须逐字匹配。
 
-## 增加功能时如何测试
+## 验收边界
 
-先验证纯逻辑，再跑真实小片段，最后走整局：
-
-1. 分段后原文完整；数字发音变换不改变座位和票数。
-2. 时间轴严格连续；字幕来自真实时间戳，范围落在声音长度内。
-3. 回放前缀不包含未来死亡；守中、平安夜、猎人开枪、自爆、白痴翻牌与警徽流失语义正确。
-4. 所有玩家选段对应原文；完整模式必须保留全部玩家条目。
-5. 源事实完全不变，终局存活与记录复盘一致。
-6. FFprobe 检查分辨率、帧数、章节和音画时长；抽看夜间、票型、发言与终局，并实际播放音频。
-
-不要为了测试而重新发整局 TTS。可用已缓存项目完整复跑验证断点；为新日志格式写小型事件夹具。未经验证的新角色事件应停止并扩展回放器，不能悄悄把状态猜出来。
+按[主流程](../SKILL.md)验收最终交付物及受影响的视角、时间轴和画面；未覆盖项如实记录。不要为了验证重复请求整局配音。

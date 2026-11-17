@@ -8,24 +8,23 @@ import { videoLocale } from './video-locale';
 import { bindTheme } from './avatar-theme';
 import { createHash } from 'node:crypto';
 import { encodingSettings } from './encoding';
+import { projectRateRequest } from './production-settings';
 import { asrProviderForLocale, ensureLocalAsrReady, type AsrProvider } from '../../packages/session/src/asr';
-import { environmentForTtsModel, projectTtsModel } from './tts-config';
+import { environmentForTtsModel } from './tts-config';
 
 const root = resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const args = new Map(process.argv.slice(2).map((a) => { const i = a.indexOf('='); return [a.slice(0, i < 0 ? undefined : i), i < 0 ? 'true' : a.slice(i + 1)]; }));
+if (args.has('--production')) {
+  const { produce } = await import('./production');
+  await produce(args.get('--production')!, process.argv.slice(2).filter(arg => !arg.startsWith('--production=')));
+  process.exit(0);
+}
 const stages = ['export', 'plan', 'preflight', 'tts', 'audit-audio', 'review-audio', 'timeline', 'render', 'preview', 'verify'] as const;
-const supported = new Set(['--help', '--room', '--player-seat', '--prepare-only', '--check-only', '--through', '--encoder', '--encoding-profile', '--video-quality', '--theme', '--video-locale', '--voices', '--narration', '--data-dir', '--project-dir', '--resume', '--repair-audio', '--tts-provider', '--tts-adapter', '--tts-model', '--video-kbps', '--max-video-kbps', '--audio-kbps', '--asr-provider', '--asr-aliases', '--alignment-provider']);
+const supported = new Set(['--help', '--room', '--player-seat', '--source-only', '--prepare-only', '--check-only', '--through', '--encoder', '--encoding-profile', '--video-quality', '--theme', '--video-locale', '--voices', '--narration', '--data-dir', '--project-dir', '--master-project', '--resume', '--repair-audio', '--tts-provider', '--tts-adapter', '--tts-model', '--video-kbps', '--max-video-kbps', '--max-total-kbps', '--audio-kbps', '--buffer-kbits', '--asr-provider', '--asr-aliases', '--alignment-provider']);
 for (const key of args.keys()) if (!supported.has(key)) throw Error(`Unknown option ${key}`);
-if (args.has('--help')) { console.log('video:make --room=latest|ID [--player-seat=N] [--prepare-only | --check-only] [--through=STAGE] [--data-dir=DIR] [--project-dir=DIR] [--encoder=auto|cpu|gpu] [--encoding-profile=upload|compact] [--video-quality=15..40] [--video-kbps=N --max-video-kbps=N] [--video-locale=zh-CN|en|ja] [--repair-audio] [--tts-model=qwen-audio-3.0-tts-plus|qwen-audio-3.1-tts-flash] [--tts-provider=ID --tts-adapter=FILE] [--asr-provider=auto|local|qwen-token-plan|qwen-dashscope|mimo-token-plan|off] [--asr-aliases=FILE] [--alignment-provider=qwen-token-plan|qwen-dashscope] [--theme=campus|storybook|gufeng|fantasy|urban|future] [--voices=FILE] [--narration=FILE]\nASR is off by default; enable it explicitly or review selected clips when needed. Local model files must already be installed.'); process.exit(0); }
-encodingSettings({ ...process.env,
-  ...(args.has('--encoding-profile') ? { VIDEO_ENCODING_PROFILE: args.get('--encoding-profile')! } : {}),
-  ...(args.has('--video-quality') ? { VIDEO_QUALITY: args.get('--video-quality')! } : {}),
-  ...(args.has('--video-kbps') ? { VIDEO_BITRATE_KBPS: args.get('--video-kbps')! } : {}),
-  ...(args.has('--max-video-kbps') ? { VIDEO_MAXRATE_KBPS: args.get('--max-video-kbps')! } : {}),
-  ...(args.has('--audio-kbps') ? { VIDEO_AUDIO_KBPS: args.get('--audio-kbps')! } : {}),
-});
+if (args.has('--help')) { console.log('video:make --production=FILE [--prepare-only | --check-only | --media-only | --record-publication --reviewed-by=NAME | --deliver-only] [--reuse-only]\nvideo:make --room=latest|ID [--player-seat=N] [--master-project=DIR] [--source-only] [--prepare-only | --check-only] [--through=STAGE] [--data-dir=DIR] [--project-dir=DIR] [--encoder=auto|cpu|gpu] [--encoding-profile=upload|compact] [--video-quality=15..40] [--video-kbps=N --max-video-kbps=N --max-total-kbps=N --audio-kbps=N] [--video-locale=zh-CN|en|ja] [--repair-audio] [--tts-model=qwen-audio-3.0-tts-plus|qwen-audio-3.1-tts-flash] [--tts-provider=ID --tts-adapter=FILE] [--asr-provider=auto|local|qwen-token-plan|qwen-dashscope|mimo-token-plan|off] [--asr-aliases=FILE] [--alignment-provider=qwen-token-plan|qwen-dashscope] [--theme=campus|storybook|gufeng|fantasy|urban|future] [--voices=FILE] [--narration=FILE]\nASR is off by default; enable it explicitly or review selected clips when needed. Local model files must already be installed.'); process.exit(0); }
 if (args.has('--prepare-only') && args.has('--check-only')) throw Error('Choose --prepare-only or --check-only');
-if (args.has('--player-seat') && args.has('--repair-audio')) throw Error('Player view does not support --repair-audio; use a new player project and synthesize its audio again');
+if (args.has('--player-seat') && args.has('--repair-audio')) throw Error('Repair the affected original sentence in its source project, then reuse the corrected audio in the player edition.');
 const requestedAsr = args.get('--asr-provider') || 'off';
 const requestedTtsModel = args.get('--tts-model');
 if (requestedTtsModel) environmentForTtsModel(requestedTtsModel);
@@ -74,20 +73,31 @@ if (encoderOption !== 'cpu') {
 }
 const last = args.has('--prepare-only') ? 'plan' : args.has('--check-only') ? 'preflight' : args.get('--through') || 'verify';
 if (!stages.includes(last as any)) throw Error('Invalid final stage');
+const sourceOnly = args.has('--source-only');
+if (sourceOnly && stages.indexOf(last as typeof stages[number]) > stages.indexOf('timeline')) throw Error('Source-audio preparation cannot render a full edition');
 const statusFile = `${dir}/workflow-status.json`;
 const resumeRequested = args.has('--resume');
-let previousReport: { roomId?: string; encoder?: string; theme?: string; completed?: string[]; asr?: { requestedProvider?: string }; requestedTtsModel?: string | null } | undefined;
+const rateEnv = await projectRateRequest(dir, args, resumeRequested && !process.env.VIDEO_PRODUCTION_JOB);
+const encoding = encodingSettings({ ...process.env, ...rateEnv, VIDEO_ENCODER: encoder });
+const visuals = JSON.stringify({ encoding, uiLocale: args.get('--video-locale') ?? process.env.VIDEO_LOCALE ?? null });
+const narrationPath = resolve(root, args.get('--narration') || join(dir, 'narration.json'));
+const sourceExport = join(dataRoot, 'exports', room + (playerSeat ? '-player-' + playerSeat : '') + '-video-script.json');
+const voicesPath = resolve(root, args.get('--voices') || join(dir, 'voices.json'));
+async function audioInputs() {
+  const digest = createHash('sha256').update(String(sourceOnly));
+  for (const file of [sourceExport, narrationPath, voicesPath]) {
+    if (!existsSync(file)) return undefined;
+    digest.update(await readFile(file)).update('\0');
+  }
+  return digest.digest('hex');
+}
+const roomInput = createHash('sha256').update(await readFile(join(roomsDir, room + '.json'))).digest('hex');
+let previousReport: { roomId?: string; roomInput?: string; encoder?: string; theme?: string; completed?: string[]; visuals?: string; audioInputs?: string; asr?: { requestedProvider?: string }; requestedTtsModel?: string | null } | undefined;
 if (resumeRequested && existsSync(statusFile)) {
   const savedReport = JSON.parse(await readFile(statusFile, 'utf8')) as NonNullable<typeof previousReport>;
   previousReport = savedReport;
-  if (savedReport.roomId !== room || savedReport.encoder !== encoder || savedReport.theme !== theme) {
-    throw Error('Cannot resume: room, encoder, or theme differs from the previous workflow checkpoint');
-  }
-  if (savedReport.asr?.requestedProvider !== undefined && savedReport.asr.requestedProvider !== requestedAsr) {
-    throw Error('Cannot resume: ASR provider differs from the previous workflow checkpoint');
-  }
-  if (savedReport.requestedTtsModel !== undefined && savedReport.requestedTtsModel !== (requestedTtsModel ?? null)) {
-    throw Error('Cannot resume: TTS model differs from the previous workflow checkpoint');
+  if (savedReport.roomId !== room || savedReport.theme !== theme) {
+    throw Error('Cannot resume: room or theme differs from the previous workflow checkpoint');
   }
 }
 const completedBeforeResume = resumeRequested ? [...(previousReport?.completed ?? [])] : [];
@@ -98,27 +108,38 @@ if (completedBeforeResume.some((stage) => !stages.includes(stage as typeof stage
 if (completedBeforeResume.some((stage) => stages.indexOf(stage as typeof stages[number]) >= resumeStartIndex)) {
   throw Error('Cannot resume: workflow checkpoint is not contiguous');
 }
-const savedVoicesFile = resolve(root, args.get('--voices') || `${dir}/voices.json`);
-const savedVoices = existsSync(savedVoicesFile) ? JSON.parse(await readFile(savedVoicesFile, 'utf8')) : undefined;
+if (previousReport?.asr?.requestedProvider !== undefined && previousReport.asr.requestedProvider !== requestedAsr) resumeStartIndex = Math.min(resumeStartIndex, stages.indexOf('review-audio'));
+if (previousReport?.requestedTtsModel !== undefined && previousReport.requestedTtsModel !== (requestedTtsModel ?? null)) resumeStartIndex = Math.min(resumeStartIndex, stages.indexOf('plan'));
+if (previousReport && (previousReport.roomInput !== roomInput || !existsSync(sourceExport))) resumeStartIndex = 0;
+if (resumeStartIndex > stages.indexOf('tts') && (!previousReport?.audioInputs || previousReport.audioInputs !== await audioInputs() || !existsSync(join(dir, 'clips.json')))) {
+  resumeStartIndex = stages.indexOf('preflight');
+}
+if (resumeStartIndex > stages.indexOf('timeline') && ['timeline.json','master.wav','subtitles/captions.srt'].some(file => !existsSync(join(dir,file)))) resumeStartIndex = stages.indexOf('timeline');
+if (resumeStartIndex > stages.indexOf('render') && (previousReport?.visuals !== visuals || !existsSync(join(dir, 'output/latest-match.mp4')))) resumeStartIndex = stages.indexOf('render');
+const lastIndex = stages.indexOf(last as typeof stages[number]);
+if (playerSeat && (args.has('--master-project') || process.env.VIDEO_MASTER_PROJECT) && lastIndex >= stages.indexOf('tts')) {
+  resumeStartIndex = Math.min(resumeStartIndex, stages.indexOf('plan'));
+}
+// A completed media checkpoint must still pass today's editorial and MP4 checks.
+if (last === 'verify') resumeStartIndex = Math.min(resumeStartIndex, lastIndex);
+completedBeforeResume.splice(resumeStartIndex);
 const ttsProvider = args.get('--tts-provider') || process.env.VIDEO_TTS_PROVIDER || 'qwen-token-plan';
-const selectedTtsEnv = ttsProvider === 'qwen-token-plan'
-  ? environmentForTtsModel(projectTtsModel(requestedTtsModel || process.env.VIDEO_TTS_MODEL, savedVoices)) : {};
+const requestedModel = requestedTtsModel || process.env.VIDEO_TTS_MODEL;
+const selectedTtsEnv = ttsProvider === 'qwen-token-plan' && requestedModel ? environmentForTtsModel(requestedModel) : {};
 const env = { ...process.env, WEREWOLF_DATA: dataRoot, VIDEO_DATA_DIR: dataRoot, VIDEO_ROOM: room, VIDEO_PROJECT_DIR: dir, VIDEO_AVATAR_STYLE: theme, VIDEO_ENCODER: encoder,
   VIDEO_PLAYER_SEAT: playerSeat || '',
+  VIDEO_SOURCE_ONLY: sourceOnly ? '1' : '0',
   ...(args.has('--video-locale') ? { VIDEO_LOCALE: args.get('--video-locale')! } : {}),
   VIDEO_REQUIRE_GPU: encoderOption === 'gpu' ? '1' : '0',
-  ...(args.has('--encoding-profile') ? { VIDEO_ENCODING_PROFILE: args.get('--encoding-profile')! } : {}),
-  ...(args.has('--video-quality') ? { VIDEO_QUALITY: args.get('--video-quality')! } : {}),
-  ...(args.has('--video-kbps') ? { VIDEO_BITRATE_KBPS: args.get('--video-kbps')! } : {}),
-  ...(args.has('--max-video-kbps') ? { VIDEO_MAXRATE_KBPS: args.get('--max-video-kbps')! } : {}),
-  ...(args.has('--audio-kbps') ? { VIDEO_AUDIO_KBPS: args.get('--audio-kbps')! } : {}),
+  ...rateEnv,
+  ...(args.has('--master-project') ? { VIDEO_MASTER_PROJECT: resolve(root, args.get('--master-project')!) } : {}),
   VIDEO_TTS_PROVIDER: ttsProvider,
   ...(args.get('--tts-adapter') ? { VIDEO_TTS_ADAPTER: resolve(root, args.get('--tts-adapter')!) } : {}),
   ...selectedTtsEnv,
   VIDEO_VOICES_FILE: resolve(root, args.get('--voices') || `${dir}/voices.json`),
   VIDEO_NARRATION_FILE: resolve(root, args.get('--narration') || `${dir}/narration.json`) };
 // Do not put credentials or the raw room document into workflow reports.
-const report: { roomId: string; encoder: string; theme: string; requestedTtsModel: string | null; completed: string[]; status: string; error?: string; asr: { requestedProvider: string; effectiveProvider?: string; locale?: string; audioSemanticReview: string; report?: string; alignmentProvider?: string; failedClipIds?: string[]; recognitionRequests?: number; alignmentRequests?: number } } = { roomId: room, encoder, theme, requestedTtsModel: requestedTtsModel ?? null, completed: completedBeforeResume, status: 'running', asr: { requestedProvider: requestedAsr, audioSemanticReview: requestedAsr === 'off' ? 'not-checked-explicitly-disabled' : 'pending', ...(alignmentProvider ? { alignmentProvider } : {}) } };
+const report: { roomId: string; roomInput: string; encoder: string; theme: string; visuals: string; audioInputs?: string; requestedTtsModel: string | null; completed: string[]; status: string; error?: string; asr: { requestedProvider: string; effectiveProvider?: string; locale?: string; audioSemanticReview: string; report?: string; alignmentProvider?: string; failedClipIds?: string[]; recognitionRequests?: number; alignmentRequests?: number } } = { roomId: room, roomInput, encoder, theme, visuals, audioInputs: previousReport?.audioInputs, requestedTtsModel: requestedTtsModel ?? null, completed: completedBeforeResume, status: 'running', asr: { requestedProvider: requestedAsr, audioSemanticReview: requestedAsr === 'off' ? 'not-checked-explicitly-disabled' : 'pending', ...(alignmentProvider ? { alignmentProvider } : {}) } };
 await writeFile(statusFile, JSON.stringify(report, null, 2));
 const run = (file: string, extra: string[] = []) => new Promise<void>((ok, fail) => {
   const child = spawn(process.execPath, ['--import', 'tsx', file, ...extra], { cwd: root, env, windowsHide: true, stdio: 'inherit' });
@@ -126,7 +147,8 @@ const run = (file: string, extra: string[] = []) => new Promise<void>((ok, fail)
 });
 let stopMonitor: Awaited<ReturnType<typeof startGpuMonitor>> | undefined;
 try {
-  for (let stageIndex = resumeStartIndex; stageIndex < stages.length; stageIndex++) {
+  if (resumeStartIndex > stages.indexOf('preflight') && lastIndex >= stages.indexOf('preflight')) await run('scripts/video/preflight.ts');
+  for (let stageIndex = resumeStartIndex; stageIndex <= lastIndex; stageIndex++) {
     const stage = stages[stageIndex];
     console.log(`VIDEO_STAGE ${stage} ${room}`);
     if (stage === 'render') stopMonitor = await startGpuMonitor(`${dir}/gpu-metrics.json`);
@@ -146,7 +168,7 @@ try {
     else if (stage === 'plan') {
       await run('scripts/video/prepare.ts');
       if (requestedAsr !== 'off' && stages.indexOf(last as typeof stages[number]) >= stages.indexOf('review-audio')) {
-        const source = JSON.parse(await readFile(join(dir, 'source.json'), 'utf8'));
+        const source = JSON.parse(await readFile(sourceExport, 'utf8'));
         report.asr.locale = source.locale;
         report.asr.effectiveProvider = asrProviderForLocale(requestedAsr as AsrProvider | 'auto', source.locale);
       }
@@ -186,18 +208,19 @@ try {
     else {
       if (stage === 'tts') {
         const voices = JSON.parse(await readFile(env.VIDEO_VOICES_FILE, 'utf8'));
-        if (ttsProvider === 'qwen-token-plan' && voices.characterVoiceDesign === 'portrait-v1') {
+        if (process.env.VIDEO_REUSE_ONLY !== '1' && ttsProvider === 'qwen-token-plan' && voices.characterVoiceDesign === 'portrait-v1') {
           await run('scripts/video/voice-enroll.ts', ['--design', `--model=${voices.model}`]);
         }
       }
       await run(`scripts/video/${stage === 'tts' ? 'synthesize' : stage}.ts`);
     }
+    if (stage === 'tts' || stage === 'audit-audio') report.audioInputs = await audioInputs();
     if (stage === 'verify' && !playerSeat) await run('scripts/video/publish-copy.ts', ['--if-exists']);
     if (stage === 'render' && stopMonitor) { await stopMonitor(); stopMonitor = undefined; }
     report.completed.push(stage); await writeFile(statusFile, JSON.stringify(report, null, 2));
     if (stage === last) break;
   }
-  report.status = last === 'verify' ? 'complete' : 'checkpoint';
+  report.status = last === 'verify' ? 'media-verified' : 'checkpoint';
 } catch (error) { report.status = 'failed'; report.error = error instanceof Error ? error.message : 'Unknown workflow error'; process.exitCode = 1; }
 finally { if (stopMonitor) await stopMonitor(); await writeFile(statusFile, JSON.stringify(report, null, 2)); }
 console.log(JSON.stringify(report, null, 2));

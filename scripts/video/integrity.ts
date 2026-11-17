@@ -15,6 +15,9 @@ export async function assertAuthorizedProject(clips: Clip[]) {
     assert(source.perspective === 'player' && script.perspective === 'player', 'Mixed player and god view artifacts');
     assert.deepEqual(source, await loadScript(), 'Player source differs from selected authorized export');
     assertPlayerSources(source, script, clips);
+  } else if (!script.sample && !script.sourceOnly) {
+    const spokenEntry = (clip: Clip) => [clip.id, clip.sourceSeq, clip.type, clip.seat, clip.voiceKey, clip.text, clip.spokenText];
+    assert.deepEqual(clips.map(spokenEntry), buildClips(script).map(spokenEntry), 'Full audio timeline differs from the current narration');
   }
   return { source, script };
 }
@@ -92,7 +95,7 @@ export function assertPlayerSources(source: Script, script: Script, clips: Clip[
   if (script.speechParts !== undefined) validateSpeechParts(source, script.speechParts);
   if (script.englishPossessiveClips !== undefined) validateEnglishPossessiveClips({ ...source, speechParts: script.speechParts }, script.englishPossessiveClips);
   if (source.perspective === 'player') {
-    const { sample, ...withoutSample } = script;
+    const { sample, sourceOnly: _sourceOnly, ...withoutSample } = script;
     assert.deepEqual(withoutSample, source, 'Player view cannot use edited or omniscient material');
     const expected = buildClips(source);
     const fields = (c: Clip) => ({ id: c.id, sourceSeq: c.sourceSeq, type: c.type, speaker: c.speaker, text: c.text, seat: c.seat, voiceKey: c.voiceKey, visibility: c.visibility, day: c.day, phase: c.phase, chapter: c.chapter, part: c.part, parts: c.parts, spokenText: c.spokenText, audioFile: c.audioFile, data: Object.fromEntries(Object.entries(c.data).filter(([key]) => key !== 'sampleSection')) });

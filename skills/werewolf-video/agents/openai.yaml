@@ -1,4 +1,4 @@
 interface:
   display_name: "狼人杀对局视频工作流"
-  short_description: "整理对局材料、编写上帝解说，完成角色配音、字幕、成片、封面与发布文案"
-  default_prompt: "使用 $werewolf-video 制作最新已结束对局：先准备材料并完成上帝解说审核，再启动视频流水线，交付成片、封面和发布文案。"
+  short_description: "按本局看点写稿和起题，复用原音，制作指定视角的横竖视频和带字封面"
+  default_prompt: "使用 $werewolf-video 按我选择的对局、视角、版本与码率制作视频。根据本局可见的看点写解说和标题，让生图模型画出封面短标题，核验最终 MP4、封面、文案和字幕。"

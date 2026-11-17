@@ -31,7 +31,7 @@
 
 ## 怎样填进 narration.json
 
-`edits` 的键是原始非玩家条目的 `sourceSeq`，不是视频秒数或发言座位。开场 `game.start` 和终局 `review` 可用 `text` 替换，并设置 `voiceKey: "commentator"`；投票、警徽等法官结果保留，在 `after` 中追加点评。每次编辑都写 `reason`，指出依据。
+`edits` 的键是原始非玩家条目的 `sourceSeq`，不是视频秒数或发言座位。开场 `game.start` 和终局 `review` 用 `text` 替换，并设置 `voiceKey: "commentator"`，不能省略；投票、警徽等法官结果保留，在 `after` 中追加点评。每次编辑都写 `reason`，指出依据。
 
 沿用上面的**虚构教学材料**，仅演示一条结果后的追加格式：
 
@@ -87,4 +87,4 @@
 
 `method` 按实际执行者填 `human-editor` 或 `model-editor`。这是已完成编辑审核的记录；AI agent 可以自行核对，不需要为此增加一轮用户审批。
 
-然后运行 `pnpm video:make --room=ROOM_ID --check-only --encoder=cpu`，查看本局 `output/materials-check.json`。它会检查本局对应关系、锚点、玩家原话、音色参数和审核记录，不调用 TTS。通过表示结构和准备记录满足启动要求；解说的事实语义与表达质量仍由上述实际阅读审核保证。
+然后运行 `pnpm video:make --room=ROOM_ID --check-only --encoder=cpu`，查看本局 `output/materials-check.json`。它会检查本局对应关系、锚点、玩家原话、音色参数和审核记录，不调用 TTS。检查也会拒绝只给自动模板加审核标志，并核对开场、点评、收尾确实以解说声音发声：开场和收尾须实际撰写，并在至少一个过程锚点写出本局点评。已实际撰写的旧稿继续可用，单玩家原话实录不受此要求约束。通过表示结构和准备记录满足启动要求；解说的事实语义与表达质量仍由上述实际阅读审核保证。

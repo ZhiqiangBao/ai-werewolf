@@ -8,6 +8,31 @@ import { artManifest, bindTheme } from './avatar-theme';
 import { projectTtsModel, selectVoiceCatalogModel } from './tts-config';
 import { applyCharacterDelivery } from './character-delivery';
 import { join } from 'node:path';
+import type { VoiceCatalog } from './project';
+import { masterProject, useMasterVoices } from './master-audio';
+
+const FLASH_MODEL = 'qwen-audio-3.1-tts-flash';
+const PLUS_MODEL = 'qwen-audio-3.0-tts-plus';
+
+function hasReusableTargetVoices(catalog: VoiceCatalog, model: string, cast: { voiceKey: string }[]) {
+  const modelBindings = catalog.modelVoiceBindings?.[model];
+  const flashBindings = model === FLASH_MODEL ? catalog.flashVoiceBindings : undefined;
+  return cast.every(({ voiceKey }) => {
+    const voice = modelBindings?.[voiceKey] ?? flashBindings?.[voiceKey] ?? catalog.themeVoiceBindings?.[voiceKey] ?? catalog.profiles[voiceKey]?.voice;
+    if (typeof voice !== 'string' || !voice.trim()) return false;
+    if (model === FLASH_MODEL) return voice.startsWith(`${FLASH_MODEL}-`);
+    if (model === PLUS_MODEL) return voice.startsWith(`${PLUS_MODEL}-`);
+    return false;
+  });
+}
+
+function applyVoiceDesignPolicy(catalog: VoiceCatalog, model: string, cast: { voiceKey: string }[]) {
+  if (!hasReusableTargetVoices(catalog, model, cast)) return { ...catalog, characterVoiceDesign: 'portrait-v1' as const };
+  const reused = { ...catalog };
+  delete reused.characterVoiceDesign;
+  return reused;
+}
+
 const script = await loadScript(); await mkdir(projectDir, { recursive: true });
 const theme = await bindTheme(projectDir, join(dataDir, 'rooms', `${script.roomId}.json`), process.env.VIDEO_AVATAR_STYLE, true);
 const narrationFile = process.env.VIDEO_NARRATION_FILE || `${projectDir}/narration.json`;
@@ -21,8 +46,11 @@ if (!existsSync(narrationFile)) {
 }
 if (!existsSync(voiceFile)) {
   const base = applyCharacterDelivery(applyCharacterVoices(await loadVoices(), script.cast, theme), script.cast, theme);
-  const voices = usesQwen ? selectVoiceCatalogModel(base, projectTtsModel(requestedTtsModel)) : base;
-  if (usesQwen) voices.characterVoiceDesign = 'portrait-v1';
+  const master = script.perspective === 'player' && !requestedTtsModel ? await masterProject(script) : undefined;
+  const masterVoiceFile = master ? join(master.directory, 'voices.json') : undefined;
+  const masterModel = masterVoiceFile && existsSync(masterVoiceFile) ? (JSON.parse(await readFile(masterVoiceFile, 'utf8')) as VoiceCatalog).model : undefined;
+  const model = projectTtsModel(requestedTtsModel ?? masterModel);
+  const voices = usesQwen ? applyVoiceDesignPolicy(selectVoiceCatalogModel(base, model), model, script.cast) : base;
   await writeFile(voiceFile, JSON.stringify(voices, null, 2));
 } else {
   const current = JSON.parse(await readFile(voiceFile, 'utf8'));
@@ -49,11 +77,18 @@ if (!existsSync(voiceFile)) {
   const expectedBindings = themeVoiceBindings(theme, script.cast);
   const bindingsMatch = current.theme === theme && JSON.stringify(current.themeVoiceBindings ?? {}) === JSON.stringify(expectedBindings);
   const themed = bindingsMatch ? current : applyCharacterVoices(current, script.cast, theme);
-  const voices = requestedTtsModel ? selectVoiceCatalogModel(themed, requestedTtsModel) : themed;
+  const model = requestedTtsModel ? projectTtsModel(requestedTtsModel) : themed.model;
+  const selected = requestedTtsModel ? selectVoiceCatalogModel(themed, model) : themed;
+  const voices = usesQwen ? applyVoiceDesignPolicy(selected, model, script.cast) : selected;
   if (JSON.stringify(voices) !== originalCurrent) await writeFile(voiceFile, JSON.stringify(voices, null, 2));
 }
 const narration = JSON.parse(await readFile(narrationFile, 'utf8'));
-const voices = JSON.parse(await readFile(voiceFile, 'utf8'));
+let voices = JSON.parse(await readFile(voiceFile, 'utf8')) as VoiceCatalog;
+if (script.perspective === 'player') {
+  const reused = await useMasterVoices(script, voices);
+  if (JSON.stringify(reused) !== JSON.stringify(voices)) await writeFile(voiceFile, JSON.stringify(reused, null, 2));
+  voices = reused;
+}
 const artManifestFile = join(projectDir, 'art-manifest.json');
 await writeFile(artManifestFile, JSON.stringify(artManifest(theme, script.cast, voices), null, 2));
 const raw = script.perspective === 'god' ? JSON.parse(await readFile(`${dataDir}/rooms/${script.roomId}.json`, 'utf8')) : null;

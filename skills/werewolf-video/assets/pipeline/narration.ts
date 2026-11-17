@@ -50,3 +50,56 @@ export function draftNarration(script: Script) {
   }
   return { roomId: script.roomId, policy: '默认完整保留玩家原话；法官去重；上帝点评仅依据已经发生的事实。', edits };
 }
+
+/** Require actual authored narrative, rather than a reviewed copy of the generated draft. */
+export function narrationWritingIssues(script: Script, narration: unknown): string[] {
+  if (script.perspective === 'player') return [];
+  const entries = script.chapters.flatMap((chapter) => chapter.entries);
+  const opening = entries.find((entry) => entry.type === 'game.start');
+  const ending = entries.find((entry) => entry.type === 'review');
+  if (!opening || !ending) return ['完整上帝稿缺少开场或终局锚点'];
+  if (!narration || typeof narration !== 'object' || Array.isArray(narration)) return ['缺少完整上帝解说稿'];
+  const edits = (narration as { edits?: Record<string, NarrationEdit> }).edits;
+  if (!edits || typeof edits !== 'object' || Array.isArray(edits)) return ['缺少完整上帝解说稿 edits'];
+  const template = draftNarration(script).edits;
+  const changedText = (seq: number) => {
+    const edit = edits[String(seq)];
+    return edit?.omit !== true && edit?.voiceKey === 'commentator' && typeof edit.text === 'string' && !!edit.text.trim() && edit.text.trim() !== template[String(seq)]?.text?.trim();
+  };
+  const commentary = Object.entries(edits).some(([seq, edit]) => {
+    const anchor = entries.find((entry) => String(entry.sourceSeq) === seq);
+    if (!edit || !anchor || anchor.seat !== undefined || seq === String(opening.sourceSeq) || seq === String(ending.sourceSeq)) return false;
+    const before = template[seq];
+    return (Array.isArray(edit.after) ? edit.after : []).some((item) => typeof item?.text === 'string' && !!item.text.trim() && !(before?.after ?? []).some((original) => original.text.trim() === item.text.trim())) ||
+      (edit.omit !== true && edit.voiceKey === 'commentator' && typeof edit.text === 'string' && !!edit.text.trim() && edit.text.trim() !== before?.text?.trim());
+  });
+  const issues: string[] = [];
+  if (!changedText(opening.sourceSeq)) issues.push('请针对本局实际撰写开场，不能仅审核模板');
+  if (!commentary) issues.push('请结合本局原话和事实，在转折锚点撰写过程点评');
+  if (!changedText(ending.sourceSeq)) issues.push('请针对本局实际撰写终局收尾，不能仅审核模板');
+  return issues;
+}
+
+/** Check that the authored words actually survive hosting and use the commentator voice. */
+export function narrationSpokenIssues(source: Script, narration: { edits: Record<string, NarrationEdit> }, spoken: Script): string[] {
+  const entries = source.chapters.flatMap((c) => c.entries);
+  const actual = spoken.chapters.flatMap((c) => c.entries);
+  const template = draftNarration(source).edits;
+  const opening = entries.find((entry) => entry.type === 'game.start');
+  const ending = entries.find((entry) => entry.type === 'review');
+  if (!opening || !ending) return ['完整上帝稿缺少开场或终局锚点'];
+  const read = (seq: number, text: unknown) => typeof text === 'string' && actual.some((entry) => entry.sourceSeq === seq && entry.voiceKey === 'commentator' && entry.text === text);
+  const issues: string[] = [];
+  if (!read(opening.sourceSeq, narration.edits[String(opening.sourceSeq)]?.text)) issues.push('撰写的开场没有作为上帝解说实际发声');
+  if (!read(ending.sourceSeq, narration.edits[String(ending.sourceSeq)]?.text)) issues.push('撰写的收尾没有作为上帝解说实际发声');
+  const commentary = entries.some((entry) => {
+    if (entry.seat !== undefined || entry.sourceSeq === opening.sourceSeq || entry.sourceSeq === ending.sourceSeq) return false;
+    const edit = narration.edits[String(entry.sourceSeq)], before = template[String(entry.sourceSeq)];
+    if (!edit) return false;
+    const after = Array.isArray(edit.after) ? edit.after : [];
+    return after.some((item) => typeof item?.text === 'string' && item.text.trim() && !(before?.after ?? []).some((old) => old.text.trim() === item.text.trim()) && read(entry.sourceSeq, item.text)) ||
+      (edit.voiceKey === 'commentator' && edit.omit !== true && typeof edit.text === 'string' && edit.text.trim() !== before?.text?.trim() && read(entry.sourceSeq, edit.text));
+  });
+  if (!commentary) issues.push('撰写的转折点评没有作为上帝解说实际发声');
+  return issues;
+}

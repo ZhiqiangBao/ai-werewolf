@@ -8,7 +8,7 @@ import { replay, type ReplayState } from './replay';
 import type { Cast, Script, TimedClip } from './project';
 import { palettes } from './palette';
 import { createRuleStrip, RULE_SCROLL_SPEED, RULE_VIEW } from './rule-strip';
-import { videoChapter, videoLocale, videoRole, videoText } from './video-locale';
+import { videoChapter, videoUiLocale, videoRole, videoText } from './video-locale';
 import { actionTargetLabel } from './video-effect';
 import { bindTheme } from './avatar-theme';
 import { dataDir, projectDir } from './project';
@@ -37,7 +37,7 @@ const paths: Record<string, string> = {
 };
 export const sceneVersion = 'moon-village-video-v12-lossless-plates';
 export async function createSceneRenderer(script: Script, options?: { theme?: string; viewLabel?: string; hideAudioPill?: boolean }) {
-  const locale = videoLocale(script.locale), t = (key: string, ...values: unknown[]) => videoText(locale, key, ...values);
+  const locale = videoUiLocale(script.uiLocale), t = (key: string, ...values: unknown[]) => videoText(locale, key, ...values);
   const art = resolve('apps/web/public/art/moon-village');
   const theme = options?.theme ?? await bindTheme(projectDir, resolve(dataDir, 'rooms', `${script.roomId}.json`), process.env.VIDEO_AVATAR_STYLE, true);
   const themes: Record<string, string> = { campus: '日式校园', storybook: '童话绘本', gufeng: '中式古风', fantasy: '剑与魔法', urban: '现代都市', future: '未来科技' };
@@ -159,7 +159,7 @@ export async function createSceneRenderer(script: Script, options?: { theme?: st
     } else {
       icon(ending ? 'badge' : clip.phase === 'night' ? 'moon' : 'sun', left + 25, top + 17, 27, ui.accent);
       text(ending ? t('终局 · {0}获胜', state.result?.winnerName ?? t('胜利阵营')) : videoChapter(locale, clip.day, clip.phase, clip.chapter), left + 64, top + 32, 23, ui.accent, true, 'left', 300);
-      text(clip.seat ? t('{0}号 · {1}', clip.seat, script.cast.find((c) => c.seat === clip.seat)?.name) : t(clip.voiceKey === 'commentator' ? '上帝解说' : '法官播报'), CX, top + 77, 26, ui.text, true, 'center', 340);
+      text(clip.seat ? t('{0}号 · {1}', clip.seat, script.cast.find((c) => c.seat === clip.seat)?.name) : t(clip.voiceKey === 'commentator' ? (script.perspective === 'player' ? '解说' : '上帝解说') : '法官播报'), CX, top + 77, 26, ui.text, true, 'center', 340);
       text(t(ending ? '对局已结束' : clip.data.systemFallback ? '系统托管 · 非模型自主发言' : clip.type === 'hosting.choice' ? '行动转述 · 依据对局记录' : clip.type === 'wolf.chat' ? (script.perspective === 'player' ? '狼队密谈' : '狼队密谈 · 上帝观众可见') : clip.seat ? '正在发言' : clip.data.presentationKey === 'vote-open' ? '请投票 · 结果尚未公布' : '对局进行中'), CX, top + 112, 17, ui.muted, false, 'center', 360);
     }
     if (!options?.hideAudioPill) round(594, voting ? layout.waveY : 588, 240, 40, 14, ui.panel, ui.borderSoft);
