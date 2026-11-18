@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
+import type { SKRSContext2D } from '@napi-rs/canvas';
 import type { Clip, Script } from './project';
 import { replay } from './replay';
 import { videoPerspectiveLabel } from './video-perspective';
@@ -16,35 +17,59 @@ export function isPlayerSpeech(clip: Clip) {
   return clip.seat !== undefined && !clip.data.presentationOnly && clip.voiceKey !== 'judge' && clip.voiceKey !== 'commentator' && clip.type !== 'vote.result';
 }
 
-/** A transparent, bounded overlay; RMS is measured from the actual selected PCM. */
-export function avatarWaveFrame(samples: Int16Array, frame: number): Buffer {
-  const canvas = createCanvas(820, 820), g = canvas.getContext('2d');
+export const avatarWaveSize = 820;
+const transparentWave = Buffer.alloc(avatarWaveSize ** 2 * 4);
+const bandCoefficients = [170, 480, 1300].map(hz => 2 * Math.cos(2 * Math.PI * hz / 24000));
+
+/** Draw a transparent overlay from the same three-frame PCM window, including its tail. */
+function drawAvatarWave(g: SKRSContext2D, samples: Int16Array, frame: number): boolean {
   const end = Math.min(samples.length, (frame + 1) * 800), start = Math.max(0, frame * 800 - 1600);
+  const count = Math.max(1, end - start);
   let energy = 0, weight = 0;
-  for (let i = start; i < end; i++) { const w = .3 + .7 * (i - start) / Math.max(1, end - start); energy += (samples[i] / 32768) ** 2 * w; weight += w; }
+  for (let i = start; i < end; i++) { const w = .3 + .7 * (i - start) / count; energy += (samples[i] / 32768) ** 2 * w; weight += w; }
   const rms = Math.sqrt(energy / Math.max(240, weight)), intensity = Math.sqrt(Math.min(1, rms / .06));
-  if (intensity > .01) {
-    // Three actual spectral measurements change the local lobes independently.
-    const bands = [170, 480, 1300].map(hz => {
-      const coefficient = 2 * Math.cos(2 * Math.PI * hz / 24000); let a = 0, b = 0;
-      for (let i = start; i < end; i++) { const next = samples[i] / 32768 + coefficient * a - b; b = a; a = next; }
-      return Math.min(1, Math.sqrt(Math.max(0, a * a + b * b - coefficient * a * b)) / (Math.max(1, end - start) * Math.max(.001, rms)) * 8);
-    });
-    const contour = new Path2D();
-    for (let i = 0; i <= 180; i++) {
-      const angle = i / 180 * Math.PI * 2, t = frame / 30;
-      const wave = 31 + (9 + bands[0] * 6) * Math.sin(3 * angle + t * 2.2) + (6 + bands[1] * 4) * Math.sin(5 * angle - t * 2.8) + (3 + bands[2] * 2) * Math.sin(8 * angle + t * 1.7);
-      const radius = 354 + intensity * .8 * wave, x = 410 + Math.cos(angle) * radius, y = 410 + Math.sin(angle) * radius;
-      if (i) contour.lineTo(x, y); else contour.moveTo(x, y);
-    }
-    contour.closePath();
-    const halo = new Path2D(contour); halo.arc(410, 410, 352, 0, Math.PI * 2, true);
-    g.fillStyle = `rgba(170,235,255,${intensity * .16})`; g.fill(halo, 'evenodd');
-    g.shadowColor = '#b5eeff'; g.shadowBlur = 18 * intensity; g.strokeStyle = `rgba(187,239,255,${intensity * .8})`; g.lineWidth = 3.5; g.stroke(contour);
+  if (intensity <= .01) return false;
+
+  // Three actual spectral measurements change the local lobes independently.
+  const bands = bandCoefficients.map(coefficient => {
+    let a = 0, b = 0;
+    for (let i = start; i < end; i++) { const next = samples[i] / 32768 + coefficient * a - b; b = a; a = next; }
+    return Math.min(1, Math.sqrt(Math.max(0, a * a + b * b - coefficient * a * b)) / (count * Math.max(.001, rms)) * 8);
+  });
+  const contour = new Path2D(), t = frame / 30;
+  for (let i = 0; i <= 180; i++) {
+    const angle = i / 180 * Math.PI * 2;
+    const wave = 31 + (9 + bands[0] * 6) * Math.sin(3 * angle + t * 2.2) + (6 + bands[1] * 4) * Math.sin(5 * angle - t * 2.8) + (3 + bands[2] * 2) * Math.sin(8 * angle + t * 1.7);
+    const radius = 354 + intensity * .8 * wave, x = 410 + Math.cos(angle) * radius, y = 410 + Math.sin(angle) * radius;
+    if (i) contour.lineTo(x, y); else contour.moveTo(x, y);
   }
+  contour.closePath();
+  const halo = new Path2D(contour); halo.arc(410, 410, 352, 0, Math.PI * 2, true);
+  g.clearRect(0, 0, avatarWaveSize, avatarWaveSize);
+  g.save();
+  g.fillStyle = `rgba(170,235,255,${intensity * .16})`; g.fill(halo, 'evenodd');
+  g.shadowColor = '#b5eeff'; g.shadowBlur = 18 * intensity; g.strokeStyle = `rgba(187,239,255,${intensity * .8})`; g.lineWidth = 3.5; g.stroke(contour);
   // Leave the two avatar badges unobscured while preserving the moving rings elsewhere.
   g.clearRect(136, 634, 80, 76); g.clearRect(450, 634, 238, 76);
+  g.restore();
+  return true;
+}
+
+export function avatarWaveFrame(samples: Int16Array, frame: number): Buffer {
+  const canvas = createCanvas(avatarWaveSize, avatarWaveSize);
+  drawAvatarWave(canvas.getContext('2d'), samples, frame);
   return canvas.toBuffer('image/png') as Buffer;
+}
+
+export function createAvatarWaveRgba(samples: Int16Array) {
+  const canvas = createCanvas(avatarWaveSize, avatarWaveSize);
+  const g: SKRSContext2D = canvas.getContext('2d');
+  return (frame: number): Buffer => {
+    if (!drawAvatarWave(g, samples, frame)) return transparentWave;
+    // The PNG decoder supplies straight alpha. Canvas.data() borrows premultiplied pixels.
+    const { data } = g.getImageData(0, 0, avatarWaveSize, avatarWaveSize);
+    return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+  };
 }
 
 /** One large focal element; subtitles are burned separately without a box. */

@@ -1,5 +1,5 @@
-import { renderWave } from './render-wave';
-import { readProjectEncodingEnvironment } from './production-settings';
+import { renderWave, stillSceneArgs } from './render-wave';
+import { readProjectEncodingEnvironment, stillSceneRevision } from './production-settings';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -8,7 +8,7 @@ import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { clipVoiceProfile, buildClips, loadScript, dataDir, type Clip, type Script, type TimedClip, type VoiceCatalog } from './project';
 import { assertPlayerRawAudio } from './player-audio-provenance';
-import { assertPlayerSources } from './integrity';
+import { assertPlayerSources, fileDigest } from './integrity';
 import { readPcm, wavHeader } from './audio';
 import { inspectAudio } from './audio-inspection';
 import { effectiveAudioAlignment } from './audio-alignment';
@@ -186,7 +186,7 @@ export async function makeEditedVideo(sourcePath: string, selectionPath: string,
   const encoding = encodingSettings({ ...await readProjectEncodingEnvironment(sourceDir), VIDEO_ENCODER: encoder === 'gpu' ? 'h264_nvenc' : 'libx264', VIDEO_REQUIRE_GPU: encoder === 'gpu' ? '1' : '0' });
   if (options?.validateOnly) { console.log(JSON.stringify({ validated: selected.length, frames: totalFrames, durationSeconds: totalFrames / 30 })); return; }
   const scenes = selected.map(c => ({ ...c.clip, frames: c.frames }));
-  const identity = hash(JSON.stringify({ version, encodingVersion: 'rate-v4', sceneVersion, format, encoder, encoding, source: hash(sourceBytes), selection: hash(selectionBytes), narration: hash(narrationBytes), clips: selected.map(c => ({ audio: c.audioSha256, alignment: c.alignment, cut: c.cut })) }));
+  const identity = hash(JSON.stringify({ version, stillSceneRevision, encodingVersion: 'rate-v4', sceneVersion, format, encoder, encoding, source: hash(sourceBytes), selection: hash(selectionBytes), narration: hash(narrationBytes), clips: selected.map(c => ({ audio: c.audioSha256, alignment: c.alignment, cut: c.cut })) }));
   await mkdir(output, { recursive: true }); const identityFile = join(output, 'identity.json');
   try { const old = JSON.parse(await readFile(identityFile, 'utf8')); assert.equal(old.identity, identity, 'Output directory belongs to different inputs or settings'); }
   catch (e: any) { if (e.code !== 'ENOENT') throw e; const existing = await import('node:fs/promises').then(fs => fs.readdir(output)); assert(existing.length === 0, 'Output directory is not empty'); await writeFile(identityFile, JSON.stringify({ identity }, null, 2), { flag: 'wx' }); }
@@ -200,16 +200,15 @@ export async function makeEditedVideo(sourcePath: string, selectionPath: string,
     const subtitles = ass(c.captions, format, c.clip.phase), key = hash(Buffer.concat([image, Buffer.from(subtitles), Buffer.from(identity), Buffer.from(JSON.stringify({ frames: c.frames, item: c.item, transition }))]));
     const plate = `segments/${stem}.png`, sub = `segments/${stem}.ass`, segment = `segments/${stem}.mp4`, marker = join(output, segment + '.json');
     await writeFile(join(output, plate), image); await writeFile(join(output, sub), subtitles);
-    let cached = false; try { const saved = JSON.parse(await readFile(marker, 'utf8')); cached = saved.key === key && saved.sha256 === hash(await readFile(join(output, segment))); } catch { /* missing or stale */ }
+    let cached = false; try { const saved = JSON.parse(await readFile(marker, 'utf8')); cached = saved.key === key && saved.sha256 === await fileDigest(join(output, segment)); } catch { /* missing or stale */ }
     if (!cached) {
       const partial = `segments/${stem}.partial.mp4`, fade = [`ass=${sub}`, ...sceneFadeFilters(transition, c.frames)].join(',');
       const codec = videoEncodingArgs(encoding);
-      const base = ['-hide_banner', '-loglevel', 'error', '-y', '-loop', '1', '-framerate', '30', '-i', plate];
       const wave = format === 'vertical' && isPlayerSpeech(c.clip);
-      const visual = wave ? ['-f', 'image2pipe', '-framerate', '30', '-vcodec', 'png', '-i', 'pipe:0', '-filter_complex_threads', '1', '-filter_complex', `[0:v][1:v]overlay=130:370:shortest=1,${fade}[v]`, '-map', '[v]'] : ['-vf', fade];
-      const args = [...base, ...visual, '-an', '-frames:v', String(c.frames), ...codec, '-r', '30', partial];
+      const visual = stillSceneArgs(plate, fade, wave ? 'raw' : undefined);
+      const args = ['-hide_banner', '-loglevel', 'error', '-y', ...visual, '-an', '-frames:v', String(c.frames), ...codec, '-r', '30', partial];
       if (wave) await renderWave(args, output, c.pcm, c.frames); else await run(args, output);
-      await rename(join(output, partial), join(output, segment)); await writeFile(marker, JSON.stringify({ key, sha256: hash(await readFile(join(output, segment))) }));
+      await rename(join(output, partial), join(output, segment)); await writeFile(marker, JSON.stringify({ key, sha256: await fileDigest(join(output, segment)) }));
     }
     const audio = Buffer.alloc(c.frames * 1600); for (let j = 0; j < c.pcm.length; j++) audio.writeInt16LE(c.pcm[j], j * 2); parts.push(audio);
     allCues.push(...c.captions.map(cue => ({ ...cue, start: cue.start + startFrame / 30, end: cue.end + startFrame / 30 })));
@@ -229,7 +228,7 @@ export async function makeEditedVideo(sourcePath: string, selectionPath: string,
   assert(video.width === (format === 'vertical' ? 1080 : 1920) && video.height === (format === 'vertical' ? 1920 : 1080) && Number(video.nb_frames) === totalFrames && video.r_frame_rate === '30/1', 'Video frame verification failed');
   assert(audio?.tags?.language === audioLanguage && Math.abs(Number(video.duration) - Number(audio.duration)) <= 1 / 30 + .05, 'Audio/video verification failed');
   await writeFile(join(output, 'output', 'source-map.json'), JSON.stringify({ roomId: source.roomId, sourceSha256: hash(sourceBytes), identity, clips: mapping }, null, 2));
-  await writeFile(join(output, 'output', 'verification.json'), JSON.stringify({ identity, format, encoding, bitrate, frames: totalFrames, sampleCount: pcm.length / 2, width: video.width, height: video.height, fps: 30, encoder, audioLanguage, videoSha256: hash(await readFile(join(output, final))), bytes: (await stat(join(output, final))).size, audioGain: 1, transition: transitionDescription + '; 5 frames silence padding', subjectiveListening: 'not-checked' }, null, 2));
+  await writeFile(join(output, 'output', 'verification.json'), JSON.stringify({ identity, format, encoding, bitrate, frames: totalFrames, sampleCount: pcm.length / 2, width: video.width, height: video.height, fps: 30, encoder, audioLanguage, videoSha256: await fileDigest(join(output, final)), bytes: (await stat(join(output, final))).size, audioGain: 1, transition: transitionDescription + '; 5 frames silence padding', subjectiveListening: 'not-checked' }, null, 2));
 }
 if (process.argv[1]?.replace(/\\/g, '/').endsWith('/edited-video.ts')) {
   const opt = (name: string) => process.argv.find(x => x.startsWith(`--${name}=`))?.slice(name.length + 3);

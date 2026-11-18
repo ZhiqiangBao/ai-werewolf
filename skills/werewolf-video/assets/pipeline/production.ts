@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { createReadStream, existsSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { lstat, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -10,8 +10,9 @@ import { fields } from './compile-edit';
 import { deliverEdition } from './deliver-edition';
 import { encodingSettings } from './encoding';
 import { hostingRevision } from './hosting';
+import { fileDigest } from './integrity';
 import { transitionRevision } from './transitions';
-import { rateEnvironment, type RateRequest } from './production-settings';
+import { rateEnvironment, stillSceneRevision, type RateRequest } from './production-settings';
 import { recordPublicationMaterials } from './publication-materials';
 import { publicationMetadata, withPublicationDetails } from './publish-copy';
 import { resolveTtsModelConfig, TOKEN_PLAN_ENDPOINT } from './tts-config';
@@ -24,14 +25,9 @@ type Edition = { id: string; kind: 'full' | 'edit' | 'sample'; format: 'horizont
 type Cut = { manuscript: string; reviewFile: string; narrationAsr?: 'qwen-token-plan' };
 type Production = { roomId: string; editions: Edition[]; cuts?: Record<string, Cut>; workDir?: string; dataDir?: string; masterProject?: string; deliveryRoot?: string;
   uiLocale?: string; theme?: string; ttsModel?: string; asrProvider?: string; alignmentProvider?: string; encoder?: 'auto' | 'cpu' | 'gpu'; encoding?: RateRequest };
-type Media = { video: string; subtitles: string; visibleSourceSeqs: number[]; expectedMedia: {video:string;subtitles:string} };
+type Media = { video: string; subtitles: string; visibleSourceSeqs: number[]; expectedMedia: {video:string;subtitles:string}; key: string };
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const sha = (value: Buffer | string) => createHash('sha256').update(value).digest('hex');
-async function fileDigest(file: string) {
-  const hash = createHash('sha256');
-  for await (const chunk of createReadStream(file)) hash.update(chunk as Buffer);
-  return hash.digest('hex');
-}
 const json = async <T>(file: string): Promise<T> => JSON.parse((await readFile(file, 'utf8')).replace(/^\uFEFF/, ''));
 async function save(file: string, value: unknown) {
   await mkdir(dirname(file), { recursive: true });
@@ -134,8 +130,10 @@ export async function produce(requestFile: string, args: string[]) {
   const views = [...new Set([...(hasGodFull ? [undefined] : []), ...editions.map(e => e.playerSeat)])];
   const roomFile = join(data, 'rooms', job.roomId + '.json');
   const pendingFile = (e: Edition) => join(work, 'editions', e.id, 'media.json');
-  const editionKey = async (e: Edition) => {
+  const usesStillScene = (e: Edition) => e.format === 'vertical' || e.kind === 'edit';
+  const editionKey = async (e: Edition, includeStillSceneRevision = true) => {
     const digest = createHash('sha256').update(JSON.stringify(['perspective-v2', transitionRevision, e.playerSeat ? null : hostingRevision, e, rate, encoder, job.uiLocale, job.theme, job.ttsModel, job.asrProvider, job.alignmentProvider, e.cut && job.cuts![e.cut].narrationAsr, master]));
+    if (includeStillSceneRevision && usesStillScene(e)) digest.update(stillSceneRevision);
     const src = sourceFor(e.playerSeat);
     const files = [roomFile, exportFor(e.playerSeat), join(src,'voices.json'), join(src,'narration.json'), join(src,'avatar-theme.json')];
     if (e.cut) files.push(resolve(base, job.cuts![e.cut].manuscript), resolve(base, job.cuts![e.cut].reviewFile));
@@ -200,9 +198,11 @@ export async function produce(requestFile: string, args: string[]) {
     const needed = new Map<string, Media>();
     const old = async (e: Edition): Promise<Media | undefined> => {
       if (!existsSync(pendingFile(e))) return;
-      const saved = await json<Media & {key:string}>(pendingFile(e));
-      if (!saved.expectedMedia?.video || !saved.expectedMedia.subtitles || saved.key !== await editionKey(e) || !existsSync(saved.video) || !existsSync(saved.subtitles)) return;
-      return saved;
+      const saved = await json<Media>(pendingFile(e));
+      if (!saved.expectedMedia?.video || !saved.expectedMedia.subtitles || !existsSync(saved.video) || !existsSync(saved.subtitles)) return;
+      if (saved.key === await editionKey(e)) return saved;
+      // An existing edition can still go through staging with its original input-bound key.
+      if (mode === '--deliver-only' && usesStillScene(e) && saved.key === await editionKey(e, false)) return saved;
     };
     for (const e of editions) {
       const previous = await old(e);
@@ -282,8 +282,8 @@ export async function produce(requestFile: string, args: string[]) {
         const reportFile = join(dirname(output.video),'verification.json');
         const report = existsSync(reportFile) ? await json<{videoSha256?:string}>(reportFile) : {};
         const videoDigest = report.videoSha256 || await fileDigest(output.video);
-        const media: Media = { ...output, visibleSourceSeqs: await visible(e), expectedMedia:{video:videoDigest,subtitles:await fileDigest(output.subtitles)} };
-        await save(pendingFile(e),{...media,key:await editionKey(e)}); needed.set(e.id,media);
+        const media: Media = { ...output, visibleSourceSeqs: await visible(e), expectedMedia:{video:videoDigest,subtitles:await fileDigest(output.subtitles)}, key:await editionKey(e) };
+        await save(pendingFile(e),media); needed.set(e.id,media);
       }
     }
     if (mode === '--media-only') { console.log(JSON.stringify(Object.fromEntries(needed),null,2)); return; }
@@ -293,7 +293,7 @@ export async function produce(requestFile: string, args: string[]) {
       const result = await deliverEdition({ ...media, roomId:job.roomId, version:e.id, visibleSourceSeqs:await visible(e), locale:script.locale || 'zh-CN',
         ...(e.format === 'vertical' ? {expectedVideoTitle:verticalVideoTitle(script, videoUiLocale(script.uiLocale, env.VIDEO_LOCALE))} : {}),
         format:e.format, materialsDir:materialsFor(e), destination:join(delivery,e.id), encoding:rate });
-      const receipt = { ...media, video:result.files.video, subtitles:result.files.subtitles, key:await editionKey(e) };
+      const receipt = { ...media, video:result.files.video, subtitles:result.files.subtitles };
       await save(pendingFile(e),receipt);
       await save(join(dirname(pendingFile(e)),'delivery.json'),result); receipts.push(result);
     }

@@ -15,6 +15,8 @@ pnpm video:vertical --source-project=样片项目 --sample --output-dir=样片�
 
 完整上帝、完整玩家、样片输出分别为 `output/full-god-vertical.mp4`、`output/full-player-vertical.mp4`、`output/sample-vertical.mp4`。字幕在同目录的 `subtitles.srt`。需要横竖共用一份剪辑稿时，两版都从同一编译选段及旁白清单渲染。
 
+`video:vertical` 默认同时渲染两段。可通过环境变量 `VIDEO_JOBS` 指定 1 至 4 路，例如在 PowerShell 里先执行 `$env:VIDEO_JOBS = '3'`。`--encoder=gpu` 要求每段使用 NVENC。若显卡无法同时运行指定路数，降低路数后使用同一输出目录继续完整片或样片。审片图从最终 MP4 中各段第一条字幕的中点提取，保存在渲染目录的 `review/`。
+
 旧的纯原音高光入口仍接受 `--selection=文件`。其中上帝高光原先的 120 秒限制仅作用于此种选择；完整片和样片按真实内容时长。旧选段须给出房间、主题、源文件摘要、已审原话、WAV 摘要；裁半句时按实际词时设置区间。单玩家额外审阅本席选段和故事卡，用 `playerSeat`、`sourceSha256`、`visibleFactsOnly` 和 `clipsSha256` 绑定已审内容。成片仍按[码率验收](compression.md)和[玩家权限](player-view.md)核验。
 
 正式交付前播放并检查每个转折的画面和声音，抽查人物与阶段切换处的字幕。合成成功后播放器的标题也应对应本视角。没有实际听审时，在交付说明中列明未听审范围。

@@ -3,6 +3,8 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { encodingSettings } from './encoding';
 
+export const stillSceneRevision = 'decoded-stills-straight-rgba-v1';
+
 const options = {
   profile: ['--encoding-profile', 'VIDEO_ENCODING_PROFILE'],
   videoKbps: ['--video-kbps', 'VIDEO_BITRATE_KBPS'],

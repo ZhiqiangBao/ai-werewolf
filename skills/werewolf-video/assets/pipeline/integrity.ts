@@ -1,10 +1,18 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import type { Clip, Script, VoiceCatalog } from './project';
 import { buildClips, splitSpeech, spokenText, validateSpeechParts, validateEnglishPossessiveClips } from './project';
 import { completeHosting } from './hosting';
 import { open, readFile } from 'node:fs/promises';
 import { FPS, SAMPLE_RATE, loadScript, projectDir } from './project';
 import { wavHeader } from './audio';
+
+export async function fileDigest(path: string): Promise<string> {
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(path, { highWaterMark: 1024 * 1024 })) hash.update(chunk);
+  return hash.digest('hex');
+}
 
 /** Cross-check persisted player artifacts against the selected seat export before consuming caches. */
 export async function assertAuthorizedProject(clips: Clip[]) {
@@ -24,7 +32,6 @@ export async function assertAuthorizedProject(clips: Clip[]) {
 /** Reject stale normalized audio and altered timing metadata before consuming player clips. */
 export async function assertPlayerAudio(clips: import('./project').TimedClip[]) {
   if (!process.env.VIDEO_PLAYER_SEAT) return undefined;
-  const { createHash } = await import('node:crypto');
   const { assDocument, srtDocument } = await import('./timeline');
   const { assertPlayerRawAudio } = await import('./player-audio-provenance');
   const source = await loadScript();
@@ -80,12 +87,11 @@ export async function assertPlayerAudio(clips: import('./project').TimedClip[]) 
 export async function assertPlayerVideo(source: Script, video: string, masterSha256: string | undefined) {
   if (source.perspective !== 'player') return;
   assert(masterSha256, 'Player master audio was not validated');
-  const { createHash } = await import('node:crypto');
   const digest = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
   const report = JSON.parse(await readFile(`${projectDir}/output/render-report.json`, 'utf8'));
   assert.equal(report.viewHash, digest(JSON.stringify(source)), 'Video belongs to another view');
   assert.equal(report.masterSha256, masterSha256, 'Video is not bound to the validated master audio');
-  assert.equal(report.videoSha256, digest(await readFile(video)), 'Final video differs from render report');
+  assert.equal(report.videoSha256, await fileDigest(video), 'Final video differs from render report');
 }
 
 /** Refuse invented player speech before any TTS request, including prepared/sample manifests. */

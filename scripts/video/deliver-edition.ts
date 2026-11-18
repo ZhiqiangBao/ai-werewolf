@@ -1,10 +1,9 @@
 import { execFile } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
 import { copyFile, lstat, mkdir, mkdtemp, readFile, rename, rm, rmdir, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { verifyEncodingRate, type EncodingSettings } from './encoding';
+import { fileDigest } from './integrity';
 import { validatePublicationMaterials } from './publication-materials';
 
 const exec = promisify(execFile);
@@ -34,12 +33,8 @@ export interface DeliverEditionResult {
   checkedOnly: boolean;
   bitrate: Awaited<ReturnType<typeof verifyEncodingRate>>;
   sha256: { video: string; cover: string; copy: string; subtitles: string };
+  timing: { stageSeconds: number; packetScanSeconds: number; elapsedSeconds: number };
 }
-const digest = async (path: string): Promise<string> => {
-  const hash = createHash('sha256');
-  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
-  return hash.digest('hex');
-};
 const exists = async (path: string) => {
   try { return await lstat(path); } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
@@ -78,6 +73,7 @@ async function picture(path: string, format: DeliverEditionArgs['format']) {
 
 /** Stage and validate the exact four files, then replace only those files with rollback on failure. */
 export async function deliverEdition(args: DeliverEditionArgs): Promise<DeliverEditionResult> {
+  const started = performance.now();
   if (!isAbsolute(args.destination) || !/^[\p{L}\p{N}_-]+$/u.test(args.locale) || !args.roomId.trim() || !args.version.trim() || !['horizontal', 'vertical'].includes(args.format)) throw Error('交付目录、语言、房间、版本或版式无效');
   const destination = resolve(args.destination);
   const files = { video: join(destination, 'video.mp4'), cover: join(destination, 'cover.png'), copy: join(destination, `标题与简介-${args.locale}.txt`), subtitles: join(destination, `subtitles-${args.locale}.srt`) };
@@ -100,6 +96,7 @@ export async function deliverEdition(args: DeliverEditionArgs): Promise<DeliverE
     ]);
     const failedCopy = copies.find((result) => result.status === 'rejected');
     if (failedCopy?.status === 'rejected') throw failedCopy.reason;
+    const stageSeconds = (performance.now() - started) / 1000;
     const description = /^# (?:简介|Description)[ \t]*\r?\n([\s\S]*)/im.exec(copy)?.[1].split(/^#{1,2}\s/m)[0].trim();
     if (!description) throw Error('发布文案缺少简介正文');
     const issues = await validatePublicationMaterials({ roomId: args.roomId, version: args.version, visibleSourceSeqs: args.visibleSourceSeqs, copy, material, coverFile: staged.cover });
@@ -110,9 +107,15 @@ export async function deliverEdition(args: DeliverEditionArgs): Promise<DeliverE
     if (args.expectedVideoTitle !== undefined && (!args.expectedVideoTitle.trim() || media.title !== args.expectedVideoTitle)) throw Error('成片元数据标题与当前视角不一致');
     const end = subtitleEnd(await readFile(staged.subtitles, 'utf8'));
     if (end > media.duration + 0.001) throw Error('最后一条字幕超出成片时长');
+    const scanStarted = performance.now();
     const bitrate = await verifyEncodingRate(staged.video, args.encoding);
+    const packetScanSeconds = (performance.now() - scanStarted) / 1000;
     const keys = ['video', 'cover', 'copy', 'subtitles'] as const;
-    const sha256 = Object.fromEntries(await Promise.all(keys.map(async (key) => [key, await digest(staged[key])]))) as DeliverEditionResult['sha256'];
+    const hashes = await Promise.allSettled(keys.map(async key => [key, await fileDigest(staged[key])] as const));
+    const sha256 = Object.fromEntries(hashes.map(result => {
+      if (result.status === 'rejected') throw result.reason;
+      return result.value;
+    })) as DeliverEditionResult['sha256'];
     if (args.expectedMedia && (sha256.video !== args.expectedMedia.video || sha256.subtitles !== args.expectedMedia.subtitles)) throw Error('成片或字幕与已确认的版本不一致');
     if (!args.checkOnly) {
       const backedUp: typeof keys[number][] = [], installed: typeof keys[number][] = [];
@@ -133,7 +136,8 @@ export async function deliverEdition(args: DeliverEditionArgs): Promise<DeliverE
         throw error;
       }
     }
-    return { destination, files, durationSeconds: media.duration, width: media.width, height: media.height, checkedOnly: !!args.checkOnly, bitrate, sha256 };
+    return { destination, files, durationSeconds: media.duration, width: media.width, height: media.height, checkedOnly: !!args.checkOnly, bitrate, sha256,
+      timing: { stageSeconds, packetScanSeconds, elapsedSeconds: (performance.now() - started) / 1000 } };
   } finally {
     if (!preserveStage) await rm(stage, { recursive: true, force: true });
   }

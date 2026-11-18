@@ -1,15 +1,14 @@
-import { readProjectEncodingEnvironment } from './production-settings';
-import { renderWave } from './render-wave';
-import { open } from 'node:fs/promises';
+import { readProjectEncodingEnvironment, stillSceneRevision } from './production-settings';
+import { renderWave, stillSceneArgs } from './render-wave';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { mkdir, readFile, stat, writeFile, readdir, rename } from 'node:fs/promises';
+import { mkdir, open, readFile, rm, stat, writeFile, readdir, rename } from 'node:fs/promises';
 import { resolve, join, relative, isAbsolute } from 'node:path';
 import { buildClips, clipVoiceProfile, loadScript, dataDir, type Clip, type Script, type VoiceCatalog } from './project';
 import { assertPlayerRawAudio } from './player-audio-provenance';
 import { assertFullNarration } from './editorial';
-import { assertPlayerSources } from './integrity';
+import { assertPlayerSources, fileDigest } from './integrity';
 import { readPcm, wavHeader } from './audio';
 import { inspectAudio } from './audio-inspection';
 import { effectiveAudioAlignment } from './audio-alignment';
@@ -35,7 +34,23 @@ async function run(command: string, args: string[], cwd: string) {
     child.on('error', fail); child.on('close', code => code === 0 ? ok(out) : fail(Error(`${command} exited ${code}: ${out.slice(-3000)}`)));
   });
 }
+async function renderBatch(count: number, jobs: number, task: (i: number) => Promise<void>) {
+  let cursor = 0, failed = false;
+  const worker = async () => {
+    try {
+      while (!failed && cursor < count) await task(cursor++);
+    } catch (error) {
+      failed = true;
+      throw error;
+    }
+  };
+  // Stop scheduling on failure and let any already started work close its own files and process.
+  const results = await Promise.allSettled(Array.from({ length: Math.min(count, jobs) }, worker));
+  for (const result of results) if (result.status === 'rejected') throw result.reason;
+}
+
 export async function makeVertical(sourcePath: string, selectionPath: string | undefined, outputPath: string, encoder: 'cpu' | 'gpu', options?: { fullPlayer?: boolean; full?: boolean; sample?: boolean }) {
+  const started = performance.now();
   const sourceDir = resolve(sourcePath), output = resolve(outputPath);
   assert(!within(sourceDir, output) && !within(output, sourceDir), 'Output must be separate from source project');
   assert(encoder === 'cpu' || encoder === 'gpu', 'Expected cpu or gpu encoder');
@@ -167,7 +182,7 @@ export async function makeVertical(sourcePath: string, selectionPath: string | u
   const encoding = encodingSettings({ ...await readProjectEncodingEnvironment(sourceDir), VIDEO_ENCODER: encoder === 'gpu' ? 'h264_nvenc' : 'libx264', VIDEO_REQUIRE_GPU: encoder === 'gpu' ? '1' : '0' });
   const scenes = chosen.map(c => ({ ...c.clip, frames: c.frames }));
   // A bound identity allows only the same inputs and settings to reuse this directory.
-  const identity = hash(JSON.stringify({ version: 'vertical-view-v5', source: hash(sourceBytes), selection, encoding, locale: process.env.VIDEO_LOCALE, clips: chosen.map(c => ({ id: c.clip.id, frames: c.frames, alignment: c.alignment, captions: c.captions })) }));
+  const identity = hash(JSON.stringify({ version: 'vertical-view-v5', stillSceneRevision, source: hash(sourceBytes), selection, encoding, locale: process.env.VIDEO_LOCALE, clips: chosen.map(c => ({ id: c.clip.id, frames: c.frames, alignment: c.alignment, captions: c.captions })) }));
   if (!full && !sample) { await mkdir(output, { recursive: false }); }
   else {
     await mkdir(output, { recursive: true });
@@ -179,35 +194,43 @@ export async function makeVertical(sourcePath: string, selectionPath: string | u
   const starts: number[] = []; let frameCursor = 0;
   for (const c of chosen) { starts.push(frameCursor); frameCursor += c.frames; }
   const cueParts: {text: string; start: number; end: number}[][] = Array(chosen.length), map: any[] = Array(chosen.length);
+  const codec = videoEncodingArgs(encoding);
+  const jobs = Math.max(1, Math.min(4, Math.trunc(Number(process.env.VIDEO_JOBS) || 2)));
+  let complete = 0;
   const renderOne = async (i: number) => {
     const c = chosen[i], start = starts[i], stem = String(i).padStart(3, '0');
+    const segmentStarted = performance.now();
     const image = await verticalScene(c.clip, selection.theme, script, c.item.story); await writeFile(join(output, `${stem}.png`), image);
-    await writeFile(join(output, `${stem}.ass`), ass(c.captions));
+    const subtitles = ass(c.captions), transition = sceneTransition(scenes[i], scenes[i - 1], scenes[i + 1]);
+    await writeFile(join(output, `${stem}.ass`), subtitles);
     cueParts[i] = c.captions.map(x => ({ ...x, start: x.start + start / 30, end: x.end + start / 30 }));
     map[i] = { ...c.item, startFrame: start, frames: c.frames, sampleCount: c.pcm.length, alignment: c.alignment, ...(c.cut ? { cut: c.cut } : {}) };
     const segment = join(output, `${stem}.mp4`), marker = `${segment}.json`;
-    const segmentKey = hash(Buffer.concat([image, Buffer.from(ass(c.captions)), Buffer.from(identity), Buffer.from(JSON.stringify({ frames: c.frames, transition: sceneTransition(scenes[i], scenes[i - 1], scenes[i + 1]) }))]));
+    const segmentKey = createHash('sha256').update(image).update(subtitles).update(identity).update(JSON.stringify({ frames: c.frames, transition })).digest('hex');
     let cached = false;
-    if (full || sample) try { const saved = JSON.parse(await readFile(marker, 'utf8')); cached = saved.key === segmentKey && saved.sha256 === hash(await readFile(segment)); } catch { /* Missing or incomplete segment. */ }
-    if (cached) { console.log(JSON.stringify({ rendered: i + 1, total: chosen.length, clip: c.clip.id, cached })); return; }
-    const speaking = isPlayerSpeech(c.clip);
-    const pipeWave = speaking && (full || sample);
-    if (speaking && !pipeWave) {
-      await mkdir(join(output, 'rings', stem), { recursive: true });
-      for (let frame = 0; frame < c.frames; frame++) await writeFile(join(output, 'rings', stem, `${String(frame).padStart(6, '0')}.png`), avatarWaveFrame(c.pcm, frame));
+    if (full || sample) try { const saved = JSON.parse(await readFile(marker, 'utf8')); cached = saved.key === segmentKey && saved.sha256 === await fileDigest(segment); } catch { /* Missing or incomplete segment. */ }
+    if (!cached) {
+      const speaking = isPlayerSpeech(c.clip), pipeWave = speaking && (full || sample);
+      if (speaking && !pipeWave) {
+        await mkdir(join(output, 'rings', stem), { recursive: true });
+        for (let frame = 0; frame < c.frames; frame++) await writeFile(join(output, 'rings', stem, `${String(frame).padStart(6, '0')}.png`), avatarWaveFrame(c.pcm, frame));
+      }
+      const filters = [`ass=${stem}.ass`, ...sceneFadeFilters(transition, c.frames)].join(',');
+      const visual = stillSceneArgs(`${stem}.png`, filters, pipeWave ? 'raw' : speaking ? { pngSequence: `rings/${stem}/%06d.png` } : undefined);
+      const partial = `${stem}.partial.mp4`;
+      const args = ['-hide_banner','-loglevel','error','-y',...visual,'-frames:v',String(c.frames),...codec,'-r','30',partial];
+      try {
+        if (pipeWave) await renderWave(args, output, c.pcm, c.frames);
+        else await run(process.env.FFMPEG_PATH || 'ffmpeg', args, output);
+        await rename(join(output, partial), segment);
+      } finally { await rm(join(output, partial), { force: true }); }
+      if (full || sample) await writeFile(marker, JSON.stringify({ key: segmentKey, sha256: await fileDigest(segment) }));
     }
-    const codec = videoEncodingArgs(encoding), fade = [`ass=${stem}.ass`, ...sceneFadeFilters(sceneTransition(scenes[i], scenes[i - 1], scenes[i + 1]), c.frames)].join(','), visual = speaking
-      ? [...(pipeWave ? ['-f','image2pipe','-framerate','30','-vcodec','png','-i','pipe:0'] : ['-framerate','30','-i',`rings/${stem}/%06d.png`]),'-filter_complex_threads','1','-filter_complex',`[0:v][1:v]overlay=130:370:shortest=1,${fade}[v]`,'-map','[v]']
-      : ['-vf', fade];
-    const args = ['-hide_banner','-loglevel','error','-y','-loop','1','-framerate','30','-i',`${stem}.png`,...visual,'-frames:v',String(c.frames),...codec,'-r','30',`${stem}.mp4`];
-    if (pipeWave) await renderWave(args,output,c.pcm,c.frames);
-    else await run(process.env.FFMPEG_PATH || 'ffmpeg',args,output);
-    if (full || sample) await writeFile(marker, JSON.stringify({ key: segmentKey, sha256: hash(await readFile(segment)) }));
-    console.log(JSON.stringify({ rendered: i + 1, total: chosen.length, clip: c.clip.id }));
+    console.log(JSON.stringify({ rendered: ++complete, total: chosen.length, clip: c.clip.id, frames: c.frames, cached, elapsedSeconds: (performance.now() - segmentStarted) / 1000 }));
   };
-  let cursor = 0; const jobs = Math.max(1, Math.min(2, Number(process.env.VIDEO_JOBS) || 2));
-  const worker = async () => { while (true) { const i = cursor++; if (i >= chosen.length) return; await renderOne(i); } };
-  await Promise.all(Array.from({ length: jobs }, () => worker()));
+  const segmentsStarted = performance.now();
+  await renderBatch(chosen.length, jobs, renderOne);
+  const assemblyStarted = performance.now();
   const cues = cueParts.flat(), samples = totalFrames * 800, mix = await open(join(output,'master.wav'),'w');
   try {
     await mix.writeFile(wavHeader(samples,24000));
@@ -222,13 +245,15 @@ export async function makeVertical(sourcePath: string, selectionPath: string | u
   await run(process.env.FFMPEG_PATH || 'ffmpeg', ['-hide_banner','-loglevel','error','-y','-f','concat','-safe','0','-i','list.ffconcat','-i','master.wav','-map','0:v','-map','1:a','-c:v','copy','-c:a','aac','-b:a',`${encoding.audioKbps}k`,'-metadata',`title=${verticalVideoTitle(script)}`,'-metadata:s:a:0',`language=${videoAudioLanguage(script.locale)}`,'-movflags','+faststart',partialVideo], output);
   const bitrate = await verifyEncodingRate(join(output, partialVideo), encoding);
   await rename(join(output, partialVideo), join(output, finalVideo));
-  for (let i = 0; i < chosen.length; i++) {
+  const reviewStarted = performance.now();
+  await renderBatch(chosen.length, Math.min(jobs, 2), async i => {
     const cue = chosen[i].captions[0], at = map[i].startFrame / 30 + (cue.start + cue.end) / 2;
-    await run(process.env.FFMPEG_PATH || 'ffmpeg', ['-hide_banner','-loglevel','error','-y','-ss',String(at),'-i',finalVideo,'-frames:v','1',`review/${String(i).padStart(3, '0')}-${chosen[i].clip.id}.png`], output);
-  }
+    await run(process.env.FFMPEG_PATH || 'ffmpeg', ['-hide_banner','-loglevel','error','-y','-ss',String(at),'-threads','2','-i',finalVideo,'-frames:v','1','-threads','1',`review/${String(i).padStart(3, '0')}-${chosen[i].clip.id}.png`], output);
+  });
+  const reviewFinished = performance.now();
   const probe = JSON.parse(await run(process.env.FFPROBE_PATH || 'ffprobe', ['-v','error','-show_streams','-of','json',finalVideo], output));
   const video = probe.streams.find((s: any) => s.codec_type === 'video'), audio = probe.streams.find((s: any) => s.codec_type === 'audio');
-  assert(video.width === 1080 && video.height === 1920 && Number(video.nb_frames) === totalFrames, 'Video frame verification failed');
+  assert(video.width === 1080 && video.height === 1920 && video.r_frame_rate === '30/1' && video.pix_fmt === 'yuv420p' && Number(video.nb_frames) === totalFrames, 'Video frame verification failed');
   assert(Math.abs(Number(video.duration) - Number(audio.duration)) <= 1 / 30 + .05, 'Audio/video duration mismatch');
   await writeFile(join(output, 'output', 'source-map.json'), JSON.stringify({ roomId: source.roomId, sourceSha256: hash(sourceBytes), selection, clips: map }, null, 2));
   await writeFile(join(output, 'output', 'verification.json'), JSON.stringify({
@@ -239,7 +264,9 @@ export async function makeVertical(sourcePath: string, selectionPath: string | u
     encoding, subjectiveListening: 'not-checked', transition: transitionDescription,
     speechWaves: 'player speech only; selected PCM RMS and spectral bands drive a locally undulating continuous outer contour; silence suppressed',
     videoDuration: video.duration, audioDuration: audio.duration,
-    videoSha256: hash(await readFile(join(output, finalVideo))),
+    videoSha256: await fileDigest(join(output, finalVideo)),
+    timing: { jobs, prepareSeconds: (segmentsStarted - started) / 1000, segmentsSeconds: (assemblyStarted - segmentsStarted) / 1000,
+      assemblySeconds: (reviewStarted - assemblyStarted) / 1000, reviewSeconds: (reviewFinished - reviewStarted) / 1000, elapsedSeconds: (performance.now() - started) / 1000 },
   }, null, 2));
 }
 if (process.argv[1]?.replace(/\\/g, '/').endsWith('/vertical-highlight.ts')) {
