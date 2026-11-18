@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 dist/
 data/
+/.qwen/
+/.vs/
 .env
 .env.*
 *.log
