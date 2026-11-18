@@ -14,7 +14,7 @@ import { SeatRing } from '../components/SeatRing';
 import { TaskPanel } from '../components/TaskPanel';
 import { ThoughtFeed } from '../components/ThoughtFeed';
 import { HumanLobby, HumanStatus } from '../components/HumanPlayers';
-import { SpeechControls, useSpeechPlayback } from '../components/SpeechPlayback';
+import { SpeechPlaybackSettings, useSpeechPlayback } from '../components/SpeechPlayback';
 import { downloadVideoScript } from '../video';
 import { phaseLabel, seatName } from '../util';
 import { LinksPanel, Setup } from './Setup';
@@ -229,8 +229,8 @@ function HostGame({ roomId, token, room, projection: p, presentation, refresh }:
             </div>
           </div>
           <div className="game-right">
+            <EventLog events={p.events} seats={p.seats} mode="god" roles={p.god.roles} locale={p.locale ?? room.locale} onRead={speech.read} controls={<SpeechPlaybackSettings player={speech} />} />
             <ThoughtFeed thoughts={p.thoughts} seats={p.seats} events={p.events} locale={p.locale ?? room.locale} />
-            <EventLog events={p.events} seats={p.seats} mode="god" roles={p.god.roles} locale={p.locale ?? room.locale} onRead={speech.read} controls={<SpeechControls player={speech} />} />
           </div>
         </div>
       </div>
@@ -304,8 +304,8 @@ export function SeatPage({ roomId, token }: { roomId: string; token: string }) {
             <RuleCard text={p.ruleCard} locale={p.locale ?? room.locale} />
           </div>
           <div className="game-right">
+            <EventLog events={p.events} seats={p.seats} mode="seat" roles={p.me ? [{ seat: p.me.seat, role: p.me.role }] : []} locale={p.locale ?? room.locale} mySeat={room.seat} onRead={speech.read} controls={<SpeechPlaybackSettings player={speech} />} />
             <ThoughtFeed thoughts={p.thoughts} seats={p.seats} events={p.events} locale={p.locale ?? room.locale} />
-            <EventLog events={p.events} seats={p.seats} mode="seat" roles={p.me ? [{ seat: p.me.seat, role: p.me.role }] : []} locale={p.locale ?? room.locale} mySeat={room.seat} onRead={speech.read} controls={<SpeechControls player={speech} />} />
           </div>
         </div>
       </div>
@@ -361,7 +361,7 @@ function WatchView({ roomId, token, data, error }: { roomId: string; token: stri
             <RuleCard text={p.ruleCard} locale={p.locale ?? room.locale} />
           </div>
           <div className="game-right">
-            <EventLog events={p.events} seats={p.seats} mode="spectator" locale={p.locale ?? room.locale} onRead={speech.read} controls={<SpeechControls player={speech} />} />
+            <EventLog events={p.events} seats={p.seats} mode="spectator" locale={p.locale ?? room.locale} onRead={speech.read} controls={<SpeechPlaybackSettings player={speech} />} />
           </div>
         </div>
       </div>

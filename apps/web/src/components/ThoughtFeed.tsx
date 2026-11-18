@@ -79,26 +79,30 @@ export function ThoughtFeed({ thoughts, seats, events = [], locale }: { thoughts
         </label>
       </h3>
       {!open && live.length > 0 && <div className="muted small">{useLabel('{0}正在写', live.map((item) => nameOf(item.seat)).join('、'))}</div>}
-      {open && done.length > 0 && (
-        <div className="thought-history">
-          {done.map((t) => (
-            <details key={`${t.decisionId}:${t.seat}`}>
-              <summary style={seatStyle(t.seat)}>
-                {nameOf(t.seat)}
-                {t.thinking ? ` · ${useLabel('思考')}` : ''}
-                {t.reply ? ` · ${useLabel('正文')}` : ''}
-              </summary>
+      {open && (
+        <div className="thought-content" role="region" aria-label={useLabel('模型输出')} tabIndex={0}>
+          {done.length > 0 && (
+            <div className="thought-history">
+              {done.map((t) => (
+                <details key={`${t.decisionId}:${t.seat}`}>
+                  <summary style={seatStyle(t.seat)}>
+                    {nameOf(t.seat)}
+                    {t.thinking ? ` · ${useLabel('思考')}` : ''}
+                    {t.reply ? ` · ${useLabel('正文')}` : ''}
+                  </summary>
+                  <ThoughtBody thought={t} events={events} />
+                </details>
+              ))}
+            </div>
+          )}
+          {live.map((t) => (
+            <article key={`${t.decisionId}:${t.seat}`} className="thought-live" style={seatStyle(t.seat)}>
+              <div className="thought-who">{nameOf(t.seat)} · {useLabel('正在写')}</div>
               <ThoughtBody thought={t} events={events} />
-            </details>
+            </article>
           ))}
         </div>
       )}
-      {open && live.map((t) => (
-        <article key={`${t.decisionId}:${t.seat}`} className="thought-live" style={seatStyle(t.seat)}>
-          <div className="thought-who">{nameOf(t.seat)} · {useLabel('正在写')}</div>
-          <ThoughtBody thought={t} events={events} />
-        </article>
-      ))}
     </div>
   );
 }

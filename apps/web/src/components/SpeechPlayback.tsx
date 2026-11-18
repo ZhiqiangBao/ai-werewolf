@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { GameEvent, Projection, RoomBrief, SpeechProviderView, ViewResponse } from '@werewolf/protocol';
 import { api } from '../api';
 import { audibleSpeech } from '../speech';
@@ -77,13 +77,33 @@ export function useSpeechPlayback(roomId: string, token: string, projection: Pro
 }
 
 export type SpeechPlayback = ReturnType<typeof useSpeechPlayback>;
-export function SpeechControls({ player }: { player: SpeechPlayback }) {
+
+export function SpeechPlaybackSettings({ player }: { player: SpeechPlayback }) {
+  const { t } = useI18n();
+  const id = useId();
+  return (
+    <>
+      <button type="button" className="btn sm speech-popover-trigger" popoverTarget={id} aria-haspopup="dialog">
+        {t('朗读设置')}
+        {(player.failed || player.error) && <span className="speech-retry">{t('待重试')}</span>}
+      </button>
+      <div className="speech-popover" id={id} popover="auto" role="dialog" aria-labelledby={`${id}-title`}>
+        <div className="row speech-popover-heading">
+          <b id={`${id}-title`}>{t('发言朗读')}</b>
+          <button type="button" className="btn sm ghost" popoverTarget={id} popoverTargetAction="hide">{t('关闭')}</button>
+        </div>
+        <SpeechControls player={player} />
+      </div>
+    </>
+  );
+}
+
+function SpeechControls({ player }: { player: SpeechPlayback }) {
   const { t } = useI18n();
   const localError = (error: string) => ['无法载入服务端朗读来源。', '所选朗读来源已删除，请重新选择。', '请先选择可用的朗读来源。', '浏览器未能播放，请再次点击继续。', '浏览器没有启动原生朗读，请检查系统音色或选择其他来源。', '音频播放失败，可重听该条或选择其他来源。', '请点击继续播放以启用声音。'].includes(error) ? t(error) : error;
-  return <section className="speech-controls" aria-label={t('发言朗读')}>
+  return <div className="speech-controls">
     <audio ref={player.audio} preload="auto" />
-    <div className="row" style={{ flexWrap: 'wrap', marginBottom: 8 }}>
-      <b>{t('发言朗读')}</b>
+    <div className="row" style={{ marginBottom: 8 }}>
       <select className="speech-source" aria-label={t('朗读来源')} value={player.source} onChange={(e) => player.changeSource(e.target.value)}>
         {!player.source && <option value="">{t('请选择来源')}</option>}
         <option value="browser" disabled={!player.native}>{t('浏览器原生')}{!player.native ? t('（当前不可用）') : ''}</option>
@@ -94,7 +114,7 @@ export function SpeechControls({ player }: { player: SpeechPlayback }) {
         {player.voices.map((v) => <option key={v.voiceURI} value={v.voiceURI}>{v.name} · {v.lang}</option>)}
       </select>}
     </div>
-    <div className="row" style={{ flexWrap: 'wrap' }}>
+    <div className="row">
       <button className="btn sm primary" disabled={!player.source && !player.enabled} onClick={player.enabled ? player.stop : player.start}>{t(player.enabled ? '关闭自动朗读并清空队列' : '开启自动朗读')}</button>
       <button className="btn sm" disabled={(!player.current && !player.queued && !player.paused) || player.failed || player.yielding} onClick={() => void player.togglePause()}>{t(player.paused ? '继续播放' : '暂停')}</button>
       {player.failed && <button className="btn sm primary" disabled={!player.source || player.yielding} onClick={player.retry}>{t('重试当前发言')}</button>}
@@ -110,5 +130,5 @@ export function SpeechControls({ player }: { player: SpeechPlayback }) {
     {player.source === 'browser' && <div className="tiny muted">{t('原生音色由系统提供；部分浏览器的语速调整在下一条朗读时生效。')}</div>}
     {player.providerError && <div className="small muted">{localError(player.providerError)}</div>}
     {player.error && <div className="error-box small" role="alert">{localError(player.error)}</div>}
-  </section>;
+  </div>;
 }

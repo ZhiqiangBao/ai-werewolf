@@ -65,24 +65,30 @@ export function EventLog({ events, seats, mode, mySeat, onRead, controls, locale
       setAway(!stick.current);
     };
     el.addEventListener('scroll', onScroll);
-    return () => el.removeEventListener('scroll', onScroll);
+    const resize = new ResizeObserver(() => {
+      if (stick.current) el.scrollTop = el.scrollHeight;
+    });
+    resize.observe(el);
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      resize.disconnect();
+    };
   }, []);
 
   let lastKey = '';
 
   return (
     <div className="panel event-log">
-      <h3>
-        {t('对局记录')}
-        <span className="spacer" />
+      <div className="event-log-heading">
+        <h3>{t('对局记录')}</h3>
+        {controls}
         {mode !== 'spectator' && (
-          <label className="row small muted" style={{ gap: 6, fontWeight: 400 }}>
+          <label className="event-log-filter muted">
             <input type="checkbox" checked={onlyPublic} onChange={(e) => setOnlyPublic(e.target.checked)} />
             {t('只看公开信息')}
           </label>
         )}
-      </h3>
-      {controls}
+      </div>
       <div className="log-wrap">
         <div className="log" ref={box} role="region" aria-label={t('发言与对局记录')} tabIndex={0}>
           {!shown.length && <div className="muted small">{t('还没有记录。')}</div>}

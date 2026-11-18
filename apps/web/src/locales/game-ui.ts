@@ -74,6 +74,8 @@ export const gameUiMessages: readonly (readonly [string, string, string])[] = [
   ['{0}正在写', '{0} is writing', '{0}が入力中'],
   ['正在写', 'Writing', '入力中'],
   ['发言朗读', 'Speech playback', '発言の読み上げ'],
+  ['朗读设置', 'Speech settings', '読み上げ設定'],
+  ['待重试', 'Retry needed', '要再試行'],
   ['朗读来源', 'Playback source', '読み上げ元'],
   ['请选择来源', 'Select a source', '読み上げ元を選択'],
   ['浏览器原生', 'Browser voice', 'ブラウザー標準'],
