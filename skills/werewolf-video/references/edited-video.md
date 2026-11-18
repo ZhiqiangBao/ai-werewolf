@@ -61,6 +61,6 @@ node node_modules/tsx/dist/cli.mjs scripts/video/edited-video.ts --job=渲染任
 
 也可使用旧的直接参数 `--source-project=路径 --selection=路径 --narration-manifest=路径 --output-dir=路径 --format=vertical|horizontal --encoder=cpu|gpu`。成功后检查 `output/highlights-vertical.mp4` 或 `output/highlights-horizontal.mp4`、`subtitles.srt`、`source-map.json` 和 `verification.json`。输出 1080×1920 或 1920×1080、30fps；`verification.json` 的 `subjectiveListening` 初始为 `not-checked`。身份相同且片段缓存哈希有效才复用；输入或设置变更用新目录。编码报错检查日志及编码器，不能将 GPU 失败当作成功。
 
-同一真实 phase/chapter 内的人物和场景切换使用硬切，不对每个发言片段做整屏淡黑；只有真实 phase/chapter 边界使用 4 帧淡出、4 帧淡入。同格式的图片或主体切换可以硬切。验收时在人物切换和 phase/chapter 边界抽取切点前后的连续帧，暂停逐帧检查字幕小字、徽章和细节，并完整播放确认切换没有闪黑或糊字；只看每段中间静态帧不够。连续抽帧命令见[画面转场与清晰度检查](compression.md#画面转场与清晰度检查)。
+昼夜切换和同一场景内的人物切换使用硬切。其他阶段或章节边界使用四帧淡出和淡入。验收时抽取切点前后连续帧，逐帧检查字幕小字、徽章和细边缘，再播放确认切换节奏。连续抽帧命令见[画面转场与清晰度检查](compression.md#画面转场与清晰度检查)。
 
 对每种格式逐镜抽帧并完整播放，检查字幕断句、遮挡、画面、角色、票型、故事卡和转场，再单独听审。reviewer 核验故事，检查结果及未检查项各自记录。画面或内容缺陷修正后重新审阅与验证；没有可靠对齐则停止。各交付版本按目标语言、实际视角和本版可见看点准备标题、简介及由生图模型连同短标题一起生成的封面；竖屏画面不加固定“节选”标签，按[主流程](../SKILL.md)校验和交付；渲染进行时不得清理。

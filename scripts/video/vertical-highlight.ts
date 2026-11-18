@@ -16,7 +16,7 @@ import { effectiveAudioAlignment } from './audio-alignment';
 import { captionsFromWords, captionContent, sourceCaptionWords, srtDocument } from './timeline';
 import { isPlayerSpeech, avatarWaveFrame, verticalScene, type StoryCard } from './vertical-scene';
 import { encodingSettings, videoEncodingArgs, verifyEncodingRate, applyEncodingCli } from './encoding';
-import { sceneTransition, sceneFadeFilters } from './transitions';
+import { sceneTransition, sceneFadeFilters, transitionDescription } from './transitions';
 import { verticalVideoTitle } from './video-perspective';
 import { videoAudioLanguage, videoLocale } from './video-locale';
 
@@ -236,7 +236,7 @@ export async function makeVertical(sourcePath: string, selectionPath: string | u
     bytes: (await stat(join(output, finalVideo))).size, theme: selection.theme,
     excerpts: chosen.map(({ item, cut }) => ({ id: item.id, excerptNote: item.excerptNote, ...(cut ? { cut } : {}) })),
     frames: totalFrames, sampleCount: samples, encoder: encoder === 'gpu' ? 'h264_nvenc' : 'libx264',
-    encoding, subjectiveListening: 'not-checked', transition: 'hard cuts within scenes; four-frame fades only at phase or chapter boundaries; audio unchanged',
+    encoding, subjectiveListening: 'not-checked', transition: transitionDescription,
     speechWaves: 'player speech only; selected PCM RMS and spectral bands drive a locally undulating continuous outer contour; silence suppressed',
     videoDuration: video.duration, audioDuration: audio.duration,
     videoSha256: hash(await readFile(join(output, finalVideo))),

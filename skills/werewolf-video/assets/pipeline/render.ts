@@ -11,7 +11,7 @@ import { createRuleStrip, RULE_SCROLL_SPEED, RULE_VIEW } from './rule-strip';
 import { voteCardLayout } from './geometry';
 import { projectDir, ffmpeg, FPS, type Script, type TimedClip } from './project';
 import { encodingSettings, videoEncodingArgs, verifyEncodingRate } from './encoding';
-import { sceneTransition, sceneFadeFilters } from './transitions';
+import { sceneTransition, sceneFadeFilters, transitionDescription } from './transitions';
 import { assertAuthorizedProject, assertPlayerAudio } from './integrity';
 import { clipSkillEffect, videoEffectVersion, writeSkillFrames } from './video-effect';
 import { videoAudioLanguage } from './video-locale';
@@ -118,6 +118,6 @@ await rename(`${projectDir}/output/latest-match.partial.mp4`, `${projectDir}/out
 await writeFile(`${projectDir}/encoding-settings.json`, JSON.stringify(encodingIdentity, null, 2));
 await writeFile(`${projectDir}/output/render-report.json`, JSON.stringify({ ...encodingIdentity, elapsedSeconds: (Date.now() - renderStarted) / 1000,
   bitrate, durationSeconds: timeline.duration, bytes: (await stat(`${projectDir}/output/latest-match.mp4`)).size, compactFromFirstEncode: settings.profile === 'compact', videoReencodedAtMux: false,
-  transition: 'hard cuts within scenes; four-frame fades only at phase or chapter boundaries',
+  transition: transitionDescription,
   ...(source.perspective === 'player' ? { viewHash, masterSha256, videoSha256: createHash('sha256').update(await readFile(`${projectDir}/output/latest-match.mp4`)).digest('hex') } : {}) }, null, 2));
 console.log(JSON.stringify({ video: `${projectDir}/output/latest-match.mp4`, duration: timeline.duration, frames: timeline.frames }));

@@ -44,15 +44,21 @@ describe('scene transitions', () => {
     expect(sceneTransition(next, base, undefined)).toEqual({ fadeIn: false, fadeOut: false, frames: 4 });
   });
 
-  it('fades only at phase or chapter boundaries', () => {
-    const previous = { ...base, phase: 'night' }, next = { ...base, chapter: 'Day 2' };
+  it('cuts between day and night in both directions', () => {
+    const night = { ...base, phase: 'night', chapter: 'Night 2' };
+    expect(sceneTransition(base, night, night)).toEqual({ fadeIn: false, fadeOut: false, frames: 4 });
+    expect(sceneTransition(night, base, base)).toEqual({ fadeIn: false, fadeOut: false, frames: 4 });
+  });
+
+  it('fades at other phase or chapter boundaries', () => {
+    const previous = { ...base, phase: 'setup' }, next = { ...base, chapter: 'Day 2' };
     expect(sceneTransition(base, previous, next)).toEqual({ fadeIn: true, fadeOut: true, frames: 4 });
     expect(sceneTransition(base, previous, base)).toEqual({ fadeIn: true, fadeOut: false, frames: 4 });
     expect(sceneTransition(base, base, next)).toEqual({ fadeIn: false, fadeOut: true, frames: 4 });
   });
 
   it('does not apply overlapping fades to clips of eight frames or fewer', () => {
-    const other = { ...base, phase: 'night' };
+    const other = { ...base, phase: 'end' };
     for (const frames of [1, 4, 8]) expect(sceneTransition({ ...base, frames }, other, other)).toEqual({ fadeIn: false, fadeOut: false, frames: 4 });
     expect(sceneTransition({ ...base, frames: 9 }, other, other)).toEqual({ fadeIn: true, fadeOut: true, frames: 4 });
     const short = { ...other, frames: 8 };

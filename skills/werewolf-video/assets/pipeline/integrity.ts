@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import type { Clip, Script, VoiceCatalog } from './project';
 import { buildClips, splitSpeech, spokenText, validateSpeechParts, validateEnglishPossessiveClips } from './project';
-import { replay } from './replay';
-import { hostingChoice, wolfSeatLine } from './hosting';
+import { completeHosting } from './hosting';
 import { open, readFile } from 'node:fs/promises';
 import { FPS, SAMPLE_RATE, loadScript, projectDir } from './project';
 import { wavHeader } from './audio';
@@ -109,6 +108,11 @@ export function assertPlayerSources(source: Script, script: Script, clips: Clip[
     if (!sample) assert.equal(clips.length, expected.length, 'Complete player view must include every clip');
   }
   const entries = source.chapters.flatMap((c) => c.entries);
+  const actionKey = (entry: Pick<Clip, 'sourceSeq' | 'data'>) => `${entry.sourceSeq}:${entry.data.presentationKey}`;
+  const choices = clips.some((clip) => clip.seat !== undefined && clip.data.presentationOnly)
+    ? new Map(completeHosting(source, source).chapters.flatMap((chapter) => chapter.entries
+      .filter((entry) => entry.type === 'hosting.choice').map((entry) => [actionKey(entry), entry] as const)))
+    : undefined;
   for (const clip of clips) {
     assert.equal(clip.spokenText, spokenText(clip.text, source.locale ?? 'zh-CN', script.englishPossessiveClips?.includes(clip.id) ?? false), 'Spoken text changed beyond pronunciation normalization');
     if (clip.seat === undefined) {
@@ -123,26 +127,12 @@ export function assertPlayerSources(source: Script, script: Script, clips: Clip[
       continue;
     }
     assert.equal(clip.type, 'hosting.choice', 'Generated character dialogue is forbidden');
-    const fact = source.events.find((f) => f.sourceSeq === clip.sourceSeq);
-    assert(fact, 'Recorded action is missing');
-    const d = fact.data;
-    const automatic = new Set<number>(Array.isArray(d.fallbackSeats) ? d.fallbackSeats.filter((seat: unknown): seat is number => typeof seat === 'number') : []);
-    assert(!d.systemFallback && !automatic.has(clip.seat), 'System fallback cannot become a model choice');
-    const actor = Array.isArray(fact.audience) && fact.audience.length === 1 ? fact.audience[0] : undefined;
-    const expected = hostingChoice(source.locale ?? 'zh-CN', fact.type, d);
-    if (fact.type === 'speech.order') {
-      const sheriff = replay(source, fact.sourceSeq - 1).sheriff;
-      assert.equal(clip.seat, sheriff);
-      assert.equal(clip.text, expected);
-    } else if (fact.type === 'wolf.kill.result') {
-      const picks = Array.isArray(d.picks) ? d.picks : [];
-      const pick = picks.find((item: unknown) => Array.isArray(item) && item[0] === clip.seat);
-      assert(Array.isArray(pick), 'Action narration assigned to the wrong actor');
-      assert.equal(clip.text, wolfSeatLine(source.locale ?? 'zh-CN', pick[1]), 'Action narration added unrecorded speech');
-    } else {
-      assert.equal(clip.seat, actor, 'Action narration assigned to the wrong actor');
-      assert(expected, 'This event cannot authorize generated character dialogue');
-      assert.equal(clip.text, expected, 'Action narration added unrecorded speech');
-    }
+    const expected = choices?.get(actionKey(clip));
+    assert(expected, 'This event cannot authorize generated character dialogue');
+    assert.equal(clip.seat, expected.seat, 'Action narration assigned to the wrong actor');
+    assert.equal(clip.text, expected.text, 'Action narration added unrecorded speech');
+    assert.equal(clip.visibility, expected.visibility, 'Action narration changed the recorded audience');
+    assert.equal(clip.data.target, expected.data.target, 'Action narration changed the recorded target');
+    assert.equal(clip.data.replayThrough, expected.data.replayThrough, 'Action narration advanced past the recorded choice');
   }
 }

@@ -37,7 +37,8 @@ test('renders both formats from checked source and a different-model narrator, a
     const src = join(root, 'source'); await mkdir(src); await mkdir(join(src, 'audio'));
     const entry = { sourceSeq: 1, type: 'speech', speaker: 'Ethan', voiceKey: 'seat-1', seat: 1, text: 'Hello world.', visibility: 'public', data: {} };
     const event = { sourceSeq: 1, day: 1, phase: 'day', type: 'speech', audience: 'public' as const, spoken: true, text: entry.text, data: {} };
-    const script = { roomId: 'synthetic', perspective: 'god', status: 'ended', locale: 'en', presetName: 'test', cast: [{ seat: 1, name: 'Ethan', role: 'villager', roleName: 'Villager', factionName: 'Good', voiceKey: 'seat-1' }], events: [event], chapters: [{ day: 1, phase: 'day', title: 'Day 1', entries: [entry] }], result: {} };
+    const night = { sourceSeq: 2, day: 1, phase: 'night', type: 'phase', audience: 'public' as const, spoken: false, text: 'Night 1.', data: {} };
+    const script = { roomId: 'synthetic', perspective: 'god', status: 'ended', locale: 'en', presetName: 'test', cast: [{ seat: 1, name: 'Ethan', role: 'villager', roleName: 'Villager', factionName: 'Good', voiceKey: 'seat-1' }], events: [event, night], chapters: [{ day: 1, phase: 'day', title: 'Day 1', entries: [entry] }], result: {} };
     const source = Buffer.from(JSON.stringify(script)), clip = buildClips(script)[0];
     await writeFile(join(src, 'source.json'), source); await writeFile(join(src, 'script.json'), source); await writeFile(join(src, 'clips.json'), JSON.stringify([clip]));
     await writeFile(join(src, 'voices.json'), JSON.stringify({ model: 'player-model', profiles: { 'seat-1': { voice: 'player-voice', instruction: '', rate: 1 } } }));
@@ -48,9 +49,9 @@ test('renders both formats from checked source and a different-model narrator, a
     const meta = (text: string, model: string, voice: string) => ({ model, voice, text, bytes: wav.length, sentences: [{ index: 0, text, words: [{ text: 'Hello', begin_time: 100, end_time: 340 }, { text: ' world.', begin_time: 410, end_time: 820 }] }] });
     await writeFile(playerFile + '.json', JSON.stringify(meta(entry.text, 'player-model', 'player-voice'))); await writeFile(narratorFile + '.json', JSON.stringify(meta(entry.text, 'narrator-model', 'narrator-voice')));
     const sourceItem = { kind: 'source', id: 'source', sourceClipId: clip.id, wordStart: 0, wordEnd: 1, quote: 'Hello', audioSha256: hash(wav), storyCard: { headline: 'A speech', focusSeats: [1] } };
-    const narrationItem = { kind: 'narration', id: 'narrator', text: entry.text, afterSourceSeq: 1, storyCard: { headline: 'The story' } };
+    const narrationItem = { kind: 'narration', id: 'narrator', text: entry.text, afterSourceSeq: 2, storyCard: { headline: 'The story' } };
     const selection = { roomId: script.roomId, sourceSha256: hash(source), reviewed: true, theme: 'urban', items: [sourceItem, narrationItem] };
-    const manifest = { roomId: script.roomId, sourceSha256: hash(source), clips: [{ id: 'narrator', text: entry.text, audioFile: narratorFile, audioSha256: hash(wav), model: 'narrator-model', voice: 'narrator-voice', afterSourceSeq: 1 }] };
+    const manifest = { roomId: script.roomId, sourceSha256: hash(source), clips: [{ id: 'narrator', text: entry.text, audioFile: narratorFile, audioSha256: hash(wav), model: 'narrator-model', voice: 'narrator-voice', afterSourceSeq: narrationItem.afterSourceSeq }] };
     const selectionFile = join(root, 'selection.json'), manifestFile = join(root, 'narration.json'), output = join(root, 'vertical');
     const save = (value: unknown) => writeFile(selectionFile, JSON.stringify(value)); await writeFile(manifestFile, JSON.stringify(manifest));
     await save({ ...selection, items: [{ ...sourceItem, quote: 'Altered' }] }); await assert.rejects(makeEditedVideo(src, selectionFile, manifestFile, output, 'vertical', 'cpu'), /Quote differs/);

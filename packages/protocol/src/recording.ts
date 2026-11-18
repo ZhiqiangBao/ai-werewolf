@@ -60,6 +60,16 @@ function fallbackSeatsBefore(events: GameEvent[], seq: number): number[] {
   return seats;
 }
 
+function precededByBadgeChoice(events: GameEvent[], index: number, seat: unknown): boolean {
+  if (typeof seat !== 'number') return false;
+  for (let i = index - 1; i >= 0; i--) {
+    const event = events[i];
+    if (event.type === 'judge') return event.payload.step === 'badge.duty' && Array.isArray(event.audience) && event.audience.includes(seat);
+    if (eventPurpose(event) !== 'diagnostic') break;
+  }
+  return false;
+}
+
 /** 从实际事实回填旧思考卡片的警徽结果；不从思考文本猜目标。 */
 export function recordedBadgeOutcome(thought: Thought, events: GameEvent[]): { text: string; automatic: boolean } | null {
   const start = events.findIndex((e) => e.payload.decisionId === thought.decisionId && e.payload.step === 'badge.duty');
@@ -129,6 +139,8 @@ export function buildVideoScript(p: GodProjection, room: RoomBrief) {
     const actor = singleSeat(e);
     const round = projectNightRound(e, actor === undefined ? undefined : roleOf.get(actor));
     if (round) data.round = round;
+    // badge.tear also occurs automatically when the Sheriff has nobody to hand the badge to.
+    if (e.type === 'badge.tear' && precededByBadgeChoice(p.events, index, data.from)) data.badgeDecision = true;
     const fallbackSeats = fallbackSeatsBefore(p.events, e.seq);
     if (fallbackSeats.length) data.fallbackSeats = fallbackSeats;
     const previous = p.events[index - 1];

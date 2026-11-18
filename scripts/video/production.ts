@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { fields } from './compile-edit';
 import { deliverEdition } from './deliver-edition';
 import { encodingSettings } from './encoding';
+import { hostingRevision } from './hosting';
+import { transitionRevision } from './transitions';
 import { rateEnvironment, type RateRequest } from './production-settings';
 import { recordPublicationMaterials } from './publication-materials';
 import { publicationMetadata, withPublicationDetails } from './publish-copy';
@@ -133,7 +135,7 @@ export async function produce(requestFile: string, args: string[]) {
   const roomFile = join(data, 'rooms', job.roomId + '.json');
   const pendingFile = (e: Edition) => join(work, 'editions', e.id, 'media.json');
   const editionKey = async (e: Edition) => {
-    const digest = createHash('sha256').update(JSON.stringify(['perspective-v2', e, rate, encoder, job.uiLocale, job.theme, job.ttsModel, job.asrProvider, job.alignmentProvider, e.cut && job.cuts![e.cut].narrationAsr, master]));
+    const digest = createHash('sha256').update(JSON.stringify(['perspective-v2', transitionRevision, e.playerSeat ? null : hostingRevision, e, rate, encoder, job.uiLocale, job.theme, job.ttsModel, job.asrProvider, job.alignmentProvider, e.cut && job.cuts![e.cut].narrationAsr, master]));
     const src = sourceFor(e.playerSeat);
     const files = [roomFile, exportFor(e.playerSeat), join(src,'voices.json'), join(src,'narration.json'), join(src,'avatar-theme.json')];
     if (e.cut) files.push(resolve(base, job.cuts![e.cut].manuscript), resolve(base, job.cuts![e.cut].reviewFile));

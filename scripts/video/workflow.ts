@@ -8,6 +8,8 @@ import { videoLocale } from './video-locale';
 import { bindTheme } from './avatar-theme';
 import { createHash } from 'node:crypto';
 import { encodingSettings } from './encoding';
+import { hostingRevision } from './hosting';
+import { transitionRevision } from './transitions';
 import { projectRateRequest } from './production-settings';
 import { asrProviderForLocale, ensureLocalAsrReady, type AsrProvider } from '../../packages/session/src/asr';
 import { environmentForTtsModel } from './tts-config';
@@ -79,7 +81,7 @@ const statusFile = `${dir}/workflow-status.json`;
 const resumeRequested = args.has('--resume');
 const rateEnv = await projectRateRequest(dir, args, resumeRequested && !process.env.VIDEO_PRODUCTION_JOB);
 const encoding = encodingSettings({ ...process.env, ...rateEnv, VIDEO_ENCODER: encoder });
-const visuals = JSON.stringify({ encoding, uiLocale: args.get('--video-locale') ?? process.env.VIDEO_LOCALE ?? null });
+const visuals = JSON.stringify({ encoding, uiLocale: args.get('--video-locale') ?? process.env.VIDEO_LOCALE ?? null, transitionRevision });
 const narrationPath = resolve(root, args.get('--narration') || join(dir, 'narration.json'));
 const sourceExport = join(dataRoot, 'exports', room + (playerSeat ? '-player-' + playerSeat : '') + '-video-script.json');
 const voicesPath = resolve(root, args.get('--voices') || join(dir, 'voices.json'));
@@ -91,7 +93,8 @@ async function audioInputs() {
   }
   return digest.digest('hex');
 }
-const roomInput = createHash('sha256').update(await readFile(join(roomsDir, room + '.json'))).digest('hex');
+const roomInput = createHash('sha256').update(await readFile(join(roomsDir, room + '.json')))
+  .update(playerSeat ? '' : `\0${hostingRevision}`).digest('hex');
 let previousReport: { roomId?: string; roomInput?: string; encoder?: string; theme?: string; completed?: string[]; visuals?: string; audioInputs?: string; asr?: { requestedProvider?: string }; requestedTtsModel?: string | null } | undefined;
 if (resumeRequested && existsSync(statusFile)) {
   const savedReport = JSON.parse(await readFile(statusFile, 'utf8')) as NonNullable<typeof previousReport>;
