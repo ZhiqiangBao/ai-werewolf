@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "werewolf": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${workspaceFolder}/player.mjs", "mcp"]
+    }
+  }
+}

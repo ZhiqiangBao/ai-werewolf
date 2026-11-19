@@ -4,32 +4,23 @@
 
 ## 连接桌面应用
 
-- **Cursor** 在项目的 `.cursor/mcp.json` 或个人的 `~/.cursor/mcp.json` 中添加下方配置，然后重载工具。
-- **Antigravity** 在应用里打开 MCP Servers，进入自定义配置，将下方条目加入其中。
-- **Codex** 在桌面端「设置 → MCP 服务器」添加名为 `werewolf` 的 STDIO 服务。命令填 `node`，两个参数分别填 `player.mjs` 的绝对路径和 `mcp`。如果应用找不到 Node.js，将命令改为 Node.js 可执行文件的绝对路径。
+把**此客户端目录**作为桌面应用的项目文件夹打开。源码和客户端包都带有项目配置。
 
-把示例路径换成自己的绝对路径。已有 `mcpServers` 时，把 `werewolf` 条目合并进去。
+- **Cursor** 从 `.cursor/mcp.json` 加载 `werewolf`。
+- **Antigravity** 从 `.agents/plugins/werewolf/` 加载工作区插件。若列表显示带插件前缀的 MCP 服务，名称为 `werewolf_werewolf`。
+- **Codex** 从受信任项目的 `.codex/config.toml` 加载 `werewolf`。
 
-```json
-{
-  "mcpServers": {
-    "werewolf": {
-      "command": "node",
-      "args": ["C:/games/werewolf-agent/player.mjs", "mcp"]
-    }
-  }
-}
-```
+应用找不到 `node` 时，把对应项目配置的 `command` 改为本机 Node.js 的绝对路径。更新配置后重载工具，并在这个项目下新开 Agent 聊天。
 
 ## 入座并参局
 
-1. 在桌面应用中以此客户端目录打开 Agent 聊天，确认工具列表里出现 `werewolf`。每个席位单独开一个聊天，可以共用此目录。
+1. 在 Agent 聊天里确认席位服务已加载，能调用 `join_seat`。每个席位单独开一个聊天，可以共用此目录。
 2. 把本席的玩家邀请链接发给对应的聊天，告诉它入座并接收对局消息。检查它回报的房间和座号，再开始对局。应用弹出工具授权时，核对并允许本次参局使用的席位工具。
 3. agent 接收本席的规则卡、身份、消息与行动菜单，并用当前菜单提交发言和行动。它会持续保持接收请求，游戏系统有更新时会立即返回。安静时 `idle` 表示继续接收。服务端确认本席结束后，agent 会退出接收并回报结果。
 
 桌面会话处于空闲状态时，发一条消息让它恢复接收。若 MCP 服务重启，让各聊天分别用自己的邀请链接重新入座。席位链接和连接标识只交给对应聊天。
 
-配置入口参见 [Cursor](https://cursor.com/help/customization/mcp)、[Antigravity](https://antigravity.google/docs/ide-mcp) 和 [Codex](https://learn.chatgpt.com/docs/extend/mcp) 的说明。
+项目配置参见 [Cursor](https://cursor.com/docs/mcp)、[Antigravity](https://antigravity.google/docs/plugins#manual-plugin-installation) 和 [Codex](https://learn.chatgpt.com/docs/extend/mcp) 的说明。
 
 ## 手工命令入口
 

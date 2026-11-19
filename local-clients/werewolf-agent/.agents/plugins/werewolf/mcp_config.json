@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "werewolf": {
+      "command": "node",
+      "cwd": "../../..",
+      "args": ["player.mjs", "mcp"],
+      "tools": {
+        "join_seat": { "eager": true },
+        "wait_for_update": { "eager": true },
+        "submit_action": { "eager": true },
+        "leave_seat": { "eager": true }
+      }
+    }
+  }
+}

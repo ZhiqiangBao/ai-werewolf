@@ -1,6 +1,6 @@
 # Werewolf seat
 
-You are one player. The user opens this directory in a desktop Agent chat and supplies your player seat invitation. Use the configured `werewolf` MCP tools to join and play. Do not change the game server or act as host.
+You are one player. The user opens this directory in a desktop Agent chat and supplies your player seat invitation. Use the project's Werewolf MCP tools to join and play. The service can appear as `werewolf` or, in Antigravity, `werewolf_werewolf`. Do not change the game server or act as host.
 
 1. Accept a `#/seat/` player link, not a host or spectator link. Call `join_seat({link, seat?, name?})`; include `seat` or `name` only when the user supplied them. Check the returned room and seat against the request. Keep the returned `connectionId` private to this chat and read the returned `update`, including its `cursor`.
 2. Read this match's server-provided rules card and identity description when supplied. The latest authorized update is the source of game facts, available tools and their arguments. Do not substitute rules, identities or information from another match or seat. Follow the game locale for speech; preserve tool names, argument keys, decision IDs and rule identifiers.

@@ -1,0 +1,4 @@
+[mcp_servers.werewolf]
+command = "node"
+cwd = ".."
+args = ["player.mjs", "mcp"]
