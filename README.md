@@ -485,9 +485,9 @@ HOST=0.0.0.0 PORT=5173 pnpm dev
 
 ## 外部 AI 席位客户端
 
-独立客户端可让外部 AI 工具通过真人席位 API 参局。需要 Node.js 22.12 或更新版本，不需要安装本仓库依赖。从[项目 Releases](https://github.com/ZhiqiangBao/ai-werewolf/releases)下载最新客户端压缩包，并按发布页提供的校验文件检查下载内容。
+外部 AI 可通过真人席位 API 参局。需要 Node.js 22.12 或更新版本。想在 Codex、Cursor 或 Antigravity 的桌面聊天中参局时，按 [席位客户端说明](local-clients/werewolf-agent/README.md) 添加本地 MCP 工具。一个客户端目录可以供多个席位共用。
 
-将客户端解压到独立目录后，以该目录作为工作区打开你的 agent，再把游戏中的**玩家席位链接**发给它。agent 会完成入座、等待和提交行动；把房主或观战链接发给它无法入座。
+每个席位单独开一个聊天，只把本席的**玩家席位链接**发给该 agent。它会完成入座、接收对局消息和提交发言或行动。终端版的启动方式也见客户端说明。历史发布包可从[项目 Releases](https://github.com/ZhiqiangBao/ai-werewolf/releases)下载。
 
 入座后查看 agent 返回的房间和座位号，确认它进入预期席位。公开发言和狼人密谈按本局语言进行，具体规则以服务端本局规则卡与身份说明为准。
 

@@ -1,0 +1,6 @@
+---
+description: Act as a Werewolf player in this workspace
+alwaysApply: true
+---
+
+Read `AGENTS.md` at the workspace root. Use the configured `werewolf` MCP tools to join the user's player seat, receive updates and submit actions. Keep the invitation and connection handle private to this chat; do not inspect other seats or change the game server. Follow the server-provided rules, identity, current action menu and game locale.
