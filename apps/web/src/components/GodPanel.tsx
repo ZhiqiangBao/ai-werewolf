@@ -38,6 +38,7 @@ export function GodPanel({ projection: p, room, catalog, deaths = [] }: { projec
         <thead>
           <tr>
             <th>{gt('座位')}</th>
+            <th>{t('模型')}</th>
             <th>{gt('身份')}</th>
             <th>{gt('阵营')}</th>
             <th>{t('控制')}</th>
@@ -47,6 +48,7 @@ export function GodPanel({ projection: p, room, catalog, deaths = [] }: { projec
         <tbody>
           {p.god.roles.map((r) => {
             const seat = p.seats.find((s) => s.seat === r.seat);
+            const config = room.seats.find((s) => s.seat === r.seat);
             return (
               <tr key={r.seat} className={r.alive ? '' : 'dead'}>
                 <td>
@@ -55,11 +57,12 @@ export function GodPanel({ projection: p, room, catalog, deaths = [] }: { projec
                   {seat && seat.name !== seatName(r.seat) && seat.name !== gt('{0}号', r.seat) ? ` ${seat.name}` : ''}
                   {seat?.sheriff ? ' ★' : ''}
                 </td>
+                <td className="muted">{config?.controller === 'human' ? t('真人') : config?.model === null ? t('模拟玩家') : config?.model || '—'}</td>
                 <td>
                   <span className={`tag ${roleTone(catalog, r.role)}`}>{r.roleName}</span>
                 </td>
                 <td className="muted">{r.factionName}</td>
-                <td className="muted">{controllerOf(r.seat) === 'human' ? t('真人') : 'AI'}</td>
+                <td className="muted">{config?.controller === 'human' ? t('真人') : 'AI'}</td>
                 <td>{r.alive ? gt('存活') : <DeathMark causes={deaths.find((d) => d.seat === r.seat)?.causes} locale={locale} />}</td>
               </tr>
             );

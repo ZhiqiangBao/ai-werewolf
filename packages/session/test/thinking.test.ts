@@ -1,6 +1,35 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { API_PROTOCOLS } from '@werewolf/protocol';
 import { MemoryStore, RoomManager, SecretBox } from '../src/index';
+
+it('保存席位的 GPT-6 高档位后，测通将所选力度原样发给 Responses', async () => {
+  const store = new MemoryStore(), secrets = SecretBox.ephemeral();
+  let manager = new RoomManager({ store, secrets, tickMs: 0 });
+  const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json({ status: 'completed', output: [
+    { type: 'function_call', name: 'ping', call_id: 'ping-call', arguments: '{"ok":true}' },
+  ] }));
+  vi.stubGlobal('fetch', fetch);
+  try {
+    const baseUrl = 'https://api.openai.com/v1', model = 'gpt-6.2-sol';
+    const { roomId, hostToken } = manager.createRoom();
+    manager.updateSetup(roomId, hostToken, { seats: [{ seat: 1, adapter: 'openai_compatible', baseUrl, model, apiProtocol: 'responses', thinkingMode: 'high' }] });
+    for (const thinkingMode of ['high', 'xhigh', 'max'] as const) {
+      if (thinkingMode !== 'high') manager.updateSetup(roomId, hostToken, { seats: [{ seat: 1, thinkingMode }] });
+      manager.dispose();
+      await manager.whenDisposed();
+      manager = new RoomManager({ store, secrets, tickMs: 0 });
+      expect(manager.getSetup(roomId, hostToken).seats[0].thinkingMode).toBe(thinkingMode);
+      expect(await manager.testSeat(roomId, hostToken, 1)).toMatchObject({ ok: true });
+      const [url, request] = fetch.mock.lastCall!;
+      expect(url).toBe(`${baseUrl}/responses`);
+      expect(JSON.parse(String(request?.body))).toMatchObject({ model, reasoning: { effort: thinkingMode } });
+    }
+  } finally {
+    manager.dispose();
+    await manager.whenDisposed();
+    vi.unstubAllGlobals();
+  }
+});
 
 it('房间选择 Qwen4 与 DeepSeek 时使用真实轻度默认，并保留明确选择的强度', () => {
   const manager = new RoomManager({ store: new MemoryStore(), secrets: SecretBox.ephemeral(), tickMs: 0 });

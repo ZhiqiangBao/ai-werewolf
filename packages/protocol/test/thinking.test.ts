@@ -6,6 +6,25 @@ const deepseek = 'https://api.deepseek.com';
 const levels = ['low', 'medium', 'high'] as const;
 const supported = (base: string, model: string, protocol: ApiProtocol = 'chat_completions') => thinkingOptions(base, model, protocol).filter((o) => o.supported).map((o) => o.value);
 
+it('OpenAI 官方 Responses 为六个 GPT-6 模型提供五个原生档位，只允许 Terra 和 Luna 关闭', () => {
+  const base = 'https://api.openai.com/v1';
+  const models = ['gpt-6.2-sol', 'gpt-6.1-sol', 'gpt-6.2-astra', 'gpt-6-astra', 'gpt-6.1-terra', 'gpt-6-luna'];
+  const efforts = [...levels, 'xhigh', 'max'] as const;
+  for (const model of models) {
+    const canTurnOff = model === 'gpt-6.1-terra' || model === 'gpt-6-luna';
+    expect(supported(base, model, 'responses')).toEqual(['default', ...(canTurnOff ? ['off'] : []), ...efforts]);
+    expect(defaultThinkingMode(base, model, 'responses')).toBe('low');
+    expect(thinkingParameters(base, model, 'default', 'responses')).toEqual({});
+    for (const effort of efforts) expect(thinkingParameters(base, model, effort, 'responses')).toEqual({ reasoning: { effort } });
+    if (canTurnOff) expect(thinkingParameters(base, model, 'off', 'responses')).toEqual({ reasoning: { effort: 'none' } });
+    else expect(() => thinkingParameters(base, model, 'off', 'responses')).toThrow('不能关闭');
+  }
+  expect(supported('https://gateway.invalid/v1', models[0], 'responses')).toEqual(['default', ...levels]);
+  expect(supported(base, models[0], 'chat_completions')).toEqual(['default', 'off']);
+  expect(() => thinkingParameters(aliyun, 'qwen3.7-plus', 'max', 'chat_completions')).toThrow('不支持此思考档位');
+  expect(() => thinkingParameters('https://api.anthropic.com/v1', 'claude-opus-4-6', 'xhigh', 'anthropic_messages')).toThrow('不支持此思考档位');
+});
+
 it('Qwen4 的三种协议提供真实三档，深度映射 xhigh，默认不额外传参', () => {
   for (const protocol of API_PROTOCOLS) {
     const model = 'qwen4-max-preview';

@@ -482,7 +482,7 @@ export interface CreateRoomResult {
 
 export type ViewerRole = 'host' | 'seat' | 'spectator';
 
-/** 房间层面的公开信息：谁是真人、谁是模型，以及暂停状态。不含任何身份和配置细节。 */
+/** 房间状态和座位信息；实际模型仅提供给房主，不含身份或连接凭证。 */
 export interface RoomBrief {
   /** 对局语言；旧存档缺省为 zh-CN。 */
   locale?: string;
@@ -493,7 +493,13 @@ export interface RoomBrief {
   viewer: ViewerRole;
   seat?: Seat;
   presetName: string;
-  seats: { seat: Seat; name: string; controller: Controller }[];
+  seats: {
+    seat: Seat;
+    name: string;
+    controller: Controller;
+    /** 仅房主可见的 AI 座位模型名；null 表示模拟玩家。 */
+    model?: string | null;
+  }[];
   participants?: HumanParticipant[];
   /** 候场时也能阅读本局规则，不包含发牌与私密配置。 */
   ruleCard?: string;

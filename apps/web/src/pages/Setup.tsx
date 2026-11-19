@@ -650,7 +650,7 @@ function SeatRow({
               <div className="field thinking-field">
                 <span id={`thinking-label-${s.seat}`}>{t('思考强度')}</span>
                 <div className="seg thinking-levels" role="group" aria-labelledby={`thinking-label-${s.seat}`}>
-                  {thinking.map((o) => (
+                  {thinking.filter((o) => o.supported || (o.value !== 'xhigh' && o.value !== 'max')).map((o) => (
                     <button key={o.value} type="button" className={(s.thinkingMode ?? 'default') === o.value ? 'on' : ''}
                       aria-pressed={(s.thinkingMode ?? 'default') === o.value} disabled={!o.supported} title={thinkingText(o, t)}
                       onClick={() => patchSeat(s.seat, { thinkingMode: o.value }, 0)}>

@@ -117,7 +117,10 @@ export class RoomViewService {
       viewer: viewer.role,
       ...(viewer.role === 'seat' ? { seat: viewer.seat } : {}),
       presetName: rec.rules?.presetName ?? gameText(rec.locale, getPreset(rec.presetId).name),
-      seats: rec.seats.map((s) => ({ seat: s.seat, name: s.name, controller: s.controller })),
+      seats: rec.seats.map((s) => ({
+        seat: s.seat, name: s.name, controller: s.controller,
+        ...(viewer.role === 'host' && s.controller === 'ai' ? { model: s.adapter === 'mock' ? null : s.model } : {}),
+      })),
       participants: this.participants(rec),
       ...(rec.status === 'setup' ? { ruleCard: buildRuleCard(buildRules(rec.presetId, rec.ruleValues, { locale: rec.locale })) } : {}),
     };

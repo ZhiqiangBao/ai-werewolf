@@ -27,6 +27,7 @@ export const gameUiMessages: readonly (readonly [string, string, string])[] = [
   ['终结', 'End game', '対局を終了'],
   ['同配置再来一局', 'Play again with these settings', '同じ設定でもう一局'],
   ['身份与进度', 'Roles and progress', '役職と進行状況'],
+  ['模型', 'Model', 'モデル'],
   ['模型调用记录', 'Model call log', 'モデル呼び出し記録'],
   ['链接与导出', 'Links and exports', 'リンクと書き出し'],
   ['规则卡', 'Rules', 'ルールカード'],

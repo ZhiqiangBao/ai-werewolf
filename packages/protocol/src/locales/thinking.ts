@@ -14,6 +14,8 @@ export const thinkingMessages: [string, string, string][] = [
   ['关闭', 'Off', 'オフ'],
   ['轻度', 'Low', '軽度'],
   ['深度', 'High', '深度'],
+  ['极高', 'Extra high', '非常に高い'],
+  ['最高', 'Max', '最大'],
   ['使用所选协议的模型默认设置。', 'Use the model default for the selected protocol.', '選択したプロトコルのモデル既定設定を使います。'],
   ['通过原生协议关闭思考。', 'Disable reasoning through the native protocol.', 'ネイティブプロトコルで思考をオフにします。'],
   ['尚未确认该协议和型号支持关闭；可以使用受支持的强度。', 'Disabling reasoning has not been confirmed for this protocol and model; use a supported effort instead.', 'このプロトコルとモデルで思考をオフにできるか未確認です。対応する強度を選んでください。'],
@@ -26,6 +28,7 @@ export const thinkingMessages: [string, string, string][] = [
   ['{0}：思考预算 {1} token，不限制正文长度。', '{0}: reasoning budget of {1} tokens; response length is not restricted.', '{0}：思考予算は {1} トークン。本文の長さは制限しません。'],
   ['{0}：使用模型的 {1} 推理力度。', '{0}: use the model’s {1} reasoning effort.', '{0}：モデルの推論強度 {1} を使います。'],
   ['这个接口没有独立的轻度档，请选择标准或深度。', 'This API has no separate low effort; choose Standard or High.', 'この API には独立した軽度設定がありません。標準または深度を選んでください。'],
+  ['当前模型或接口不支持此思考档位。', 'This model or API does not support this reasoning level.', 'このモデルまたは API はこの思考強度に対応していません。'],
   ['这个接口仅支持思考开关，不区分轻度、标准和深度；跟随模型默认设置。', 'This API only supports turning reasoning on or off, with no distinct Low, Standard, or High effort; use the model default.', 'この API は思考のオン・オフのみ対応し、軽度・標準・深度の区別はありません。モデル既定を使います。'],
   ['尚未确认这个模型支持强度调节，请使用跟随模型。', 'Adjustable effort has not been confirmed for this model; use the model default.', 'このモデルの強度調整は未確認です。モデル既定を選んでください。'],
 ];

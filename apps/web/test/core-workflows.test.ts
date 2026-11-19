@@ -3,13 +3,48 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { projectGod } from '../../../packages/engine/src/index';
 import { DEAL12, TestGame } from '../../../packages/engine/test/harness';
+import { mockAdapter } from '../../../packages/llm/src/index';
+import { MemoryStore, RoomManager, SecretBox } from '../../../packages/session/src/index';
 import { seatIdentity } from '../src/game-ui';
 import { ToolForm } from '../src/components/TaskPanel';
 import { I18nProvider } from '../src/i18n';
-import type { RoomBrief } from '@werewolf/protocol';
+import type { GodProjection, RoomBrief } from '@werewolf/protocol';
+import { GodPanel } from '../src/components/GodPanel';
 import { skillEffectForEvent } from '../../../packages/protocol/src/skill-effects';
 import { replay as replayVideo } from '../../../scripts/video/replay';
 import { buildHostedVideoScript } from '../src/video';
+
+it('房主身份表在座位后显示模型名、真人或模拟玩家，非房主视图不包含模型名', async () => {
+  const manager = new RoomManager({ store: new MemoryStore(), secrets: SecretBox.ephemeral(), tickMs: 0, adapters: { openai_compatible: mockAdapter } });
+  vi.stubGlobal('localStorage', { getItem: () => 'zh-CN' });
+  try {
+    const { roomId, hostToken } = manager.createRoom();
+    const model = 'gpt-6.2-sol';
+    const { tokens } = manager.updateSetup(roomId, hostToken, { aiPacingMs: 3000, seats: [
+      { seat: 1, controller: 'human', adapter: 'openai_compatible', model: 'hidden-human-config' },
+      { seat: 2, adapter: 'mock', model: 'hidden-mock-config' },
+      { seat: 3, adapter: 'openai_compatible', baseUrl: 'https://api.openai.com/v1', model, apiProtocol: 'responses' },
+    ] });
+    manager.participate(roomId, tokens.seats[0].token, { ready: true });
+    manager.start(roomId, hostToken);
+    manager.control(roomId, hostToken, 'pause');
+    const { room, projection } = manager.view(roomId, hostToken);
+    const html = renderToStaticMarkup(createElement(I18nProvider, null, createElement(GodPanel, { room, projection: projection as GodProjection, catalog: null })));
+    expect(html).toContain('<th>座位</th><th>模型</th><th>身份</th>');
+    const rows = html.split('<tbody>')[1].split('</tr>');
+    expect(rows[0]).toContain('</td><td class="muted">真人</td>');
+    expect(rows[1]).toContain('</td><td class="muted">模拟玩家</td>');
+    expect(rows[2]).toContain(`</td><td class="muted">${model}</td>`);
+    expect(html).not.toContain('hidden-');
+    for (const token of [tokens.spectator, ...tokens.seats.slice(0, 3).map((entry) => entry.token)]) {
+      expect(manager.view(roomId, token).room.seats.every((seat) => !Object.hasOwn(seat, 'model'))).toBe(true);
+    }
+  } finally {
+    manager.dispose();
+    await manager.whenDisposed();
+    vi.unstubAllGlobals();
+  }
+});
 
 it('页面按角色视角展示身份，并按房间语言展示可选行动', () => {
   const game = new TestGame({ deal: DEAL12, values: { 'sheriff.enabled': false } });

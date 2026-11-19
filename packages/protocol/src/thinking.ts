@@ -1,7 +1,7 @@
 /** 档位只调整思考参数，不改变正文长度、系统消息或工具定义。 */
 import { isDashscopeEndpoint, type ApiProtocol } from './api';
 import { gameText } from './locale';
-export const THINKING_MODES = ['default', 'off', 'low', 'medium', 'high'] as const;
+export const THINKING_MODES = ['default', 'off', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type ThinkingMode = (typeof THINKING_MODES)[number];
 type Level = Exclude<ThinkingMode, 'default' | 'off'>;
 
@@ -64,10 +64,31 @@ export interface ThinkingOption {
   hintValues?: (string | number)[];
 }
 
-const labels: Record<ThinkingMode, string> = { default: '跟随模型', off: '关闭', low: '轻度', medium: '标准', high: '深度' };
-const budget: Record<Level, number> = { low: 1024, medium: 4096, high: 16384 };
+const labels: Record<ThinkingMode, string> = { default: '跟随模型', off: '关闭', low: '轻度', medium: '标准', high: '深度', xhigh: '极高', max: '最高' };
+const budget: Partial<Record<Level, number>> = { low: 1024, medium: 4096, high: 16384 };
+const standardEffort = { low: 'low', medium: 'medium', high: 'high' } as const;
+const openAiGpt6Effort = { ...standardEffort, xhigh: 'xhigh', max: 'max' } as const;
+const openAiGpt6Off = new Map([
+  ['gpt-6.2-sol', false], ['gpt-6.1-sol', false], ['gpt-6.2-astra', false], ['gpt-6-astra', false],
+  ['gpt-6.1-terra', true], ['gpt-6-luna', true],
+]);
 
-function nativeProfile(baseUrl: string, model: string, protocol: ApiProtocol): { kind: 'effort' | 'budget' | 'switch' | 'unknown'; off: boolean; effort?: Partial<Record<Level, string>>; thinkingType?: 'enabled' } {
+interface NativeThinkingProfile {
+  kind: 'effort' | 'budget' | 'switch' | 'unknown';
+  off?: boolean;
+  effort?: Partial<Record<Level, string>>;
+  thinkingType?: 'enabled';
+}
+
+function officialGpt6Profile(baseUrl: string, model: string): NativeThinkingProfile | undefined {
+  const off = openAiGpt6Off.get(model.toLowerCase());
+  if (off === undefined) return;
+  try {
+    if (new URL(baseUrl).origin === 'https://api.openai.com') return { kind: 'effort', off, effort: openAiGpt6Effort };
+  } catch { return; }
+}
+
+function nativeProfile(baseUrl: string, model: string, protocol: ApiProtocol): NativeThinkingProfile {
   if (isOfficialDeepseek(baseUrl, model)) return { kind: 'effort', off: true, effort: profile(baseUrl, model).effort, thinkingType: 'enabled' };
   // MiMo Responses 接受多种 effort 值，但除 none 外行为完全相同，不能伪装成强度档。
   if (protocol === 'responses' && isOfficialMimo(baseUrl, model)) return { kind: 'switch', off: true };
@@ -77,23 +98,23 @@ function nativeProfile(baseUrl: string, model: string, protocol: ApiProtocol): {
     if (known) {
       const two = /^glm-5\.2(?:-|$)|^deepseek-v4-pro$/i.test(model);
       const effort = two ? { medium: 'high', high: 'max' } : /^qwen/i.test(model) ? { low: 'low', medium: 'medium', high: 'xhigh' } : { low: 'low', medium: 'high', high: 'max' };
-      return { kind: 'effort', off: !p.forced, effort, thinkingType: 'enabled' };
+      return { kind: 'effort', off: !p.forced || undefined, effort, thinkingType: 'enabled' };
     }
-    if (protocol === 'anthropic_messages' && p.budget) return { kind: 'budget', off: !p.forced, thinkingType: 'enabled' };
-    return { kind: 'unknown', off: false, thinkingType: 'enabled' };
+    if (protocol === 'anthropic_messages' && p.budget) return { kind: 'budget', off: !p.forced || undefined, thinkingType: 'enabled' };
+    return { kind: 'unknown', thinkingType: 'enabled' };
   }
   const name = model.toLowerCase().replace(/\./g, '-');
-  if (protocol === 'responses') return { kind: /^(?:gpt-[56](?:-|$)|o[134](?:-|$))/.test(name) ? 'effort' : 'unknown', off: false };
+  if (protocol === 'responses') return officialGpt6Profile(baseUrl, model) ?? (/^(?:gpt-[56](?:-|$)|o[134](?:-|$))/.test(name) ? { kind: 'effort', effort: standardEffort } : { kind: 'unknown' });
   const adaptive = /^claude-(?:(?:opus-4-[678]|sonnet-4-6)(?:-|$)|(?:opus|sonnet|haiku|fable|mythos)-5(?:-|$)|mythos-preview)/.test(name);
-  if (adaptive) return { kind: 'effort', off: !/^claude-(?:(?:opus|sonnet)-5-5|(?:fable|mythos)-5|mythos-preview)/.test(name) };
-  return { kind: /^claude-(?:3-7-sonnet|(?:opus|sonnet|haiku)-4(?:-|$))/.test(name) ? 'budget' : 'unknown', off: /^claude-(?:3-7-sonnet|(?:opus|sonnet|haiku)-4(?:-|$))/.test(name) };
+  if (adaptive) return { kind: 'effort', effort: standardEffort, off: !/^claude-(?:(?:opus|sonnet)-5-5|(?:fable|mythos)-5|mythos-preview)/.test(name) || undefined };
+  return /^claude-(?:3-7-sonnet|(?:opus|sonnet|haiku)-4(?:-|$))/.test(name) ? { kind: 'budget', off: true } : { kind: 'unknown' };
 }
 
 /** 未配置档位时优先轻度；没有真实轻度档的接口继续使用模型默认，不自动关闭思考。 */
 export function defaultThinkingMode(baseUrl: string, model: string, protocol: ApiProtocol = 'responses'): ThinkingMode {
   if (protocol !== 'chat_completions') {
     const p = nativeProfile(baseUrl, model, protocol);
-    return p.kind === 'budget' || (p.kind === 'effort' && (!p.effort || p.effort.low)) ? 'low' : 'default';
+    return p.kind === 'budget' || p.effort?.low ? 'low' : 'default';
   }
   const p = profile(baseUrl, model);
   return p.budget || p.effort?.low ? 'low' : 'default';
@@ -104,28 +125,33 @@ export function thinkingOptions(baseUrl: string, model: string, protocol: ApiPro
     value, label: gameText(locale, labels[value]), supported, hint: gameText(locale, hintKey, ...hintValues), hintKey,
     ...(hintValues.length ? { hintValues } : {}),
   });
+  const unavailable = '当前模型或接口不支持此思考档位。';
   if (protocol !== 'chat_completions') {
     const native = nativeProfile(baseUrl, model, protocol);
     return THINKING_MODES.map((value) => {
-      const supported = value === 'default' || (value === 'off' ? native.off : native.kind === 'budget' || (native.kind === 'effort' && (!native.effort || !!native.effort[value])));
-      if (value === 'default') return option(value, supported, native.kind === 'switch' ? '这个接口仅支持思考开关，不区分轻度、标准和深度；跟随模型默认设置。' : '使用所选协议的模型默认设置。');
-      if (value === 'off') return option(value, supported, native.off ? '通过原生协议关闭思考。' : '尚未确认该协议和型号支持关闭；可以使用受支持的强度。');
-      if (native.kind === 'budget') return option(value, supported, '思考预算 {0} token。', budget[value]);
-      if (native.kind === 'switch') return option(value, supported, '这个接口仅支持思考开关，不区分轻度、标准和深度；跟随模型默认设置。');
-      if (native.kind === 'effort' && !supported) return option(value, supported, '这个接口没有独立的轻度档，请选择标准或深度。');
-      if (native.kind === 'effort') return option(value, supported, '通过原生协议设置 {0} 力度。', native.effort?.[value] ?? value);
-      return option(value, supported, '尚未确认该协议和型号的强度参数，请使用跟随模型。');
+      if (value === 'default') return option(value, true, native.kind === 'switch' ? '这个接口仅支持思考开关，不区分轻度、标准和深度；跟随模型默认设置。' : '使用所选协议的模型默认设置。');
+      if (value === 'off') return option(value, native.off === true, native.off ? '通过原生协议关闭思考。' : native.off === false ? '这个模型始终思考，不能关闭；可以选择它支持的强度。' : '尚未确认该协议和型号支持关闭；可以使用受支持的强度。');
+      const tokens = native.kind === 'budget' ? budget[value] : undefined;
+      if (tokens !== undefined) return option(value, true, '思考预算 {0} token。', tokens);
+      const effort = native.effort?.[value];
+      if (effort) return option(value, true, '通过原生协议设置 {0} 力度。', effort);
+      if (value === 'xhigh' || value === 'max') return option(value, false, unavailable);
+      if (native.kind === 'switch') return option(value, false, '这个接口仅支持思考开关，不区分轻度、标准和深度；跟随模型默认设置。');
+      if (native.kind === 'effort') return option(value, false, '这个接口没有独立的轻度档，请选择标准或深度。');
+      return option(value, false, '尚未确认该协议和型号的强度参数，请使用跟随模型。');
     });
   }
   const p = profile(baseUrl, model);
   return THINKING_MODES.map((value) => {
     if (value === 'default') return option(value, true, p.switchOnly ? '这个接口仅支持思考开关，不区分轻度、标准和深度；跟随模型默认设置。' : '使用模型默认的思考强度。');
     if (value === 'off') return option(value, !p.forced, p.forced ? '这个模型始终思考，不能关闭；可以选择它支持的强度。' : '关闭思考，减少等待；需要接口支持。');
-    const supported = !!p.budget || !!p.effort?.[value];
-    if (p.switchOnly) return option(value, supported, '这个接口仅支持思考开关，不区分轻度、标准和深度；跟随模型默认设置。');
-    if (p.budget) return option(value, supported, '{0}：思考预算 {1} token，不限制正文长度。', gameText(locale, labels[value]), budget[value]);
-    if (p.effort?.[value]) return option(value, supported, '{0}：使用模型的 {1} 推理力度。', gameText(locale, labels[value]), p.effort[value]);
-    return option(value, supported, p.effort ? '这个接口没有独立的轻度档，请选择标准或深度。' : '尚未确认这个模型支持强度调节，请使用跟随模型。');
+    const tokens = p.budget ? budget[value] : undefined;
+    if (tokens !== undefined) return option(value, true, '{0}：思考预算 {1} token，不限制正文长度。', gameText(locale, labels[value]), tokens);
+    const effort = p.effort?.[value];
+    if (effort) return option(value, true, '{0}：使用模型的 {1} 推理力度。', gameText(locale, labels[value]), effort);
+    if (value === 'xhigh' || value === 'max') return option(value, false, unavailable);
+    if (p.switchOnly) return option(value, false, '这个接口仅支持思考开关，不区分轻度、标准和深度；跟随模型默认设置。');
+    return option(value, false, p.effort ? '这个接口没有独立的轻度档，请选择标准或深度。' : '尚未确认这个模型支持强度调节，请使用跟随模型。');
   });
 }
 
