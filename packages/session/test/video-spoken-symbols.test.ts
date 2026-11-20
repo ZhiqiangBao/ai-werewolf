@@ -6,6 +6,7 @@ describe('English video speech and clip voices', () => {
   it('reads arrows and numeric ranges while keeping original clip text', () => {
     expect(spokenText('4->1, 4→1, 3–8', 'en')).toBe('4 to 1, 4 to 1, 3 to 8');
     expect(spokenText('4->1', 'ja')).toBe('4->1');
+    expect(spokenText('第一点。\\n\\n第二点：\\n1. 核对', 'zh-CN')).toBe('第一点。第二点：。一. 核对');
     const text = 'Vote 4->1';
     const script = { locale: 'en', chapters: [{ day: 1, phase: 'day', title: 'Day', entries: [{ sourceSeq: 1, type: 'speech', speaker: 'A', voiceKey: 'seat-1', text, visibility: 'public', data: {} }] }] } as Script;
     const [clip] = buildClips(script);

@@ -125,7 +125,7 @@ export function spokenText(text: string, locale = 'zh-CN', expandEnglishPossessi
     return expandEnglishPossessives ? englishPossessives(normalized) : normalized;
   }
   if (language !== 'zh') return text;
-  return text.replace(/【([^】]+)】/g, '$1。').replace(/→/g, '投给').replace(/\d+(?:\.\d+)?/g, chineseNumber).replace(/\n+/g, '。').replace(/。{2,}/g, '。');
+  return text.replace(/【([^】]+)】/g, '$1。').replace(/→/g, '投给').replace(/\d+(?:\.\d+)?/g, chineseNumber).replace(/(?:\\n|\n)+/g, '。').replace(/。{2,}/g, '。');
 }
 export function splitSpeech(text: string, limit = 230, locale = 'zh-CN'): string[] {
   if (new Intl.Locale(locale).language === 'en') {
