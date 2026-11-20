@@ -26,6 +26,22 @@ it('对局视频按事件顺序复盘并生成对应规则卡和主持词', () =
   expect(allRoleRules(script).find((card) => card.role === 'witch')?.text).toContain('有一瓶解药和一瓶毒药');
 });
 
+it.each([
+  ['zh-CN', 'en', 1, '不能选择自己或狼队友作为刀口。', '并列时取座位号较小者。'],
+  ['en', 'ja', 2, 'Players cannot target themselves or wolf teammates.', 'a second vote is held'],
+  ['ja', 'zh-CN', 2, '自分や人狼の仲間は襲撃先に選べない。', '再投票し'],
+] as const)('狼王版型的视频公开技能卡读取 %s 对局的狼队规则', (locale, uiLocale, killRounds, targetRule, tieRule) => {
+  const rules = buildRules('merchant12', { 'wolf.allowTeammateTarget': false, 'wolf.killRounds': killRounds }, { locale });
+  const script: Script = {
+    roomId: 'fixture', perspective: 'player', presetName: '', status: 'ended',
+    locale, uiLocale, cast: [], publicRoles: rules.roles, events: [], chapters: [], result: null,
+    ruleCard: buildRuleCard(rules),
+  };
+  const wolf = allRoleRules(script).find((card) => card.role === 'werewolf');
+  expect(wolf?.text).toContain(targetRule);
+  expect(wolf?.text).toContain(tieRule);
+});
+
 it('网页导出的上帝剪辑稿按旧房间事实主持，重新导入可还原配音前的章节', () => {
   const game = new TestGame({ preset: 'mirror12', deal: ['awakened_wolf', 'werewolf', 'werewolf', 'werewolf', 'mirror_maiden', 'witch', 'hunter', 'guard', 'villager', 'villager', 'villager', 'villager'] });
   const events: GameEvent[] = [

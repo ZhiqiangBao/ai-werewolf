@@ -1,3 +1,4 @@
+import { allRoles } from '../../packages/engine/src/index';
 import { DEATH_GLYPHS } from './death-glyphs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
@@ -19,7 +20,9 @@ for (const [file, family] of [['msyh.ttc', 'GameCN'], ['msyhbd.ttc', 'GameCNBold
   const path = `C:/Windows/Fonts/${file}`; if (existsSync(path)) GlobalFonts.registerFromPath(path, family);
 }
 const W = 1920, H = 1080, CX = 714, CY = 520;
-const colors: Record<string, string> = { werewolf: '#ff8d94', wolf_king: '#ff8d94', miracle_merchant: '#f2c57c', seer: '#c3a6f6', witch: '#cfabf6', hunter: '#f2c57c', guard: '#8fcfe9', villager: '#b1d4bd' };
+const wolfRoles = new Set(allRoles().filter((role) => role.faction === 'wolf').map((role) => role.id));
+const colors: Record<string, string> = { miracle_merchant: '#f2c57c', seer: '#c3a6f6', witch: '#cfabf6', hunter: '#f2c57c', guard: '#8fcfe9', villager: '#b1d4bd' };
+const roleIcons: Record<string, string> = { miracle_merchant: 'gift', wolf_king: 'wolfKing', seer: 'eye', guard: 'shield', witch: 'potion', hunter: 'target' };
 const paths: Record<string, string> = {
   mic: 'M9 5a3 3 0 0 1 6 0v6a3 3 0 0 1-6 0V5Z M5 10v1a7 7 0 0 0 14 0v-1 M12 18v4 M8 22h8',
   eye: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z',
@@ -37,7 +40,7 @@ const paths: Record<string, string> = {
   gavel: 'm4 9 8-7 6 7-8 7-6-7Z M11 13l10 11 M2 23h11 M4 20h7',
   sparkle: 'M13 2 16 10 24 13 16 16 13 24 10 16 2 13 10 10 13 2Z',
 };
-export const sceneVersion = 'moon-village-video-v12-lossless-plates';
+export const sceneVersion = 'moon-village-video-v13-wolf-role-badges';
 export async function createSceneRenderer(script: Script, options?: { theme?: string; viewLabel?: string; hideAudioPill?: boolean }) {
   const locale = videoUiLocale(script.uiLocale), t = (key: string, ...values: unknown[]) => videoText(locale, key, ...values);
   const art = resolve('apps/web/public/art/moon-village');
@@ -78,7 +81,6 @@ export async function createSceneRenderer(script: Script, options?: { theme?: st
     g.drawImage(atlas, (i % 4) * cellW, Math.floor(i / 4) * cellH, cellW, cellH, x, y, size, size);
     if (dim) { g.fillStyle = 'rgba(6,15,26,.68)'; g.fillRect(x, y, size, size); } g.restore();
   }
-  function roleIcon(c: Cast) { return c.role === 'miracle_merchant' ? 'gift' : c.role === 'wolf_king' ? 'wolfKing' : c.role === 'werewolf' ? 'wolf' : c.role === 'seer' ? 'eye' : c.role === 'guard' ? 'shield' : c.role === 'witch' ? 'potion' : c.role === 'hunter' ? 'target' : 'person'; }
   function speakerPanel(clip: TimedClip, state: ReplayState) {
     const identity = speakerIdentity(script, clip, locale), { panel, avatar, identity: label, divider } = subtitleLayout;
     const tint = identity.kind === 'commentator' ? (clip.phase === 'night' ? '#d3bfff' : '#79549a') : ui.accent;
@@ -104,7 +106,8 @@ export async function createSceneRenderer(script: Script, options?: { theme?: st
     const { cos, sin } = seatPosition(i, script.cast.length), x = CX + cos * 565, y = CY + sin * 292 + (sin < -.7 ? -12 : 10);
     const revealed = state.revealed.get(c.seat);
     if (c.role === 'unknown' && revealed) c = { ...c, role: revealed };
-    const active = clip.seat === c.seat, alive = state.alive.has(c.seat), tint = colors[c.role] ?? '#c4d4cb';
+    const active = clip.seat === c.seat, alive = state.alive.has(c.seat);
+    const wolf = wolfRoles.has(c.role), tint = wolf ? '#ff8d94' : colors[c.role] ?? '#c4d4cb';
     const left = x - 58, top = y - 60;
     if (active) {
       g.save(); g.shadowBlur = 25; g.shadowColor = '#8df5cd'; round(left - 7, top - 7, 130, 130, 27, 'rgba(112,241,195,.12)', '#91efd1', 3); g.restore();
@@ -114,7 +117,8 @@ export async function createSceneRenderer(script: Script, options?: { theme?: st
     round(left - 4, top + 88, 35, 31, 11, '#122a37', '#d7ba80', 1.4);
     text(String(c.seat), left + 13, top + 103, 21, '#fff1c9', true, 'center');
     round(left + 40, top + 90, 81, 29, 10, '#132d37', tint, 1);
-    icon(roleIcon(c), left + 44, top + 94, 20, tint); text(c.role === 'unknown' ? t('身份未知') : videoRole(locale, c.role, c.roleName), left + 86, top + 105, 16, tint, true, 'center', 50);
+    icon(roleIcons[c.role] ?? (wolf ? 'wolf' : 'person'), left + 44, top + 94, 20, tint);
+    text(c.role === 'unknown' ? t('身份未知') : videoRole(locale, c.role, c.roleName), left + 86, top + 105, 16, tint, true, 'center', 50);
     round(left - 10, top + 125, 136, 33, 12, 'rgba(12,31,41,.93)', 'rgba(225,198,150,.38)');
     text(c.name, x, top + 141, 21, alive ? '#fff2d9' : '#a6adb3', true, 'center', 122);
     if (!alive) {
@@ -189,7 +193,7 @@ export async function createSceneRenderer(script: Script, options?: { theme?: st
     const offset = Math.floor((clip.startFrame / 30 * RULE_SCROLL_SPEED) % rules.cycleHeight);
     g.drawImage(rules.image, 0, offset, RULE_VIEW.width, RULE_VIEW.height, RULE_VIEW.x, RULE_VIEW.y, RULE_VIEW.width, RULE_VIEW.height);
     text(locale === (script.locale ?? 'zh-CN') ? t('来自本局规则 · 连续滚动不随发言重置') : t('规则正文原语言：{0}', script.locale ?? 'zh-CN'), 1458, 842, 15, ui.muted, false, 'left', 405);
-    const aliveWolves = script.cast.filter((c) => (c.role === 'werewolf' || c.role === 'wolf_king') && state.alive.has(c.seat)).length;
+    const aliveWolves = script.cast.filter((c) => wolfRoles.has(c.role) && state.alive.has(c.seat)).length;
     round(1456, 866, 408, 35, 12, ui.chip); text(script.perspective === 'player' ? t('存活 {0} 人', state.alive.size) : t('存活 {0} 人     狼人 {1}     好人 {2}', state.alive.size, aliveWolves, state.alive.size - aliveWolves), 1660, 883, 17, ui.muted, false, 'center', 396);
     speakerPanel(clip, state);
     // Timestamped subtitles are burned in this empty strip by the encoder.
