@@ -25,7 +25,7 @@ export function encodingSettings(env: NodeJS.ProcessEnv = process.env): Encoding
   const encoder = env.VIDEO_ENCODER || 'h264_nvenc';
   if (encoder !== 'h264_nvenc' && encoder !== 'libx264') throw Error('Unsupported video encoder');
   const compact = profile === 'compact';
-  const videoKbps = numberOption(env, 'VIDEO_BITRATE_KBPS', compact ? 750 : 8000, 200, 10000);
+  const videoKbps = numberOption(env, 'VIDEO_BITRATE_KBPS', compact ? 1200 : 8000, 200, 10000);
   const maxVideoKbps = numberOption(env, 'VIDEO_MAXRATE_KBPS', Math.max(videoKbps, compact ? 1200 : 12000), videoKbps, 20000);
   const maxTotalKbps = env.VIDEO_MAX_TOTAL_KBPS === undefined ? undefined : numberOption(env, 'VIDEO_MAX_TOTAL_KBPS', 0, 1, 30000);
   const audioKbps = numberOption(env, 'VIDEO_AUDIO_KBPS', 96, 64, 320);

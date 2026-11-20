@@ -4,7 +4,7 @@ import { sceneTransition } from '../../../scripts/video/transitions';
 
 describe('video encoding profiles', () => {
   it('defaults to compact and allows selecting upload explicitly', () => {
-    expect(encodingSettings({})).toMatchObject({ profile: 'compact', encoder: 'h264_nvenc', videoKbps: 750, maxVideoKbps: 1200, bufferKbits: 600, quality: 30, audioKbps: 96, gop: 240 });
+    expect(encodingSettings({})).toMatchObject({ profile: 'compact', encoder: 'h264_nvenc', videoKbps: 1200, maxVideoKbps: 1200, bufferKbits: 600, quality: 30, audioKbps: 96, gop: 240 });
     expect(encodingSettings({ VIDEO_ENCODING_PROFILE: 'upload' })).toMatchObject({ profile: 'upload', videoKbps: 8000, maxVideoKbps: 12000, bufferKbits: 6000, quality: 21, audioKbps: 96, gop: 60 });
   });
 
@@ -26,11 +26,11 @@ describe('video encoding profiles', () => {
   it('uses the selected GPU quality or CPU fallback CRF with matching rate controls', () => {
     const settings = encodingSettings({ VIDEO_QUALITY: '23' });
     const gpu = videoEncodingArgs(settings);
-    expect(gpu).toEqual(expect.arrayContaining(['h264_nvenc', '-cq', '23', '-b:v', '712k', '-maxrate', '712k', '-bufsize', '178k', '-g', '240']));
+    expect(gpu).toEqual(expect.arrayContaining(['h264_nvenc', '-cq', '23', '-b:v', '1140k', '-maxrate', '1140k', '-bufsize', '285k', '-g', '240']));
     expect(gpu.slice(gpu.indexOf('-cq'), gpu.indexOf('-cq') + 2)).toEqual(['-cq', '23']);
     expect(gpu).not.toContain('-crf');
     const cpu = videoEncodingArgs(settings, 'libx264');
-    expect(cpu).toEqual(expect.arrayContaining(['libx264', '-crf', '21', '-maxrate', '712k', '-bufsize', '178k', '-g', '240']));
+    expect(cpu).toEqual(expect.arrayContaining(['libx264', '-crf', '21', '-maxrate', '1140k', '-bufsize', '285k', '-g', '240']));
     expect(cpu.slice(cpu.indexOf('-crf'), cpu.indexOf('-crf') + 2)).toEqual(['-crf', '21']);
     expect(cpu).not.toContain('-cq');
   });

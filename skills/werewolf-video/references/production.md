@@ -6,7 +6,7 @@
 {
   "roomId": "ROOM_ID",
   "uiLocale": "zh-CN",
-  "encoding": { "videoKbps": 750, "maxVideoKbps": 1200, "audioKbps": 96 },
+  "encoding": { "videoKbps": 1200, "maxVideoKbps": 1200, "audioKbps": 96 },
   "editions": [
     { "id": "04-完整横屏", "kind": "full", "format": "horizontal" },
     { "id": "05-完整竖屏平民视角", "kind": "full", "format": "vertical", "playerSeat": 2 }
@@ -22,7 +22,7 @@
 | `masterProject` | 已有同局完整上帝原音项目的路径。请求上帝完整版时，默认主项目为 `data/video/房间号`；如果指定了新目录，该目录将用于制作上帝完整版。单独制作衍生版时可直接指向已有原音。 |
 | `dataDir` / `workDir` | 默认读取仓库 `data`，多版工作目录为 `data/video/房间号-production`。各席位源稿与排版缓存分开。 |
 | `deliveryRoot` / `materialsDir` | 默认交付根目录为桌面的 `月影议事厅-频道素材/05-对局成片`，其下使用 `房间号/版本名`。各版编辑材料默认在工作目录的 `materials/版本名`，也可逐版指定。 |
-| `encoding` | `videoKbps` 视频平均上限，`maxVideoKbps` 编码器最大码率参数，`maxTotalKbps` 可选整文件平均上限，`audioKbps` 音轨目标。实测两秒峰值仅供报告。显式选择高码率档使用 `"profile":"upload"`。 |
+| `encoding` | `videoKbps` 视频轨制作预算和成片平均码率上限，`maxVideoKbps` 编码器最大码率参数，`maxTotalKbps` 可选整文件平均上限，`audioKbps` 音轨目标。实测两秒峰值仅供报告。显式选择高码率档使用 `"profile":"upload"`。 |
 | 其他设置 | `encoder` 可选 `auto`、`cpu`、`gpu`；`theme`、`ttsModel`、`asrProvider`、`alignmentProvider` 沿用[制作前准备](preproduction.md)的取值。语音按房间语言，画面按 `uiLocale`、记录的界面语言、系统界面语言依次取值。 |
 
 ## 从备料到交付
